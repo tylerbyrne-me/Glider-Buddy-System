@@ -26,9 +26,12 @@ from ..core.slocum_bundle_registry import (
 )
 from ..core.slocum_erddap_client import fetch_dataset_time_extent, fetch_slocum_data
 from ..core.utils import (
+    cleanup_stale_sibling_tmp_files,
     promote_orphan_tmp_file,
+    replace_path_with_retries,
     resolve_data_path,
     slocum_mission_key,
+    unique_sibling_tmp_path,
     write_parquet_file_atomic,
 )
 from .geo.coordinates import mask_null_island_coordinates
@@ -101,7 +104,17 @@ def _read_meta(dataset_id: str) -> dict[str, Any]:
 
 def _write_meta(dataset_id: str, meta: dict[str, Any]) -> None:
     path = _meta_path(dataset_id)
-    path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+    tmp_path = unique_sibling_tmp_path(path)
+    try:
+        tmp_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+        replace_path_with_retries(tmp_path, path)
+    except Exception:
+        try:
+            if tmp_path.is_file():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def invalidate_memory_cache(dataset_id: Optional[str] = None) -> None:
@@ -538,6 +551,11 @@ def configured_mirror_dataset_ids() -> set[str]:
         for dataset_id in (*settings.active_slocum_datasets, *settings.historical_slocum_datasets)
         if dataset_id and dataset_id.strip()
     }
+
+
+def cleanup_mirror_stale_tmp_files(*, max_age_seconds: float = 3600) -> dict[str, int]:
+    """Remove stranded unique-sibling temp files under the Slocum mirror root."""
+    return cleanup_stale_sibling_tmp_files(get_mirror_root(), max_age_seconds=max_age_seconds)
 
 
 def purge_orphan_mirrors() -> dict[str, Any]:

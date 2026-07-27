@@ -1690,7 +1690,7 @@ async def run_slocum_overage_cleanup_job():
         return
     try:
         from .core.slocum_overage_cache import purge_overage_entries
-        from .core.slocum_mirror_service import purge_orphan_mirrors
+        from .core.slocum_mirror_service import cleanup_mirror_stale_tmp_files, purge_orphan_mirrors
 
         summary = purge_overage_entries(force_all=False)
         logger.info(
@@ -1698,6 +1698,13 @@ async def run_slocum_overage_cleanup_job():
             summary.get("removed_files"),
             summary.get("freed_bytes"),
         )
+        tmp_summary = cleanup_mirror_stale_tmp_files()
+        if tmp_summary.get("removed_files"):
+            logger.info(
+                "AUTOMATED: Slocum mirror tmp cleanup finished (files=%s, freed_bytes=%s)",
+                tmp_summary.get("removed_files"),
+                tmp_summary.get("freed_bytes"),
+            )
         orphan_summary = purge_orphan_mirrors()
         if orphan_summary.get("removed_dirs"):
             logger.info(
@@ -1711,6 +1718,7 @@ async def run_slocum_overage_cleanup_job():
             (
                 f"removed={summary.get('removed_files')} "
                 f"freed_bytes={summary.get('freed_bytes')} "
+                f"mirror_tmp={tmp_summary.get('removed_files', 0)} "
                 f"orphan_dirs={orphan_summary.get('removed_dirs', 0)}"
             ),
         )

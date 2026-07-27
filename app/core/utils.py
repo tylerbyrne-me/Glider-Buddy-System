@@ -15,6 +15,9 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Log one WARNING per parent directory when os.replace falls back to copy (NFS/SELinux).
+_REPLACE_FALLBACK_WARNED_DIRS: set[str] = set()
+
 # Minimum valid date for timestamps (filters out epoch dates from parsing failures)
 MIN_VALID_TIMESTAMP = datetime(2000, 1, 1, tzinfo=timezone.utc)
 
@@ -82,8 +85,47 @@ def _copy_replace(src: Path, dest: Path) -> None:
     shutil.copyfile(src, dest)
     try:
         src.unlink()
-    except OSError:
-        pass
+    except OSError as err:
+        logger.debug(
+            "Could not remove temp file after copy fallback %s (%s errno=%s)",
+            src,
+            err,
+            getattr(err, "errno", None),
+        )
+
+
+def cleanup_stale_sibling_tmp_files(
+    root: Path,
+    *,
+    max_age_seconds: float = 3600,
+) -> dict[str, int]:
+    """
+    Remove unique-sibling temp files (``name.pid.time_ns.tmp``) older than ``max_age_seconds``.
+
+    Safe to run while writers are active: only deletes temps whose mtime is well in the past.
+    """
+    root = Path(root)
+    if not root.is_dir():
+        return {"removed_files": 0, "freed_bytes": 0}
+    cutoff = time.time() - max(0.0, max_age_seconds)
+    removed_files = 0
+    freed_bytes = 0
+    for tmp in root.rglob("*.tmp"):
+        if not tmp.is_file():
+            continue
+        # Match unique-sibling pattern (at least one dot before the final .tmp).
+        if tmp.name.count(".") < 2:
+            continue
+        try:
+            if tmp.stat().st_mtime >= cutoff:
+                continue
+            size = tmp.stat().st_size
+            tmp.unlink()
+            removed_files += 1
+            freed_bytes += size
+        except OSError as err:
+            logger.debug("Failed to remove stale tmp %s: %s", tmp, err)
+    return {"removed_files": removed_files, "freed_bytes": freed_bytes}
 
 
 def promote_orphan_tmp_file(dest: Path) -> bool:
@@ -323,13 +365,27 @@ def replace_path_with_retries(
 
     # Rename refused (NFS/SELinux/EXDEV/etc.): copy bytes then remove src.
     try:
-        logger.warning(
-            "os.replace failed for %s -> %s (%s errno=%s); using copy fallback",
-            src,
-            dest,
-            last_err,
-            getattr(last_err, "errno", None) if last_err else None,
-        )
+        parent_key = str(dest.parent)
+        errno_val = getattr(last_err, "errno", None) if last_err else None
+        if parent_key not in _REPLACE_FALLBACK_WARNED_DIRS:
+            _REPLACE_FALLBACK_WARNED_DIRS.add(parent_key)
+            logger.warning(
+                "os.replace failed for %s -> %s (%s errno=%s); using copy fallback "
+                "(further failures under %s logged at DEBUG)",
+                src,
+                dest,
+                last_err,
+                errno_val,
+                dest.parent,
+            )
+        else:
+            logger.debug(
+                "os.replace failed for %s -> %s (%s errno=%s); using copy fallback",
+                src,
+                dest,
+                last_err,
+                errno_val,
+            )
         _copy_replace(src, dest)
         return
     except OSError as copy_err:
