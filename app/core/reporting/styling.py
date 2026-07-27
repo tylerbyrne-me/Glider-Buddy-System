@@ -134,6 +134,16 @@ def build_paragraph_styles() -> dict[str, ParagraphStyle]:
         spaceBefore=4,
         spaceAfter=4,
     )
+    styles["Heading3"] = ParagraphStyle(
+        name="Heading3",
+        parent=base["Heading3"],
+        fontName=font,
+        fontSize=11,
+        leading=13,
+        textColor=COLOR_BODY,
+        spaceBefore=2,
+        spaceAfter=3,
+    )
     styles["Body"] = ParagraphStyle(
         name="Body",
         parent=base["Normal"],

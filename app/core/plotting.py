@@ -1376,6 +1376,8 @@ def plot_telemetry_page_with_notes(
     fig,
     df: pd.DataFrame,
     note_annotations: Optional[List[Dict[str, Any]]] = None,
+    *,
+    color_by: str = "sog",
 ) -> None:
     """Render the full-page telemetry-track report on `fig`.
 
@@ -1389,6 +1391,9 @@ def plot_telemetry_page_with_notes(
 
     ETOPO 2022 bathymetry depth contours (when enabled) are streamed for the
     map bbox via ERDDAP griddap and drawn under the track.
+
+    ``color_by`` selects the track color scale: ``"sog"`` (Wave Glider default,
+    0–4 kt cmocean speed) or ``"depth"`` (Slocum, cmocean deep).
 
     Mission notes are NOT rendered on this page — the PDF report pipeline
     renders a separate mission-notes section. The map only shows lettered markers.
@@ -1445,23 +1450,57 @@ def plot_telemetry_page_with_notes(
     _setup_report_map(map_ax, padded_extent)
     _add_report_bathymetry_contours(map_ax, padded_extent)
 
-    norm = mcolors.Normalize(vmin=0, vmax=4)
-    cmap = cmo.speed
-    sog = telemetry_speed_over_ground_series(df_clean)
-    color_values = sog if sog is not None and sog.notna().any() else "tab:blue"
+    resolved_color_by = (color_by or "sog").strip().lower()
+    if resolved_color_by == "depth":
+        depth_col = None
+        for candidate in ("depth", "Depth", "MDepth"):
+            if candidate in df_clean.columns:
+                depth_col = candidate
+                break
+        depth_series = (
+            pd.to_numeric(df_clean[depth_col], errors="coerce") if depth_col else None
+        )
+        if depth_series is not None and depth_series.notna().any():
+            vmin = float(depth_series.min())
+            vmax = float(depth_series.max())
+            if vmax <= vmin:
+                vmax = vmin + 1.0
+            norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+            cmap = cmo.deep
+            color_values = depth_series
+            colorbar_label = "Depth (m)"
+        else:
+            norm = None
+            cmap = None
+            color_values = "tab:blue"
+            colorbar_label = None
+    else:
+        norm = mcolors.Normalize(vmin=0, vmax=4)
+        cmap = cmo.speed
+        sog = telemetry_speed_over_ground_series(df_clean)
+        color_values = sog if sog is not None and sog.notna().any() else "tab:blue"
+        colorbar_label = "Speed Over Ground (knots)" if not isinstance(color_values, str) else None
+
+    scatter_kwargs: Dict[str, Any] = {
+        "s": 20,
+        "linewidths": 0,
+        "edgecolors": "none",
+        "transform": ccrs.PlateCarree(),
+    }
+    if not isinstance(color_values, str):
+        scatter_kwargs["c"] = color_values
+        scatter_kwargs["cmap"] = cmap
+        scatter_kwargs["norm"] = norm
+    else:
+        scatter_kwargs["c"] = color_values
     scatter = map_ax.scatter(
         df_clean['longitude'],
         df_clean['latitude'],
-        c=color_values,
-        cmap=cmap,
-        norm=norm,
-        s=20,
-        linewidths=0,
-        edgecolors="none",
-        transform=ccrs.PlateCarree(),
+        **scatter_kwargs,
     )
-    cbar = fig.colorbar(scatter, ax=map_ax, orientation='vertical', shrink=0.92, pad=0.05)
-    cbar.set_label('Speed Over Ground (knots)')
+    if colorbar_label is not None:
+        cbar = fig.colorbar(scatter, ax=map_ax, orientation='vertical', shrink=0.92, pad=0.05)
+        cbar.set_label(colorbar_label)
 
     _annotate_track_start_end(map_ax, df_clean)
     _annotate_note_markers(map_ax, annotations)

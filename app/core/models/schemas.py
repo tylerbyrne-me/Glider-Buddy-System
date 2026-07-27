@@ -773,6 +773,18 @@ class ScheduledJob(BaseModel):
     platform: JobPlatformEnum = Field(
         description="Platform/category: wave_glider, slocum, or system."
     )
+    last_run_time: Optional[datetime] = Field(
+        default=None,
+        description="When the latest run outcome was recorded (UTC).",
+    )
+    last_outcome: Optional[str] = Field(
+        default=None,
+        description="Latest run outcome: success|partial|failed|skipped|error.",
+    )
+    last_message: Optional[str] = Field(
+        default=None,
+        description="Short summary of the latest run (counts, skip reason, error).",
+    )
 
 
 # ============================================================================

@@ -43,7 +43,12 @@ def _format_trigger(trigger) -> models.JobTriggerInfo:
 @router.get("/scheduler/jobs", response_model=List[models.ScheduledJob], summary="Get Status of Scheduled Jobs")
 async def get_scheduler_jobs():
     """Retrieves a list of all jobs currently scheduled in APScheduler."""
-    from ..core.infra.scheduler import get_scheduler, resolve_job_platform
+    from ..core.infra.scheduler import (
+        derive_job_status,
+        get_job_outcome,
+        get_scheduler,
+        resolve_job_platform,
+    )
     try:
         scheduler = get_scheduler()
     except RuntimeError:
@@ -56,9 +61,26 @@ async def get_scheduler_jobs():
     now_utc = datetime.now(timezone.utc)
 
     for job in scheduler.get_jobs():
-        status = models.JobStatusEnum.OK
-        if job.next_run_time and job.next_run_time < now_utc:
-            status = models.JobStatusEnum.OVERDUE
+        outcome = get_job_outcome(job.id)
+        status = derive_job_status(
+            next_run_time=job.next_run_time,
+            now=now_utc,
+            outcome=outcome,
+        )
+        last_run_time = None
+        last_outcome = None
+        last_message = None
+        if outcome is not None:
+            last_outcome = outcome.outcome
+            last_message = outcome.message
+            if outcome.run_at:
+                text = outcome.run_at
+                if text.endswith("Z"):
+                    text = text[:-1] + "+00:00"
+                try:
+                    last_run_time = datetime.fromisoformat(text)
+                except ValueError:
+                    last_run_time = None
 
         job_info = models.ScheduledJob(
             id=job.id,
@@ -68,6 +90,9 @@ async def get_scheduler_jobs():
             next_run_time=job.next_run_time,
             status=status,
             platform=resolve_job_platform(job.id),
+            last_run_time=last_run_time,
+            last_outcome=last_outcome,
+            last_message=last_message,
         )
         jobs_list.append(job_info)
     return jobs_list

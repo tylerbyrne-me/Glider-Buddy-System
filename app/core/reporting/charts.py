@@ -65,10 +65,16 @@ def chart_telemetry_image(
     max_width_pt: float,
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
+    color_by: str = "sog",
 ) -> Image:
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(8.27, 11.69))
-        plot_telemetry_page_with_notes(fig, telemetry_df, note_annotations=note_annotations or [])
+        plot_telemetry_page_with_notes(
+            fig,
+            telemetry_df,
+            note_annotations=note_annotations or [],
+            color_by=color_by,
+        )
     return _fig_to_image(fig, dpi=dpi, max_width_pt=max_width_pt, max_height_pt=max_height_pt)
 
 

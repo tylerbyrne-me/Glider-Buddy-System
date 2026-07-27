@@ -45,7 +45,20 @@ class FormItemTypeEnum(str, Enum):
 
 class JobStatusEnum(str, Enum):
     OK = "ok"
+    WARNING = "warning"
+    FAILED = "failed"
     OVERDUE = "overdue"
+    NEVER_RUN = "never_run"
+
+
+class JobRunOutcomeEnum(str, Enum):
+    """Last-run outcome reported by a job or APScheduler listener."""
+
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+    ERROR = "error"
 
 
 class JobPlatformEnum(str, Enum):

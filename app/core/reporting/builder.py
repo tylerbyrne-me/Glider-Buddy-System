@@ -343,40 +343,55 @@ def _calculate_error_summary(df: pd.DataFrame) -> dict:
     return summary
 
 
-def _normalize_note_event_time(note: models.MissionNote) -> datetime:
-    parsed_prefix_time = utils.parse_mission_note_datetime_prefix(note.content)
-    event_time = parsed_prefix_time or note.created_at_utc
+def _normalize_note_event_time(note: Any) -> datetime:
+    content = getattr(note, "content", None) or ""
+    parsed_prefix_time = utils.parse_mission_note_datetime_prefix(content)
+    event_time = parsed_prefix_time or getattr(note, "created_at_utc", None)
+    if event_time is None:
+        return datetime.now(timezone.utc)
     if event_time.tzinfo is None or event_time.tzinfo.utcoffset(event_time) is None:
         return event_time.replace(tzinfo=timezone.utc)
     return event_time.astimezone(timezone.utc)
 
 
 def _build_mission_note_annotations(
-    mission_notes: List[models.MissionNote],
+    mission_notes: Sequence[Any],
     telemetry_df_filtered: pd.DataFrame,
     start_date: Optional[date] = None,
     end_date: Optional[date] = None,
     start_utc: Optional[datetime] = None,
     end_utc_exclusive: Optional[datetime] = None,
     max_annotations: int = 24,
+    *,
+    time_col: str = "lastLocationFix",
+    lat_col: str = "latitude",
+    lon_col: str = "longitude",
 ) -> List[Dict[str, Any]]:
+    """Snap report-flagged notes to nearest track fixes for map letter markers.
+
+    Notes may be ``MissionNote`` or ``SlocumDeploymentNote`` (duck-typed). Track frames
+    may use Wave Glider columns (``lastLocationFix`` / ``latitude`` / ``longitude``) or
+    aliases via ``time_col`` / ``lat_col`` / ``lon_col``.
+    """
     if not mission_notes or telemetry_df_filtered.empty:
         return []
-    if "lastLocationFix" not in telemetry_df_filtered.columns:
+    if time_col not in telemetry_df_filtered.columns:
         return []
-    telemetry_points = telemetry_df_filtered.dropna(subset=["lastLocationFix", "latitude", "longitude"]).copy()
+    if lat_col not in telemetry_df_filtered.columns or lon_col not in telemetry_df_filtered.columns:
+        return []
+    telemetry_points = telemetry_df_filtered.dropna(subset=[time_col, lat_col, lon_col]).copy()
     telemetry_points = drop_null_island_rows(
-        telemetry_points, lat_col="latitude", lon_col="longitude"
+        telemetry_points, lat_col=lat_col, lon_col=lon_col
     )
     if telemetry_points.empty:
         return []
-    telemetry_points["lastLocationFix"] = utils.parse_timestamp_column(
-        telemetry_points["lastLocationFix"], errors="coerce", utc=True
+    telemetry_points[time_col] = utils.parse_timestamp_column(
+        telemetry_points[time_col], errors="coerce", utc=True
     )
-    telemetry_points = telemetry_points.dropna(subset=["lastLocationFix"])
+    telemetry_points = telemetry_points.dropna(subset=[time_col])
     if telemetry_points.empty:
         return []
-    telemetry_points = telemetry_points.sort_values("lastLocationFix")
+    telemetry_points = telemetry_points.sort_values(time_col)
     report_start_utc = _utc_lower_bound(start_date, start_utc)
     report_end_utc = _utc_upper_exclusive(end_date, end_utc_exclusive)
     annotations: List[Dict[str, Any]] = []
@@ -388,22 +403,22 @@ def _build_mission_note_annotations(
             continue
         if report_end_utc and event_time >= report_end_utc:
             continue
-        time_deltas = (telemetry_points["lastLocationFix"] - event_time).abs()
+        time_deltas = (telemetry_points[time_col] - event_time).abs()
         nearest_idx = time_deltas.idxmin()
         nearest_point = telemetry_points.loc[nearest_idx]
-        note_text = utils.strip_mission_note_datetime_prefix(note.content)
+        note_text = utils.strip_mission_note_datetime_prefix(getattr(note, "content", "") or "")
         if not note_text:
-            note_text = note.content
+            note_text = getattr(note, "content", "") or ""
         note_text = note_text.strip()
         annotations.append(
             {
-                "note_id": note.id,
-                "latitude": float(nearest_point["latitude"]),
-                "longitude": float(nearest_point["longitude"]),
+                "note_id": getattr(note, "id", None),
+                "latitude": float(nearest_point[lat_col]),
+                "longitude": float(nearest_point[lon_col]),
                 "event_time": event_time,
-                "matched_telemetry_time": nearest_point["lastLocationFix"],
+                "matched_telemetry_time": nearest_point[time_col],
                 "full_note_text": note_text,
-                "created_by_username": note.created_by_username,
+                "created_by_username": getattr(note, "created_by_username", None) or "",
             }
         )
     annotations.sort(key=lambda item: item["event_time"])
@@ -415,6 +430,34 @@ def _build_mission_note_annotations(
         )
         annotations = annotations[-max_annotations:]
     return annotations
+
+
+def build_mission_note_annotations(
+    mission_notes: Sequence[Any],
+    telemetry_df_filtered: pd.DataFrame,
+    start_date: Optional[date] = None,
+    end_date: Optional[date] = None,
+    start_utc: Optional[datetime] = None,
+    end_utc_exclusive: Optional[datetime] = None,
+    max_annotations: int = 24,
+    *,
+    time_col: str = "lastLocationFix",
+    lat_col: str = "latitude",
+    lon_col: str = "longitude",
+) -> List[Dict[str, Any]]:
+    """Public alias for note→track annotation building (Wave Glider + Slocum)."""
+    return _build_mission_note_annotations(
+        mission_notes,
+        telemetry_df_filtered,
+        start_date=start_date,
+        end_date=end_date,
+        start_utc=start_utc,
+        end_utc_exclusive=end_utc_exclusive,
+        max_annotations=max_annotations,
+        time_col=time_col,
+        lat_col=lat_col,
+        lon_col=lon_col,
+    )
 
 
 def _field_pairs(fields: List[tuple]) -> List[Tuple[str, str]]:
@@ -647,6 +690,13 @@ def _load_instrument_blocks(
     ]
 
 
+def load_instrument_blocks(
+    session: SQLModelSession, mission_id: str
+) -> List[Tuple[str, List[Dict[str, Any]]]]:
+    """Public alias for Sensor Tracker instrument inventory tables."""
+    return _load_instrument_blocks(session, mission_id)
+
+
 def _offload_log_event_utc(log: models.OffloadLog) -> Optional[datetime]:
     raw = log.offload_end_time_utc or log.offload_start_time_utc or log.log_timestamp_utc
     if raw is None:
@@ -705,7 +755,7 @@ def _mission_blocks_from_deployment(
     *,
     mission_id: str,
     sensor_tracker_deployment: Optional[models.SensorTrackerDeployment],
-    mission_goals: Optional[List[models.MissionGoal]],
+    mission_goals: Optional[Sequence[Any]],
     vehicle_name: Optional[str],
     source_path: Optional[str],
 ) -> List[Tuple[str, List[Tuple[str, str]]]]:
@@ -801,6 +851,29 @@ def _mission_blocks_from_deployment(
             ),
         ),
     ]
+
+
+def mission_blocks_from_deployment(
+    *,
+    mission_id: str,
+    sensor_tracker_deployment: Optional[models.SensorTrackerDeployment],
+    mission_goals: Optional[Sequence[Any]],
+    vehicle_name: Optional[str],
+    source_path: Optional[str],
+) -> List[Tuple[str, List[Tuple[str, str]]]]:
+    """Public alias for Sensor Tracker mission-details field blocks."""
+    return _mission_blocks_from_deployment(
+        mission_id=mission_id,
+        sensor_tracker_deployment=sensor_tracker_deployment,
+        mission_goals=mission_goals,
+        vehicle_name=vehicle_name,
+        source_path=source_path,
+    )
+
+
+def calculate_telemetry_summary(df: pd.DataFrame) -> dict:
+    """Public alias for report-period track distance / SOG summary."""
+    return _calculate_telemetry_summary(df)
 
 
 def _append_landscape_sections(

@@ -109,7 +109,8 @@ from .core.fluorometer_channels import (
 )
 from .core.auth.security import create_access_token, verify_password
 from .core.infra.db import SQLModelSession, get_db_session, sqlite_engine
-from .core.infra.scheduler import set_scheduler
+from .core.infra.scheduler import attach_job_listeners, record_job_outcome, set_scheduler
+from .core.models.enums import JobRunOutcomeEnum
 from .core.infra.startup_leader import try_acquire_startup_leader, is_startup_leader
 from .forms.form_definitions import get_static_form_schema # Import the new function
 from .routers import station_metadata, auth as auth_router
@@ -1231,6 +1232,7 @@ async def refresh_active_mission_cache():
     Smart background cache refresh that only refreshes stale data for active users.
     Uses data-type specific cache strategies and incremental loading.
     """
+    job_id = "wave_glider_active_mission_refresh_job"
     logger.info(
         "BACKGROUND TASK: Starting smart cache refresh for active real-time missions."
     )
@@ -1240,6 +1242,7 @@ async def refresh_active_mission_cache():
     if not active_users:
         logger.info("BACKGROUND TASK: No active users found. Skipping cache refresh.")
         mission_usage_logger.info("BACKGROUND_REFRESH: No active users found. Skipping cache refresh.")
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active users")
         return
     
     logger.info(f"BACKGROUND TASK: Found {len(active_users)} active users: {active_users}")
@@ -1281,6 +1284,11 @@ async def refresh_active_mission_cache():
     # Final check: ensure we have valid missions to refresh
     if not filtered_missions:
         logger.info("BACKGROUND TASK: No valid active real-time missions configured. Skipping cache refresh.")
+        record_job_outcome(
+            "wave_glider_active_mission_refresh_job",
+            JobRunOutcomeEnum.SKIPPED,
+            "No valid active real-time missions",
+        )
         return
     
     active_missions = filtered_missions
@@ -1409,6 +1417,11 @@ async def refresh_active_mission_cache():
             )
     
     logger.info("BACKGROUND TASK: Smart cache refresh completed.")
+    record_job_outcome(
+        "wave_glider_active_mission_refresh_job",
+        JobRunOutcomeEnum.SUCCESS,
+        f"Refreshed cache for {len(active_missions)} mission(s)",
+    )
 
 
 async def smart_background_refresh():
@@ -1476,61 +1489,100 @@ async def smart_background_refresh():
 # --- Automated Weekly Report Generation Task ---
 async def run_weekly_reports_job():
     """Scheduled job to generate a standard weekly report for all active missions."""
+    job_id = "wave_glider_weekly_report_job"
     logger.info("AUTOMATED: Kicking off weekly report generation for all active missions.")
-    with SQLModelSession(sqlite_engine) as session:
-        active_missions = [mission_id.strip() for mission_id in settings.active_realtime_missions if mission_id and mission_id.strip()]
-        if not active_missions:
-            logger.info("AUTOMATED: No active missions configured. Skipping weekly report generation.")
-            return
+    try:
+        with SQLModelSession(sqlite_engine) as session:
+            active_missions = [mission_id.strip() for mission_id in settings.active_realtime_missions if mission_id and mission_id.strip()]
+            if not active_missions:
+                logger.info("AUTOMATED: No active missions configured. Skipping weekly report generation.")
+                record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active missions configured")
+                return
 
-        logger.info("AUTOMATED: Weekly report mission queue: %s", active_missions)
-        for mission_id in active_missions:
-            # The helper function is async and handles its own exceptions/logging
-            from .core.reporting import create_and_save_weekly_report
-            await create_and_save_weekly_report(mission_id, session)
+            logger.info("AUTOMATED: Weekly report mission queue: %s", active_missions)
+            for mission_id in active_missions:
+                # The helper function is async and handles its own exceptions/logging
+                from .core.reporting import create_and_save_weekly_report
+                await create_and_save_weekly_report(mission_id, session)
 
-    logger.info("AUTOMATED: Weekly report generation job finished for %s missions.", len(active_missions))
+        logger.info("AUTOMATED: Weekly report generation job finished for %s missions.", len(active_missions))
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            f"Finished for {len(active_missions)} mission(s)",
+        )
+    except Exception as exc:
+        logger.error("AUTOMATED: Weekly report generation failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_slocum_warm_cache_job():
     """Scheduled job to warm Slocum ERDDAP caches for active datasets."""
+    job_id = "slocum_warm_cache_job"
     if not feature_toggles.is_feature_enabled("slocum_platform"):
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
     from .core.slocum_cache_service import warm_active_slocum_datasets
 
     try:
         warmed = await warm_active_slocum_datasets()
         logger.info("AUTOMATED: Slocum warm cache finished for %s datasets.", warmed)
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            f"Warmed {warmed} dataset(s)",
+            counts={"warmed": warmed},
+        )
     except Exception as exc:
         logger.error("AUTOMATED: Slocum warm cache failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_slocum_weekly_reports_job():
     """Scheduled job to generate weekly Slocum PDF reports for active datasets."""
+    job_id = "slocum_weekly_report_job"
     if not feature_toggles.is_feature_enabled("slocum_platform"):
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
     from .core.reporting.slocum_reports import create_and_save_slocum_weekly_report
 
-    dataset_ids = [d.strip() for d in settings.active_slocum_datasets if d and d.strip()]
-    if not dataset_ids:
-        logger.info("AUTOMATED: No active Slocum datasets configured. Skipping weekly reports.")
-        return
-    logger.info("AUTOMATED: Slocum weekly report queue: %s", dataset_ids)
-    with SQLModelSession(sqlite_engine) as session:
-        for dataset_id in dataset_ids:
-            await create_and_save_slocum_weekly_report(dataset_id, session)
-    logger.info("AUTOMATED: Slocum weekly report job finished for %s datasets.", len(dataset_ids))
+    try:
+        dataset_ids = [d.strip() for d in settings.active_slocum_datasets if d and d.strip()]
+        if not dataset_ids:
+            logger.info("AUTOMATED: No active Slocum datasets configured. Skipping weekly reports.")
+            record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active Slocum datasets")
+            return
+        logger.info("AUTOMATED: Slocum weekly report queue: %s", dataset_ids)
+        with SQLModelSession(sqlite_engine) as session:
+            for dataset_id in dataset_ids:
+                await create_and_save_slocum_weekly_report(dataset_id, session)
+        logger.info("AUTOMATED: Slocum weekly report job finished for %s datasets.", len(dataset_ids))
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            f"Finished for {len(dataset_ids)} dataset(s)",
+        )
+    except Exception as exc:
+        logger.error("AUTOMATED: Slocum weekly report job failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_weather_map_prefetch_job():
     """Scheduled job to prefetch Open-Meteo weather map cache for the home-page wind overlay."""
+    job_id = "system_weather_map_prefetch_job"
     logger.info("AUTOMATED: Prefetching Open-Meteo weather map cache...")
     try:
         from .core.geo.weather_map_cache import prefetch_union_bbox_cache
         summary = await prefetch_union_bbox_cache()
         logger.info("AUTOMATED: Weather map prefetch finished: %s", summary)
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            str(summary) if summary is not None else "Prefetch finished",
+        )
     except Exception as exc:
         logger.error("AUTOMATED: Weather map prefetch failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_weather_map_cleanup_job():
@@ -1538,6 +1590,7 @@ async def run_weather_map_cleanup_job():
 
     Runs even when weather_map_layers is disabled so stranded disk cache is reclaimed.
     """
+    job_id = "system_weather_map_cleanup_job"
     logger.info("AUTOMATED: Cleaning Open-Meteo weather map cache...")
     try:
         from .core.geo.weather_map_cache import run_weather_map_cleanup
@@ -1548,24 +1601,39 @@ async def run_weather_map_cleanup_job():
             summary.get("removed_files"),
             summary.get("freed_bytes"),
         )
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            f"removed={summary.get('removed_files')} freed_bytes={summary.get('freed_bytes')}",
+            counts=summary if isinstance(summary, dict) else None,
+        )
     except Exception as exc:
         logger.error("AUTOMATED: Weather map cleanup failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_iridium_tle_prefetch_job():
     """Leader job: refresh CelesTrak Iridium-E TLEs when stale (disk TTL / rate gate)."""
+    job_id = "system_iridium_tle_prefetch_job"
     logger.info("AUTOMATED: Prefetching Iridium TLE cache...")
     try:
         from .core.geo.iridium_tle_cache import prefetch_iridium_tles
 
         summary = await prefetch_iridium_tles()
         logger.info("AUTOMATED: Iridium TLE prefetch finished: %s", summary)
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            str(summary) if summary is not None else "Prefetch finished",
+        )
     except Exception as exc:
         logger.error("AUTOMATED: Iridium TLE prefetch failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_iridium_tle_cleanup_job():
     """Leader job: purge stranded/old Iridium TLE cache (runs even if feature disabled)."""
+    job_id = "system_iridium_tle_cleanup_job"
     logger.info("AUTOMATED: Cleaning Iridium TLE cache...")
     try:
         from .core.geo.iridium_tle_cache import run_iridium_tle_cleanup
@@ -1576,8 +1644,15 @@ async def run_iridium_tle_cleanup_job():
             summary.get("removed_files"),
             summary.get("freed_bytes"),
         )
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            f"removed={summary.get('removed_files')} freed_bytes={summary.get('freed_bytes')}",
+            counts=summary if isinstance(summary, dict) else None,
+        )
     except Exception as exc:
         logger.error("AUTOMATED: Iridium TLE cleanup failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_bathy_cache_cleanup_job():
@@ -1585,6 +1660,7 @@ async def run_bathy_cache_cleanup_job():
 
     Runs even when report_bathymetry_contours is disabled so stranded disk cache is reclaimed.
     """
+    job_id = "system_bathy_cache_cleanup_job"
     logger.info("AUTOMATED: Cleaning bathymetry disk cache...")
     try:
         from .core.geo.bathymetry import run_bathy_cache_cleanup
@@ -1595,13 +1671,22 @@ async def run_bathy_cache_cleanup_job():
             summary.get("removed_files"),
             summary.get("freed_bytes"),
         )
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            f"removed={summary.get('removed_files')} freed_bytes={summary.get('freed_bytes')}",
+            counts=summary if isinstance(summary, dict) else None,
+        )
     except Exception as exc:
         logger.error("AUTOMATED: Bathymetry cache cleanup failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_slocum_overage_cleanup_job():
     """Leader job: purge expired Slocum overage entries, enforce quota, remove orphan mirrors."""
+    job_id = "slocum_overage_cleanup_job"
     if not feature_toggles.is_feature_enabled("slocum_platform"):
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
     try:
         from .core.slocum_overage_cache import purge_overage_entries
@@ -1620,13 +1705,25 @@ async def run_slocum_overage_cleanup_job():
                 orphan_summary.get("removed_dirs"),
                 orphan_summary.get("freed_bytes"),
             )
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            (
+                f"removed={summary.get('removed_files')} "
+                f"freed_bytes={summary.get('freed_bytes')} "
+                f"orphan_dirs={orphan_summary.get('removed_dirs', 0)}"
+            ),
+        )
     except Exception as exc:
         logger.error("AUTOMATED: Slocum overage cleanup failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_sfmc_cache_refresh_job():
     """Leader job: refresh SFMC checklist snapshots for active Slocum deployments."""
+    job_id = "slocum_sfmc_cache_refresh_job"
     if not feature_toggles.is_feature_enabled("slocum_platform"):
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
     try:
         from .core.sfmc_cache_service import refresh_all_active_sfmc_snapshots
@@ -1634,6 +1731,7 @@ async def run_sfmc_cache_refresh_job():
 
         if not sfmc_is_configured():
             logger.debug("AUTOMATED: SFMC cache refresh skipped (not configured)")
+            record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "SFMC not configured")
             return
 
         with SQLModelSession(sqlite_engine) as session:
@@ -1644,8 +1742,19 @@ async def run_sfmc_cache_refresh_job():
             summary.get("succeeded"),
             summary.get("failed"),
         )
+        attempted = int(summary.get("attempted") or 0)
+        succeeded = int(summary.get("succeeded") or 0)
+        failed = int(summary.get("failed") or 0)
+        msg = f"attempted={attempted} succeeded={succeeded} failed={failed}"
+        if failed and succeeded:
+            record_job_outcome(job_id, JobRunOutcomeEnum.PARTIAL, msg, counts=summary)
+        elif failed:
+            record_job_outcome(job_id, JobRunOutcomeEnum.FAILED, msg, counts=summary)
+        else:
+            record_job_outcome(job_id, JobRunOutcomeEnum.SUCCESS, msg, counts=summary)
     except Exception as exc:
         logger.error("AUTOMATED: SFMC cache refresh failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
 async def run_slocum_auto_checklist_submit_job():
@@ -1655,9 +1764,14 @@ async def run_slocum_auto_checklist_submit_job():
     Uses ERDDAP autofill + cached SFMC only. Staggers missions to avoid stalling
     the leader worker when multiple active datasets need submissions.
     """
+    job_id = "slocum_auto_checklist_submit_job"
     if not feature_toggles.is_feature_enabled("slocum_platform"):
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
     if not feature_toggles.is_feature_enabled("slocum_auto_checklist_submit"):
+        record_job_outcome(
+            job_id, JobRunOutcomeEnum.SKIPPED, "slocum_auto_checklist_submit disabled"
+        )
         return
 
     from .core.slocum_checklist_submit_service import auto_submit_checklist_for_dataset
@@ -1670,6 +1784,7 @@ async def run_slocum_auto_checklist_submit_job():
     ]
     if not dataset_ids:
         logger.info("AUTOMATED: No active Slocum datasets for auto checklist submit.")
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active Slocum datasets")
         return
 
     stagger_seconds = max(
@@ -1706,12 +1821,15 @@ async def run_slocum_auto_checklist_submit_job():
                 )
             if did_submit and remaining_after > 0 and stagger_seconds > 0:
                 await asyncio.sleep(stagger_seconds)
-    logger.info(
-        "AUTOMATED: Slocum auto checklist finished (submitted=%s, skipped=%s, failed=%s)",
-        submitted,
-        skipped,
-        failed,
-    )
+    msg = f"submitted={submitted} skipped={skipped} failed={failed}"
+    logger.info("AUTOMATED: Slocum auto checklist finished (%s)", msg)
+    counts = {"submitted": submitted, "skipped": skipped, "failed": failed}
+    if failed and (submitted or skipped):
+        record_job_outcome(job_id, JobRunOutcomeEnum.PARTIAL, msg, counts=counts)
+    elif failed:
+        record_job_outcome(job_id, JobRunOutcomeEnum.FAILED, msg, counts=counts)
+    else:
+        record_job_outcome(job_id, JobRunOutcomeEnum.SUCCESS, msg, counts=counts)
 
 
 # --- FastAPI Lifecycle Events for Scheduler ---
@@ -1952,6 +2070,7 @@ async def startup_event():
         scheduler.start()
         _scheduler_started_by_this_worker = True
         set_scheduler(scheduler)
+        attach_job_listeners(scheduler)
         logger.info("APScheduler started for minimal background cache refresh.")
     else:
         logger.info(

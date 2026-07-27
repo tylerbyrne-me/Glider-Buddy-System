@@ -208,7 +208,7 @@ def build_instruments_page(
     return out
 
 
-def _mission_goal_meta_line(goal: models.MissionGoal) -> str:
+def _mission_goal_meta_line(goal: Any) -> str:
     """One-line meta for GoalCard (time + user), aligned with mission note cards."""
     if goal.is_completed:
         ts_raw = goal.completed_at_utc or goal.created_at_utc
@@ -226,6 +226,85 @@ def _mission_goal_meta_line(goal: models.MissionGoal) -> str:
         ts = ts_raw if ts_raw.tzinfo else ts_raw.replace(tzinfo=timezone.utc)
         tstr = ts.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
     return f"Created {tstr}"
+
+
+def build_slocum_summary(
+    *,
+    period_label: str,
+    telemetry_summary: dict,
+    depth_summary: Optional[dict] = None,
+    battery_summary: Optional[dict] = None,
+    ctd_summary: Optional[dict] = None,
+    mission_goals: Optional[Sequence[Any]] = None,
+    show_period_banner: bool = True,
+) -> List[Any]:
+    """Slocum weekly summary KPIs + GoalCards (platform-specific, not Wave Glider power/weather)."""
+    styles = build_paragraph_styles()
+    out: List[Any] = []
+    if show_period_banner:
+        out.append(DataPeriodBanner(period_label, styles))
+        out.append(Spacer(1, 8))
+
+    out.append(Paragraph("Navigation and vehicle", styles["Heading2"]))
+    kpis: List[KPI] = [
+        KPI("Distance (period)", f"{telemetry_summary.get('total_distance_km', 0.0):.2f}", "km"),
+    ]
+
+    def _stat_block(title: str, d: Optional[dict], unit: str) -> List[KPI]:
+        if not d:
+            return []
+        items: List[KPI] = []
+        if "avg" in d:
+            items.append(KPI(f"{title} avg", f"{d['avg']:.2f}", unit))
+        if "min" in d:
+            items.append(KPI(f"{title} min", f"{d['min']:.2f}", unit))
+        if "max" in d:
+            items.append(KPI(f"{title} max", f"{d['max']:.2f}", unit))
+        return items
+
+    kpis.extend(_stat_block("Depth", depth_summary, "m"))
+    kpis.extend(_stat_block("Battery", battery_summary, "V"))
+    out.append(kpi_row_table(kpis[:12], styles))
+    out.append(Spacer(1, 12))
+
+    ocean: List[KPI] = []
+    ctd = ctd_summary or {}
+    wt = ctd.get("Temperature") or ctd.get("WaterTemperature")
+    if wt:
+        ocean.extend(_stat_block("Water temp", wt, "°C"))
+    sal = ctd.get("Salinity")
+    if sal:
+        ocean.extend(_stat_block("Salinity", sal, "PSU"))
+    dens = ctd.get("Density")
+    if dens:
+        ocean.extend(_stat_block("Density", dens, "kg/m³"))
+    if ocean:
+        out.append(Paragraph("Oceanographic (CTD)", styles["Heading2"]))
+        out.append(kpi_row_table(ocean, styles))
+        out.append(Spacer(1, 8))
+
+    if mission_goals:
+        out.append(Spacer(1, 8))
+        out.append(Paragraph("Mission goals", styles["Heading2"]))
+        out.append(
+            Paragraph(
+                "Open goals show an empty ring; completed goals show a green checkmark.",
+                styles["Caption"],
+            )
+        )
+        out.append(Spacer(1, 8))
+        for g in mission_goals:
+            out.append(
+                GoalCard(
+                    is_completed=bool(g.is_completed),
+                    meta_line=_mission_goal_meta_line(g),
+                    body=g.description or "",
+                    styles=styles,
+                )
+            )
+            out.append(Spacer(1, 10))
+
+    return out
 
 
 def _power_trend(
@@ -511,6 +590,7 @@ def build_telemetry_section(
     section_title: str = "Telemetry",
     compact: bool = False,
     keep_together: bool = True,
+    color_by: str = "sog",
 ) -> List[Any]:
     if telemetry_df.empty or "lastLocationFix" not in telemetry_df.columns:
         return []
@@ -535,12 +615,12 @@ def build_telemetry_section(
         f"Report-period track distance ~{report_distance_km:.2f} km (from telemetry fixes)."
     )
     out.append(DataPeriodBanner(banner, styles))
-    out.append(
-        Paragraph(
-            "Speed over ground is shown on a 0–4 kt scale (cmocean · speed).",
-            styles["Caption"],
-        )
-    )
+    resolved_color_by = (color_by or "sog").strip().lower()
+    if resolved_color_by == "depth":
+        color_caption = "Track points are colored by measured depth (cmocean · deep)."
+    else:
+        color_caption = "Speed over ground is shown on a 0–4 kt scale (cmocean · speed)."
+    out.append(Paragraph(color_caption, styles["Caption"]))
     out.append(Spacer(1, 6))
     # Shallow-copy dicts so matplotlib's assign_note_letters does not mutate the
     # builder's list before build_mission_notes_section runs assign again for PDF.
@@ -550,6 +630,7 @@ def build_telemetry_section(
         chart_annotations,
         max_width_pt=_pw(),
         max_height_pt=_telemetry_chart_max_height_pt(compact=compact),
+        color_by=resolved_color_by,
     )
     out.append(img)
     if keep_together and len(out) > 1:
