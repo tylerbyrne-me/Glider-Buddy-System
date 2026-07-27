@@ -6,7 +6,7 @@ This service ensures local storage is kept up-to-date with remote data.
 """
 
 import logging
-import shutil
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, Tuple, List
@@ -15,6 +15,7 @@ import pandas as pd
 
 from ..config import settings
 from .data import loaders
+from .utils import replace_path_with_retries, unique_sibling_tmp_path
 
 logger = logging.getLogger(__name__)
 
@@ -118,29 +119,39 @@ async def sync_mission_file(
                 )
         
         if should_sync:
-            # Write to temporary file first (atomic operation)
-            temp_file_path = local_file_path.with_suffix('.tmp')
-            temp_file_path.write_text(response.text, encoding='utf-8')
-            
-            # Validate the file can be parsed as CSV
+            # Unique sibling temp + replace (copy fallback on NFS/SELinux).
+            temp_file_path = unique_sibling_tmp_path(local_file_path)
             try:
-                pd.read_csv(temp_file_path, nrows=1)  # Quick validation
-            except pd.errors.ParserError as e:
-                logger.error(f"Downloaded file for {report_type} ({mission_id}) is not valid CSV: {e}")
-                temp_file_path.unlink()
-                return False, None
-            
-            # Atomic rename (replaces existing file)
-            temp_file_path.replace(local_file_path)
-            
+                temp_file_path.write_text(response.text, encoding="utf-8")
+
+                # Validate the file can be parsed as CSV
+                try:
+                    pd.read_csv(temp_file_path, nrows=1)  # Quick validation
+                except pd.errors.ParserError as e:
+                    logger.error(
+                        f"Downloaded file for {report_type} ({mission_id}) is not valid CSV: {e}"
+                    )
+                    return False, None
+
+                replace_path_with_retries(temp_file_path, local_file_path)
+            except Exception:
+                try:
+                    if temp_file_path.is_file():
+                        temp_file_path.unlink()
+                except OSError:
+                    pass
+                raise
+
             # Update file modification time to match remote
             if remote_mtime:
                 try:
-                    import os
-                    os.utime(local_file_path, (remote_mtime.timestamp(), remote_mtime.timestamp()))
+                    os.utime(
+                        local_file_path,
+                        (remote_mtime.timestamp(), remote_mtime.timestamp()),
+                    )
                 except OSError:
                     pass  # Not critical if we can't set mtime
-            
+
             logger.debug(
                 f"Synced {report_type} for {mission_id}: {len(response.text)} bytes "
                 f"(remote mtime: {remote_mtime})"
@@ -148,7 +159,7 @@ async def sync_mission_file(
             return True, remote_mtime
         else:
             return True, local_mtime  # Already up-to-date
-        
+
     except httpx.HTTPStatusError as e:
         if e.response.status_code == 404:
             logger.debug(f"File not found on remote: {remote_url} (mission may not exist)")
