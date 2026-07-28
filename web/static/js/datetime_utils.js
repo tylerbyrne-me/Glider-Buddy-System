@@ -21,15 +21,19 @@ const UTC_DATE_FORMATTER = new Intl.DateTimeFormat('en-GB', {
     day: '2-digit'
 });
 
-function toUtcDate(value) {
-    if (!value) return null;
+/**
+ * Parse any timestamp-like value as UTC and return a Date, or null if invalid.
+ * Bare ISO strings without a timezone suffix are treated as UTC (Z appended).
+ */
+export function toUtcDate(value) {
+    if (value == null || value === '') return null;
     const date = parseUtcTimestamp(value);
-    if (Number.isNaN(date.getTime())) return null;
+    if (!date || Number.isNaN(date.getTime())) return null;
     return date;
 }
 
 export function parseUtcTimestamp(value) {
-    if (!value) return null;
+    if (value == null || value === '') return null;
     if (value instanceof Date) return new Date(value.getTime());
     if (typeof value === 'number') return new Date(value);
     if (typeof value !== 'string') return new Date(value);
@@ -37,8 +41,12 @@ export function parseUtcTimestamp(value) {
     const trimmedValue = value.trim();
     if (!trimmedValue) return null;
 
-    const isTimezoneMissing = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(trimmedValue);
-    const normalizedValue = isTimezoneMissing ? `${trimmedValue}Z` : trimmedValue;
+    // Treat timezone-less ISO (and space-separated) as UTC wall clock.
+    // Allow optional fractional seconds.
+    const isTimezoneMissing = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(trimmedValue);
+    const normalizedValue = isTimezoneMissing
+        ? `${trimmedValue.replace(' ', 'T')}Z`
+        : trimmedValue;
     return new Date(normalizedValue);
 }
 
@@ -58,19 +66,38 @@ export function formatUtcDate(value) {
     return `${values.year}-${values.month}-${values.day}`;
 }
 
+/**
+ * Parse a UTC datetime input string (text or former datetime-local value).
+ * Accepts YYYY-MM-DDTHH:mm with optional seconds and optional Z suffix.
+ */
 export function parseDatetimeLocalAsUtc(value) {
     if (!value) return null;
-    const trimmedValue = value.trim();
+    const trimmedValue = String(value).trim();
     if (!trimmedValue) return null;
-    const utcDate = new Date(`${trimmedValue}Z`);
+
+    // Strip trailing Z so we can re-append consistently; also accept space separator.
+    const withoutZ = trimmedValue.replace(/Z$/i, '').replace(' ', 'T');
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/.test(withoutZ)) {
+        // Fall back to general UTC parser for full ISO with offset.
+        return toUtcDate(trimmedValue);
+    }
+    const utcDate = new Date(`${withoutZ}Z`);
     if (Number.isNaN(utcDate.getTime())) return null;
     return utcDate;
 }
 
-export function datetimeLocalToUtcIso(value) {
+/**
+ * Convert a UTC datetime input to an ISO 8601 string with Z suffix.
+ */
+export function utcDatetimeInputToIso(value) {
     const utcDate = parseDatetimeLocalAsUtc(value);
     if (!utcDate) return null;
     return utcDate.toISOString();
+}
+
+/** @deprecated Prefer utcDatetimeInputToIso; kept as alias for existing call sites. */
+export function datetimeLocalToUtcIso(value) {
+    return utcDatetimeInputToIso(value);
 }
 
 export function findNearestTimeIndexUtc(timeValues, nowDate = new Date()) {

@@ -258,11 +258,24 @@ def _generate_mini_trend(
 
                 df_to_format = df_resampled.reset_index().dropna(subset=[metric_col])
 
-        return [
-            {"Timestamp": row["Timestamp"].isoformat(), "value": row[metric_col]}
-            for _, row in df_to_format.iterrows()
-            if pd.notna(row["Timestamp"]) and pd.notna(row[metric_col])
-        ]
+        points: List[Dict[str, Any]] = []
+        for _, row in df_to_format.iterrows():
+            if pd.isna(row["Timestamp"]) or pd.isna(row[metric_col]):
+                continue
+            try:
+                ts = pd.to_datetime(row["Timestamp"], utc=True)
+                if pd.isna(ts):
+                    continue
+                numeric_value = float(row[metric_col])
+                if not math.isfinite(numeric_value):
+                    continue
+                points.append({
+                    "Timestamp": ts.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "value": numeric_value,
+                })
+            except (TypeError, ValueError, OverflowError):
+                continue
+        return points
     except Exception as e:
         logger.warning(f"Error generating {trend_name} mini-trend: {e}", exc_info=True)
         return []

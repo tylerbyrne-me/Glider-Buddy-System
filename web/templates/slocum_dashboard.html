@@ -360,14 +360,8 @@
       <div class="card mb-3" id="slocumSharedChartToolbar" style="display: none;">
         <div class="card-body py-2">
           <div id="slocumChartControls" class="d-flex flex-wrap align-items-center gap-2">
-            <div class="input-group input-group-sm" style="width: 200px;">
-              <label class="input-group-text" for="start-date-slocum" title="Start date and time for data visualization.">From</label>
-              <input type="datetime-local" class="form-control date-range-input" id="start-date-slocum" data-report-type="slocum">
-            </div>
-            <div class="input-group input-group-sm" style="width: 200px;">
-              <label class="input-group-text" for="end-date-slocum" title="End date and time for data visualization.">To</label>
-              <input type="datetime-local" class="form-control date-range-input" id="end-date-slocum" data-report-type="slocum">
-            </div>
+            {% from "_utc_datetime_range_inputs.html" import utc_datetime_range_inputs %}
+            {{ utc_datetime_range_inputs('start-date-slocum', 'end-date-slocum', 'slocum') }}
             <button class="btn btn-outline-secondary btn-sm" id="clear-date-slocum" title="Clear date range and return to hours mode" style="display: none;">
               <i class="fas fa-times"></i> Clear
             </button>
@@ -445,10 +439,7 @@
       </div>
       {% endif %}
 
-      {% from "_chart_plot_controls.html" import chart_plot_controls %}
-      {% macro slocum_chart_controls(canvas_id, show_depth=true) -%}
-      {{ chart_plot_controls(canvas_id, show_depth=show_depth, show_reset_zoom=true) }}
-      {%- endmacro %}
+      {% from "_chart_plot_controls.html" import time_series_chart_block %}
 
       {% if "power" in (slocum_enabled_sensor_cards or []) %}
       <div class="category-detail-view card mb-4" id="detail-power" style="display: none;">
@@ -458,25 +449,13 @@
           </div>
           <div class="card-body">
             <h5 class="mt-2">Battery Voltage (V)</h5>
-            {{ slocum_chart_controls('slocumPowerBatteryChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumPowerBatterySpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumPowerBatteryChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumPowerBatteryChart', show_depth=true, height='280px', spinner_id='slocumPowerBatterySpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Coulomb AmpHr — Daily Consumption &amp; Total</h5>
-            {{ slocum_chart_controls('slocumPowerCoulombChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumPowerCoulombSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumPowerCoulombChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumPowerCoulombChart', show_depth=true, height='280px', spinner_id='slocumPowerCoulombSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">BMS Currents (A)</h5>
-            {{ slocum_chart_controls('slocumPowerBmsChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumPowerBmsSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumPowerBmsChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumPowerBmsChart', show_depth=true, height='280px', spinner_id='slocumPowerBmsSpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumPowerLastDataFooter">
             {% if power_info and power_info.latest_timestamp_str and power_info.latest_timestamp_str != "N/A" %}
@@ -497,25 +476,13 @@
           </div>
           <div class="card-body">
             <h5 class="mt-2">Pitch — Measured vs Commanded (°)</h5>
-            {{ slocum_chart_controls('slocumFlightPitchChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumFlightPitchSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumFlightPitchChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumFlightPitchChart', show_depth=true, height='280px', spinner_id='slocumFlightPitchSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Roll — Measured vs Commanded (°)</h5>
-            {{ slocum_chart_controls('slocumFlightRollChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumFlightRollSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumFlightRollChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumFlightRollChart', show_depth=true, height='280px', spinner_id='slocumFlightRollSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Fin — Measured vs Commanded (°)</h5>
-            {{ slocum_chart_controls('slocumFlightFinChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumFlightFinSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumFlightFinChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumFlightFinChart', show_depth=true, height='280px', spinner_id='slocumFlightFinSpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumFlightLastDataFooter">
             {% if flight_info and flight_info.latest_timestamp_str and flight_info.latest_timestamp_str != "N/A" %}
@@ -536,39 +503,19 @@
           </div>
           <div class="card-body">
             <h5 class="mt-2">Heading — Measured vs Commanded (°)</h5>
-            {{ slocum_chart_controls('slocumNavHeadingChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumNavHeadingSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumNavHeadingChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumNavHeadingChart', show_depth=true, height='280px', spinner_id='slocumNavHeadingSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Depth Rate — Ascent / Descent (m/s)</h5>
-            {{ slocum_chart_controls('slocumNavDepthRateChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumNavDepthRateSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumNavDepthRateChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumNavDepthRateChart', show_depth=true, height='280px', spinner_id='slocumNavDepthRateSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Depth &amp; Altimeter Water Depth (m)</h5>
-            {{ slocum_chart_controls('slocumNavDepthChart', show_depth=false) }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumNavDepthSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumNavDepthChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumNavDepthChart', show_depth=false, height='280px', spinner_id='slocumNavDepthSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Speed Over Ground (m/s)</h5>
-            {{ slocum_chart_controls('slocumNavSpeedChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumNavSpeedSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumNavSpeedChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumNavSpeedChart', show_depth=true, height='280px', spinner_id='slocumNavSpeedSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Depth-Averaged Currents (m/s)</h5>
-            {{ slocum_chart_controls('slocumNavCurrentChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumNavCurrentSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumNavCurrentChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumNavCurrentChart', show_depth=true, height='280px', spinner_id='slocumNavCurrentSpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumNavigationLastDataFooter">
             {% if navigation_info and navigation_info.latest_timestamp_str and navigation_info.latest_timestamp_str != "N/A" %}
@@ -589,26 +536,14 @@
           </div>
           <div class="card-body">
             <h5 class="mt-2">Vacuum (inHg)</h5>
-            {{ slocum_chart_controls('slocumHealthVacuumChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumHealthVacuumSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumHealthVacuumChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumHealthVacuumChart', show_depth=true, height='280px', spinner_id='slocumHealthVacuumSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Leak Detect Voltage (V)</h5>
-            {{ slocum_chart_controls('slocumHealthLeakChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumHealthLeakSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumHealthLeakChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumHealthLeakChart', show_depth=true, height='280px', spinner_id='slocumHealthLeakSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Surface Call Length (Connection Duration)</h5>
             <p class="text-muted small mb-2" id="slocumHealthSfmcNote" style="display: none;">SFMC connection durations are unavailable (not configured or not yet cached).</p>
-            {{ slocum_chart_controls('slocumHealthCallChart') }}
-            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumHealthCallSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
-              <canvas id="slocumHealthCallChart"></canvas>
-            </div>
+            {{ time_series_chart_block('slocumHealthCallChart', show_depth=true, height='280px', spinner_id='slocumHealthCallSpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumVehicleHealthLastDataFooter">
             {% if vehicle_health_info and vehicle_health_info.latest_timestamp_str and vehicle_health_info.latest_timestamp_str != "N/A" %}

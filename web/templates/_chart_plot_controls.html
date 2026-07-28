@@ -1,8 +1,9 @@
 {# Shared per-chart plot controls: style, optional depth overlay, reset zoom.
    Usage:
-     {% from "_chart_plot_controls.html" import chart_plot_controls %}
+     {% from "_chart_plot_controls.html" import chart_plot_controls, time_series_chart_block %}
      {{ chart_plot_controls('myCanvasId') }}
      {{ chart_plot_controls('myCanvasId', show_depth=false) }}
+     {{ time_series_chart_block('myCanvasId', show_depth=false) }}
 #}
 {% macro chart_plot_controls(canvas_id, show_depth=true, show_reset_zoom=true) %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-1 chart-plot-opts" data-canvas-id="{{ canvas_id }}">
@@ -23,5 +24,17 @@
   {% if show_reset_zoom %}
   <button type="button" class="btn btn-outline-secondary btn-sm chart-reset-zoom" data-canvas-id="{{ canvas_id }}" title="Reset chart zoom to the full loaded window">Reset zoom</button>
   {% endif %}
+</div>
+{% endmacro %}
+
+{# Controls + standard spinner/canvas block for declarative time-series charts.
+   Optional spinner_id for Slocum (showProfileSpinner / hideProfileSpinner). #}
+{% macro time_series_chart_block(canvas_id, show_depth=false, height='300px', spinner_id=none) %}
+{{ chart_plot_controls(canvas_id, show_depth=show_depth, show_reset_zoom=true) }}
+<div class="chart-container" style="position: relative; height: {{ height }}; width: 100%;">
+  <div class="chart-spinner spinner-border text-light" role="status" style="display: none;"{% if spinner_id %} id="{{ spinner_id }}"{% endif %}>
+    <span class="visually-hidden">Loading...</span>
+  </div>
+  <canvas id="{{ canvas_id }}"></canvas>
 </div>
 {% endmacro %}

@@ -1,0 +1,25 @@
+{# Chart date-range From/To inputs. Values are wall-clock UTC (no browser timezone conversion). #}
+{% macro utc_datetime_range_inputs(start_id, end_id, report_type, width='200px', group_class='') -%}
+<div class="input-group input-group-sm {{ group_class }}" style="width: {{ width }};">
+  <label class="input-group-text" for="{{ start_id }}" title="Start date and time (UTC) for data visualization.">From</label>
+  <input
+    type="datetime-local"
+    class="form-control date-range-input"
+    id="{{ start_id }}"
+    data-report-type="{{ report_type }}"
+    aria-label="UTC start datetime"
+    title="UTC. Enter the UTC date and time (YYYY-MM-DD HH:mm)."
+  >
+</div>
+<div class="input-group input-group-sm {{ group_class }}" style="width: {{ width }};">
+  <label class="input-group-text" for="{{ end_id }}" title="End date and time (UTC) for data visualization.">To</label>
+  <input
+    type="datetime-local"
+    class="form-control date-range-input"
+    id="{{ end_id }}"
+    data-report-type="{{ report_type }}"
+    aria-label="UTC end datetime"
+    title="UTC. Enter the UTC date and time (YYYY-MM-DD HH:mm)."
+  >
+</div>
+{%- endmacro %}

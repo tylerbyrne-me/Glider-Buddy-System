@@ -15,7 +15,8 @@
 {% endblock %}
 
 {% block content %}
-{% from "_chart_plot_controls.html" import chart_plot_controls %}
+{% from "_chart_plot_controls.html" import chart_plot_controls, time_series_chart_block %}
+{% from "_utc_datetime_range_inputs.html" import utc_datetime_range_inputs %}
   {# The main content of index.html starts here. The body padding for fixed-top navbar is handled by base.html #}
   <div class="modal fade" id="dataSourceModal" tabindex="-1" aria-labelledby="dataSourceModalLabel" aria-hidden="true">
     <div class="modal-dialog">
@@ -1007,15 +1008,8 @@
           <div class="card-header d-flex justify-content-between align-items-center">
             <h2 class="mb-0">{{ mission }} - Navigation</h2>
             <div class="d-flex align-items-center">
-              <!-- Date range controls -->
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="start-date-telemetry" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-telemetry" data-report-type="telemetry">
-              </div>
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="end-date-telemetry" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-telemetry" data-report-type="telemetry">
-              </div>
+              <!-- Date range controls (UTC) -->
+              {{ utc_datetime_range_inputs('start-date-telemetry', 'end-date-telemetry', 'telemetry', group_class='me-2') }}
               <button class="btn btn-outline-secondary btn-sm me-2" id="clear-date-telemetry" title="Clear date range and return to hours mode" style="display: none;">
                 <i class="fas fa-times"></i> Clear
               </button>
@@ -1109,33 +1103,15 @@
               {% endif %}
             </div>
             <h5 class="mt-3">Navigation Trends</h5>
-            {{ chart_plot_controls('telemetryChart', show_depth=false) }}
-            <div class="chart-container" style="position: relative; height: 300px; width: 100%">
-              <div class="chart-spinner spinner-border text-light" role="status">
-                <span class="visually-hidden">Loading...</span>
-              </div>
-              <canvas id="telemetryChart"></canvas>
-            </div>
+            {{ time_series_chart_block('telemetryChart', show_depth=false) }}
             <!-- New Ocean Current Chart -->
             <hr class="my-4">
             <h5 class="mt-3">Ocean Current & SOG</h5>
-            {{ chart_plot_controls('telemetryCurrentChart', show_depth=false) }}
-            <div class="chart-container" style="position: relative; height: 300px; width: 100%">
-              <div class="chart-spinner spinner-border text-light" role="status">
-                <span class="visually-hidden">Loading...</span>
-              </div>
-              <canvas id="telemetryCurrentChart"></canvas>
-            </div>
+            {{ time_series_chart_block('telemetryCurrentChart', show_depth=false) }}
             <!-- New Heading Difference Chart -->
             <hr class="my-4">
             <h5 class="mt-3">Sub Heading Difference & Ocean Current</h5>
-            {{ chart_plot_controls('telemetryHeadingDiffChart', show_depth=false) }}
-            <div class="chart-container" style="position: relative; height: 300px; width: 100%">
-              <div class="chart-spinner spinner-border text-light" role="status">
-                <span class="visually-hidden">Loading...</span>
-              </div>
-              <canvas id="telemetryHeadingDiffChart"></canvas>
-            </div>
+            {{ time_series_chart_block('telemetryHeadingDiffChart', show_depth=false) }}
           </div>
            <div class="card-footer text-muted small">
             {% if navigation_info and navigation_info.latest_timestamp_str != "N/A" %}
@@ -1153,15 +1129,8 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="mb-0">{{ mission }} - Power</h2>
             <div class="d-flex align-items-center">
-              <!-- Date range controls -->
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="start-date-power" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-power" data-report-type="power">
-              </div>
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="end-date-power" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-power" data-report-type="power">
-              </div>
+              <!-- Date range controls (UTC) -->
+              {{ utc_datetime_range_inputs('start-date-power', 'end-date-power', 'power', group_class='me-2') }}
               <button class="btn btn-outline-secondary btn-sm me-2" id="clear-date-power" title="Clear date range and return to hours mode" style="display: none;">
                 <i class="fas fa-times"></i> Clear
               </button>
@@ -1263,23 +1232,11 @@
             {% endif %}
           </div>
           <h5 class="mt-3">Power Trends</h5>
-          {{ chart_plot_controls('powerChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="powerChart"></canvas>
-          </div>
+          {{ time_series_chart_block('powerChart', show_depth=false) }}
           <!-- New Solar Panel Chart -->
           <hr class="my-4">
           <h5 class="mt-3">Individual Solar Panel Power</h5>
-          {{ chart_plot_controls('solarPanelChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="solarPanelChart"></canvas>
-          </div>
+          {{ time_series_chart_block('solarPanelChart', show_depth=false) }}
         </div>
          <div class="card-footer text-muted small">
           <!-- Ensure this footer content is not affecting the main body height for alignment -->
@@ -1298,15 +1255,8 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="mb-0">{{ mission }} - CTD</h2>
             <div class="d-flex align-items-center">
-              <!-- Date range controls -->
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="start-date-ctd" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-ctd" data-report-type="ctd">
-              </div>
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="end-date-ctd" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-ctd" data-report-type="ctd">
-              </div>
+              <!-- Date range controls (UTC) -->
+              {{ utc_datetime_range_inputs('start-date-ctd', 'end-date-ctd', 'ctd', group_class='me-2') }}
               <button class="btn btn-outline-secondary btn-sm me-2" id="clear-date-ctd" title="Clear date range and return to hours mode" style="display: none;">
                 <i class="fas fa-times"></i> Clear
               </button>
@@ -1385,23 +1335,11 @@
             {% endif %}
           </div>
           <h5 class="mt-3">CTD Trends</h5>
-          {{ chart_plot_controls('ctdChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="ctdChart"></canvas>
-          </div>
+          {{ time_series_chart_block('ctdChart', show_depth=false) }}
           <!-- New CTD Profile Chart -->
           <hr class="my-4">
           <h5 class="mt-3">CTD Profile Aux</h5>
-          {{ chart_plot_controls('ctdProfileChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="ctdProfileChart"></canvas>
-          </div>
+          {{ time_series_chart_block('ctdProfileChart', show_depth=false) }}
         </div>
          <div class="card-footer text-muted small">
           {% if ctd_info and ctd_info.latest_timestamp_str != "N/A" %}
@@ -1419,15 +1357,8 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="mb-0">{{ mission }} - Weather Sensor</h2>
             <div class="d-flex align-items-center">
-              <!-- Date range controls -->
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="start-date-weather" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-weather" data-report-type="weather">
-              </div>
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="end-date-weather" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-weather" data-report-type="weather">
-              </div>
+              <!-- Date range controls (UTC) -->
+              {{ utc_datetime_range_inputs('start-date-weather', 'end-date-weather', 'weather', group_class='me-2') }}
               <button class="btn btn-outline-secondary btn-sm me-2" id="clear-date-weather" title="Clear date range and return to hours mode" style="display: none;">
                 <i class="fas fa-times"></i> Clear
               </button>
@@ -1518,13 +1449,7 @@
             {% endif %}
           </div>
           <h5 class="mt-3">Weather Sensor Trends</h5>
-          {{ chart_plot_controls('weatherSensorChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="weatherSensorChart"></canvas>
-          </div>
+          {{ time_series_chart_block('weatherSensorChart', show_depth=false) }}
           <!-- Weather Forecast Embedded -->
           <hr class="my-4"> <!-- Add a visual separator -->
           <h4 class="mb-3">Weather Forecast</h4>
@@ -1562,15 +1487,8 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="mb-0">{{ mission }} - Wave</h2>
             <div class="d-flex align-items-center">
-              <!-- Date range controls -->
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="start-date-waves" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-waves" data-report-type="waves">
-              </div>
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="end-date-waves" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-waves" data-report-type="waves">
-              </div>
+              <!-- Date range controls (UTC) -->
+              {{ utc_datetime_range_inputs('start-date-waves', 'end-date-waves', 'waves', group_class='me-2') }}
               <button class="btn btn-outline-secondary btn-sm me-2" id="clear-date-waves" title="Clear date range and return to hours mode" style="display: none;">
                 <i class="fas fa-times"></i> Clear
               </button>
@@ -1663,29 +1581,17 @@
             {% endif %}
           </div>
           <h5 class="mt-3">Wave Trends</h5>
-          {{ chart_plot_controls('waveChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="waveChart"></canvas>
-          </div>
+          {{ time_series_chart_block('waveChart', show_depth=false) }}
           <!-- New Wave Chart: Height vs Direction -->
           <hr class="my-4">
           <h5 class="mt-3">Wave Height & Direction</h5>
-          {{ chart_plot_controls('waveHeightDirectionChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="waveHeightDirectionChart"></canvas>
-          </div>
+          {{ time_series_chart_block('waveHeightDirectionChart', show_depth=false) }}
 
           <!-- New Wave Spectrum Chart -->
           <hr class="my-4">
           <h5 class="mt-3">Latest Wave Energy Spectrum (E(f))</h5>
           <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
+            <div class="chart-spinner spinner-border text-light" role="status" style="display: none;">
               <span class="visually-hidden">Loading...</span>
             </div>
             <canvas id="waveSpectrumChart"></canvas> <!-- Ensure this ID is present -->
@@ -1739,15 +1645,8 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="mb-0">{{ mission }} - VR2C-MRx Acoustic Receiver</h2>
             <div class="d-flex align-items-center">
-              <!-- Date range controls -->
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="start-date-vr2c" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-vr2c" data-report-type="vr2c">
-              </div>
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="end-date-vr2c" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-vr2c" data-report-type="vr2c">
-              </div>
+              <!-- Date range controls (UTC) -->
+              {{ utc_datetime_range_inputs('start-date-vr2c', 'end-date-vr2c', 'vr2c', group_class='me-2') }}
               <button class="btn btn-outline-secondary btn-sm me-2" id="clear-date-vr2c" title="Clear date range and return to hours mode" style="display: none;">
                 <i class="fas fa-times"></i> Clear
               </button>
@@ -1804,13 +1703,7 @@
             {% endif %}
           </div>
           <h5 class="mt-3">VR2C Trends</h5>
-          {{ chart_plot_controls('vr2cChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="vr2cChart"></canvas>
-          </div>
+          {{ time_series_chart_block('vr2cChart', show_depth=false) }}
         </div>
         <div class="card-footer text-muted small">
           {% if vr2c_info and vr2c_info.latest_timestamp_str != "N/A" %}
@@ -1828,15 +1721,8 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="mb-0">{{ mission }} - C3 Fluorometer</h2>
             <div class="d-flex align-items-center">
-              <!-- Date range controls -->
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="start-date-fluorometer" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-fluorometer" data-report-type="fluorometer">
-              </div>
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="end-date-fluorometer" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-fluorometer" data-report-type="fluorometer">
-              </div>
+              <!-- Date range controls (UTC) -->
+              {{ utc_datetime_range_inputs('start-date-fluorometer', 'end-date-fluorometer', 'fluorometer', group_class='me-2') }}
               <button class="btn btn-outline-secondary btn-sm me-2" id="clear-date-fluorometer" title="Clear date range and return to hours mode" style="display: none;">
                 <i class="fas fa-times"></i> Clear
               </button>
@@ -1902,13 +1788,7 @@
             {% endif %}
           </div>
           <h5 class="mt-3">Fluorometer Trends</h5>
-          {{ chart_plot_controls('fluorometerChart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="fluorometerChart"></canvas>
-          </div>
+          {{ time_series_chart_block('fluorometerChart', show_depth=false) }}
         </div>
         <div class="card-footer text-muted small">
           {% if fluorometer_info and fluorometer_info.latest_timestamp_str != "N/A" %}
@@ -1926,15 +1806,8 @@
         <div class="card-header d-flex justify-content-between align-items-center">
           <h2 class="mb-0">{{ mission }} - WG-VM4 Sensor</h2>
             <div class="d-flex align-items-center">
-              <!-- Date range controls -->
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="start-date-wg_vm4" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-wg_vm4" data-report-type="wg_vm4">
-              </div>
-              <div class="input-group input-group-sm me-2" style="width: 200px;">
-                <label class="input-group-text" for="end-date-wg_vm4" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-wg_vm4" data-report-type="wg_vm4">
-              </div>
+              <!-- Date range controls (UTC) -->
+              {{ utc_datetime_range_inputs('start-date-wg_vm4', 'end-date-wg_vm4', 'wg_vm4', group_class='me-2') }}
               <button class="btn btn-outline-secondary btn-sm me-2" id="clear-date-wg_vm4" title="Clear date range and return to hours mode" style="display: none;">
                 <i class="fas fa-times"></i> Clear
               </button>
@@ -2033,13 +1906,7 @@
           <div id="offloadSubmissionStatus" class="mt-3"></div>
 
           <h5 class="mt-3">WG-VM4 Trends</h5>
-          {{ chart_plot_controls('wgVm4Chart', show_depth=false) }}
-          <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-            <div class="chart-spinner spinner-border text-light" role="status">
-              <span class="visually-hidden">Loading...</span>
-            </div>
-            <canvas id="wgVm4Chart"></canvas>
-          </div>
+          {{ time_series_chart_block('wgVm4Chart', show_depth=false) }}
         </div>
         <div class="card-footer text-muted small">
           {% if wg_vm4_info and wg_vm4_info.latest_timestamp_str != "N/A" %}

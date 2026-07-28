@@ -2,6 +2,11 @@
  * Shared left-nav summary-card mini-trend sparklines (Wave Glider + Slocum).
  * Expects Chart.js + chartjs-adapter-date-fns on the page.
  */
+import { toUtcDate } from '/static/js/datetime_utils.js';
+import { registerForceUtcTimeDisplayPlugin } from '/static/js/chart_utc_utils.js';
+
+registerForceUtcTimeDisplayPlugin();
+
 const MINI_CHART_COLORS = {
     POWER_SOLAR: 'rgba(255, 159, 64, 1)',
     CTD_TEMP: 'rgba(0, 191, 255, 1)',
@@ -79,10 +84,14 @@ export function renderMiniChart(canvasId, trendData, chartColor = getDefaultMini
 
     if (!trendData || trendData.length === 0) return;
 
-    const dataPoints = trendData.map((item) => ({
-        x: new Date(item.Timestamp),
-        y: item.value,
-    }));
+    const dataPoints = trendData
+        .map((item) => ({
+            x: toUtcDate(item.Timestamp),
+            y: item.value,
+        }))
+        .filter((point) => point.x != null);
+
+    if (!dataPoints.length) return;
 
     let yMin = Infinity;
     let yMax = -Infinity;
@@ -147,6 +156,7 @@ export function renderMiniChart(canvasId, trendData, chartColor = getDefaultMini
  * @param {string} [rootSelector='#left-nav-panel']
  */
 export function initializeMiniCharts(rootSelector = '#left-nav-panel') {
+    registerForceUtcTimeDisplayPlugin();
     const defaultColor = getDefaultMiniChartLineColor();
     const root = document.querySelector(rootSelector) || document;
     const summaryCards = root.querySelectorAll('.summary-card');

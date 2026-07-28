@@ -4,11 +4,18 @@
  */
 import { apiRequest, showToast } from '/static/js/api.js';
 import { checkAuth } from '/static/js/auth.js';
+import { formatUtcDateTime, toUtcDate } from '/static/js/datetime_utils.js';
+import {
+    buildUtcTimeScaleX,
+    registerForceUtcTimeDisplayPlugin,
+} from '/static/js/chart_utc_utils.js';
 import {
     applyTimeAxisZoom,
     bindResetZoomButton,
     CHART_ZOOM_HINT,
 } from '/static/js/chart_zoom_utils.js';
+
+registerForceUtcTimeDisplayPlugin();
 
 /** Mirror of backend CHECKLIST_PLOTTABLE_ITEMS keys — add entries there first. */
 const PLOTTABLE_ITEM_IDS = new Set([
@@ -22,6 +29,7 @@ const PLOTTABLE_ITEM_IDS = new Set([
 ]);
 
 document.addEventListener('DOMContentLoaded', async () => {
+    registerForceUtcTimeDisplayPlugin();
     if (!(await checkAuth())) return;
 
     const datasetId = document.body.dataset.datasetId;
@@ -122,14 +130,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         }
         if (!timestamp || !Array.isArray(depthPts) || !depthPts.length) return null;
-        const target = new Date(timestamp).getTime();
-        if (Number.isNaN(target)) return null;
+        const target = toUtcDate(timestamp)?.getTime();
+        if (target == null || Number.isNaN(target)) return null;
         let best = null;
         let bestDelta = Infinity;
         for (const pt of depthPts) {
             if (pt?.y == null || Number.isNaN(Number(pt.y))) continue;
-            const t = new Date(pt.x).getTime();
-            if (Number.isNaN(t)) continue;
+            const t = toUtcDate(pt.x)?.getTime();
+            if (t == null || Number.isNaN(t)) continue;
             const delta = Math.abs(t - target);
             if (delta < bestDelta) {
                 bestDelta = delta;
@@ -226,8 +234,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     function formatYYYYMMDD(isoOrDate) {
         if (isoOrDate == null || isoOrDate === '') return null;
-        const d = new Date(isoOrDate);
-        if (Number.isNaN(d.getTime())) return null;
+        const d = toUtcDate(isoOrDate);
+        if (!d) return null;
         const y = d.getUTCFullYear();
         const m = String(d.getUTCMonth() + 1).padStart(2, '0');
         const day = String(d.getUTCDate()).padStart(2, '0');
@@ -239,8 +247,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         for (const series of seriesList) {
             for (const pt of series || []) {
                 if (pt?.x == null) continue;
-                const t = new Date(pt.x).getTime();
-                if (!Number.isNaN(t)) times.push(t);
+                const t = toUtcDate(pt.x)?.getTime();
+                if (t != null && !Number.isNaN(t)) times.push(t);
             }
         }
         if (!times.length) return null;
@@ -288,9 +296,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             const label = payload.label || itemId;
             const unit = payload.unit || '';
             const commandedLabel = payload.commanded_label || null;
-            const depthPts = (payload.depth || []).map((p) => ({ x: p.t, y: p.v }));
-            const valuePts = (payload.values || []).map((p) => ({ x: p.t, y: p.v }));
-            const commandedPts = (payload.commanded || []).map((p) => ({ x: p.t, y: p.v }));
+            const depthPts = (payload.depth || [])
+                .map((p) => ({ x: toUtcDate(p.t), y: p.v }))
+                .filter((p) => p.x != null);
+            const valuePts = (payload.values || [])
+                .map((p) => ({ x: toUtcDate(p.t), y: p.v }))
+                .filter((p) => p.x != null);
+            const commandedPts = (payload.commanded || [])
+                .map((p) => ({ x: toUtcDate(p.t), y: p.v }))
+                .filter((p) => p.x != null);
             const windowLabel = dataWindowYYYYMMDD(depthPts, valuePts, commandedPts);
             const heading = buildPlotHeading({
                 vehicleName,
@@ -441,11 +455,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                         title(items) {
                             const ts = items?.[0]?.parsed?.x;
                             if (ts == null) return '';
-                            try {
-                                return new Date(ts).toISOString().replace('.000Z', 'Z');
-                            } catch {
-                                return String(items[0].label || '');
-                            }
+                            return formatUtcDateTime(ts);
                         },
                         label(ctx) {
                             const v = ctx.parsed?.y;
@@ -472,7 +482,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             },
             scales: {
                 x: {
-                    type: 'time',
+                    ...buildUtcTimeScaleX({
+                        tickColor: colors.muted,
+                        gridColor: colors.border,
+                        titleColor: colors.text,
+                        titleText: 'Time (UTC)',
+                    }),
                     title: {
                         display: true,
                         text: 'Time (UTC)',

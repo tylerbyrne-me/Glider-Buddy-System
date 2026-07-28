@@ -1,13 +1,17 @@
 /**
  * @file dashboard.js
- * @description Main dashboard with sensor data visualization
+ * @description Wave Glider dashboard: declarative time-series charts via
+ * WG_TIME_SERIES_CARD_CONFIGS + chart_time_series_utils (rows→series adapter).
+ * Spectrum / error doughnut / mini charts / forecasts stay imperative.
+ * ERDDAP follow-up: configs are serializable so they can move server-side later.
  */
 
 import { checkAuth, getUserProfile } from '/static/js/auth.js';
 import { apiRequest, fetchWithAuth, showToast } from '/static/js/api.js';
 import { renderPicHandoffDetails } from '/static/js/pic_handoff_details.js';
 import { initializeWgVm4OffloadSection } from '/static/js/wg_vm4.js';
-import { formatUtcDateTime, datetimeLocalToUtcIso, findNearestTimeIndexUtc } from '/static/js/datetime_utils.js';
+import { formatUtcDateTime, datetimeLocalToUtcIso, findNearestTimeIndexUtc, toUtcDate } from '/static/js/datetime_utils.js';
+import { registerForceUtcTimeDisplayPlugin } from '/static/js/chart_utc_utils.js';
 import { initializeMiniCharts } from '/static/js/mini_charts.js';
 import {
     applyTimeAxisZoom,
@@ -19,8 +23,26 @@ import {
     applyPlotStyleToDatasets,
     bindPlotStyleControls,
 } from '/static/js/chart_plot_style_utils.js';
+import {
+    rowsToSeries,
+    recordsToPoints,
+    seriesHasPlottableData,
+    drawNoDataOnCanvas,
+    resolveColor,
+    buildLinearScale,
+    buildTimeScaleX,
+} from '/static/js/chart_time_series_utils.js';
+import {
+    CHART_COLORS,
+    WG_TIME_SERIES_CARD_CONFIGS,
+    fieldsForSource,
+    findWgCategoryForCanvas,
+} from '/static/js/wg_chart_config.js';
+
+registerForceUtcTimeDisplayPlugin();
 
 document.addEventListener('DOMContentLoaded', async function() {
+    registerForceUtcTimeDisplayPlugin();
     // --- Authentication Check ---
     if (!await checkAuth()) {
         return; // Stop further execution if not authenticated and redirection is handled by checkAuth
@@ -37,33 +59,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Get enabled sensors from backend configuration
     const enabledSensorsStr = document.body.dataset.enabledSensors || '';
     const enabledSensors = enabledSensorsStr ? enabledSensorsStr.split(',') : [];
-
-    const UTC_TICK_FORMATTER = new Intl.DateTimeFormat('en-GB', {
-        timeZone: 'UTC',
-        month: 'short',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-    });
-
-    function fluorometerDatasetLabel(columnKey, fallbackText) {
-        const labels = window.FLUOROMETER_CHANNEL_LABELS || {};
-        const entry = labels[columnKey];
-        if (!entry || !entry.text) {
-            return fallbackText;
-        }
-        if (entry.subscript) {
-            return `${entry.text} (${entry.subscript})`;
-        }
-        return entry.text;
-    }
-
-    function formatUtcChartTick(value) {
-        const date = value instanceof Date ? value : new Date(value);
-        if (Number.isNaN(date.getTime())) return '';
-        return UTC_TICK_FORMATTER.format(date).replace(',', '');
-    }
 
     const DATA_LINEAGE_TOOLTIPS = {
         navigation: {
@@ -116,39 +111,6 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     applyDataLineageTooltipToElement('[data-tooltip-key="navigation.total_distance_traveled_mission"]', 'navigation.total_distance_traveled_mission');
     initializeDataLineageTooltips();
-
-    function ensureUtcTimeDisplayForChart(chart) {
-        if (!chart?.options?.scales) return;
-        Object.entries(chart.options.scales).forEach(([scaleId, scale]) => {
-            if (!scale || scale.type !== 'time') return;
-            if (!scale.ticks) scale.ticks = {};
-            scale.ticks.callback = (tickValue) => formatUtcChartTick(tickValue);
-        });
-
-        if (!chart.options.plugins) chart.options.plugins = {};
-        if (!chart.options.plugins.tooltip) chart.options.plugins.tooltip = {};
-        if (!chart.options.plugins.tooltip.callbacks) chart.options.plugins.tooltip.callbacks = {};
-
-        const existingTitleCallback = chart.options.plugins.tooltip.callbacks.title;
-        chart.options.plugins.tooltip.callbacks.title = (tooltipItems) => {
-            const firstPoint = tooltipItems && tooltipItems.length > 0 ? tooltipItems[0] : null;
-            if (!firstPoint || !firstPoint.parsed || firstPoint.parsed.x == null) return '';
-            const utcTitle = formatUtcDateTime(firstPoint.parsed.x);
-            return utcTitle || (existingTitleCallback ? existingTitleCallback(tooltipItems) : '');
-        };
-    }
-
-    if (typeof Chart !== 'undefined' && !Chart.registry.plugins.get('forceUtcTimeDisplay')) {
-        Chart.register({
-            id: 'forceUtcTimeDisplay',
-            beforeInit(chart) {
-                ensureUtcTimeDisplayForChart(chart);
-            },
-            beforeUpdate(chart) {
-                ensureUtcTimeDisplayForChart(chart);
-            },
-        });
-    }
     
     // Helper function to check if a sensor is enabled
     function isSensorEnabled(sensorName) {
@@ -949,38 +911,14 @@ document.addEventListener('DOMContentLoaded', async function() {
     loadMissionMedia();
     loadMissionOverview();
 
-    let powerChartInstance = null;
-    let ctdChartInstance = null;
-    let weatherSensorChartInstance = null;
-    let waveChartInstance = null;
-    let vr2cChartInstance = null;
-    let ctdProfileChartInstance = null; // Instance for the new CTD profile chart
-    let solarPanelChartInstance = null; // Instance for the new solar panel chart
-    let fluorometerChartInstance = null;
-    let wgVm4ChartInstance = null; // New WG-VM4 chart
-    let waveHeightDirectionChartInstance = null; // Keep this for Hs vs Dp
-    let waveSpectrumChartInstance = null; // Instance for the new Wave Spectrum chart
-    let telemetryChartInstance = null; // Instance for the new Telemetry chart
-    let navigationCurrentChartInstance = null; // Instance for Ocean Current chart
-    let navigationHeadingDiffChartInstance = null; // Instance for Heading Difference chart
 
+    // --- Declarative time-series charts ---
+    // Spectrum / doughnut stay imperative (waveSpectrumChartInstance below).
+    let waveSpectrumChartInstance = null;
     const WG_PLOT_STYLE_PREFIX = 'wgPlotStyle:';
     const chartInstancesByCanvasId = {};
-    const CANVAS_TO_REPORT_TYPE = {
-        powerChart: 'power',
-        solarPanelChart: 'power',
-        ctdChart: 'ctd',
-        ctdProfileChart: 'ctd',
-        weatherSensorChart: 'weather',
-        waveChart: 'waves',
-        waveHeightDirectionChart: 'waves',
-        vr2cChart: 'vr2c',
-        fluorometerChart: 'fluorometer',
-        wgVm4Chart: 'wg_vm4',
-        telemetryChart: 'telemetry',
-        telemetryCurrentChart: 'telemetry',
-        telemetryHeadingDiffChart: 'telemetry',
-    };
+    /** @type {Record<string, { generation: number, fetchInFlight: boolean, bySource: Record<string, object> }>} */
+    const wgSeriesCache = {};
 
     /**
      * Create a WG time-series Chart with shared plot-style + zoom applied.
@@ -1013,15 +951,185 @@ document.addEventListener('DOMContentLoaded', async function() {
         return chartInstancesByCanvasId[canvasId] || null;
     }
 
+    function resizeWgChartsInCategory(category) {
+        const key = category === 'telemetry' ? 'navigation' : category;
+        const cfg = WG_TIME_SERIES_CARD_CONFIGS[key];
+        if (!cfg) return;
+        for (const chart of cfg.charts || []) {
+            const instance = chartInstancesByCanvasId[chart.canvasId];
+            if (instance && typeof instance.resize === 'function') {
+                try { instance.resize(); } catch (_) { /* ignore */ }
+            }
+        }
+    }
+
+    function setCategoryChartSpinners(category, visible) {
+        const cfg = WG_TIME_SERIES_CARD_CONFIGS[category];
+        if (!cfg) return;
+        for (const chart of cfg.charts || []) {
+            const canvas = document.getElementById(chart.canvasId);
+            const spinner = canvas?.parentElement?.querySelector('.chart-spinner');
+            if (visible) showChartSpinner(spinner);
+            else hideChartSpinner(spinner);
+        }
+    }
+
+    function resolveSeriesLabel(spec) {
+        if (spec.labelKey) {
+            const labels = window.FLUOROMETER_CHANNEL_LABELS || {};
+            const entry = labels[spec.labelKey];
+            if (entry && entry.text) {
+                return entry.subscript ? `${entry.text} (${entry.subscript})` : entry.text;
+            }
+        }
+        return spec.label || spec.field;
+    }
+
+    /** Enrich telemetry rows with HeadingDiff before pivot (serializable config field). */
+    function enrichRowsForSource(category, source, rows) {
+        if (!Array.isArray(rows)) return rows || [];
+        if (category === 'navigation' && source === 'telemetry') {
+            return rows.map((row) => {
+                let headingDiff = null;
+                if (row.HeadingSubDegrees != null && row.DesiredBearingDegrees != null) {
+                    let diff = Number(row.HeadingSubDegrees) - Number(row.DesiredBearingDegrees);
+                    while (diff > 180) diff -= 360;
+                    while (diff < -180) diff += 360;
+                    headingDiff = Number.isFinite(diff) ? diff : null;
+                }
+                return { ...row, HeadingDiff: headingDiff };
+            });
+        }
+        return rows;
+    }
+
+    function reRenderWgCategoryFromCache(category) {
+        const cfg = WG_TIME_SERIES_CARD_CONFIGS[category];
+        const cached = wgSeriesCache[category];
+        if (!cfg || !cached || cached.fetchInFlight) return;
+        for (const chartCfg of cfg.charts || []) {
+            renderWgTimeSeriesChart(category, chartCfg, cached);
+        }
+    }
+
+    function renderWgTimeSeriesChart(category, chartCfg, cacheEntry) {
+        const canvas = document.getElementById(chartCfg.canvasId);
+        if (!canvas || typeof Chart === 'undefined') return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const datasets = [];
+        for (const spec of chartCfg.series || []) {
+            const seriesSource = spec.source || chartCfg.source;
+            const records = cacheEntry?.bySource?.[seriesSource]?.[spec.field];
+            if (!seriesHasPlottableData(records)) continue;
+            const points = recordsToPoints(records, { keepGaps: true });
+            const borderColor = resolveColor(CHART_COLORS, spec.color, spec.alpha);
+            datasets.push({
+                type: 'line',
+                label: resolveSeriesLabel(spec),
+                data: points,
+                borderColor,
+                backgroundColor: borderColor,
+                borderDash: spec.dashed ? [5, 5] : undefined,
+                yAxisID: spec.yAxisID || 'y',
+                tension: 0.1,
+                fill: false,
+            });
+        }
+
+        if (!datasets.length) {
+            clearWgChartInstance(chartCfg.canvasId);
+            drawNoDataOnCanvas(chartCfg.canvasId, chartCfg.noDataMessage || 'No data available');
+            return;
+        }
+
+        const scales = {
+            x: buildTimeScaleX({
+                tickColor: chartTextColor,
+                gridColor: chartGridColor,
+                titleColor: chartTextColor,
+                titleText: 'Time',
+            }),
+        };
+        for (const axis of chartCfg.yAxes || []) {
+            scales[axis.id] = buildLinearScale({
+                ...axis,
+                textColor: chartTextColor,
+                gridColor: chartGridColor,
+            });
+        }
+
+        createWgTimeSeriesChart(chartCfg.canvasId, ctx, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales,
+                plugins: {
+                    tooltip: { mode: 'index', intersect: false },
+                    legend: { position: 'top', labels: { color: chartTextColor } },
+                },
+            },
+        });
+    }
+
+    async function loadWgTimeSeriesCategory(category) {
+        const cfg = WG_TIME_SERIES_CARD_CONFIGS[category];
+        if (!cfg) return;
+        if (!isSensorEnabled(cfg.enabledSensor)) return;
+
+        const prev = wgSeriesCache[category] || { generation: 0, fetchInFlight: false, bySource: {} };
+        const generation = (prev.generation || 0) + 1;
+        wgSeriesCache[category] = { generation, fetchInFlight: true, bySource: prev.bySource || {} };
+        setCategoryChartSpinners(category, true);
+
+        try {
+            const sourceRows = await Promise.all(
+                (cfg.sources || []).map(async (source) => {
+                    const rows = await fetchChartData(source, missionId, { manageSpinner: false });
+                    return [source, enrichRowsForSource(category, source, rows)];
+                })
+            );
+
+            if (wgSeriesCache[category]?.generation !== generation) return;
+
+            const bySource = {};
+            for (const [source, rows] of sourceRows) {
+                const fields = fieldsForSource(cfg, source);
+                bySource[source] = rowsToSeries(rows, fields);
+            }
+            wgSeriesCache[category] = { generation, fetchInFlight: false, bySource };
+
+            for (const chartCfg of cfg.charts || []) {
+                renderWgTimeSeriesChart(category, chartCfg, wgSeriesCache[category]);
+            }
+        } catch (error) {
+            if (wgSeriesCache[category]?.generation === generation) {
+                wgSeriesCache[category].fetchInFlight = false;
+            }
+            showToast(`Error loading ${category} data: ${error.message}`, 'danger');
+            for (const chartCfg of cfg.charts || []) {
+                clearWgChartInstance(chartCfg.canvasId);
+                drawNoDataOnCanvas(chartCfg.canvasId, chartCfg.noDataMessage || 'No data available');
+            }
+        } finally {
+            if (wgSeriesCache[category]?.generation === generation) {
+                wgSeriesCache[category].fetchInFlight = false;
+            }
+            setCategoryChartSpinners(category, false);
+        }
+    }
+
     function initWgChartControls() {
         bindPlotStyleControls({
             selectSelector: '.chart-plot-style',
             storagePrefix: WG_PLOT_STYLE_PREFIX,
             onChange(canvasId) {
-                const reportType = CANVAS_TO_REPORT_TYPE[canvasId];
-                if (!reportType) return;
-                const loader = getSensorLoader(reportType);
-                if (loader) loader();
+                const category = findWgCategoryForCanvas(canvasId);
+                if (!category) return;
+                reRenderWgCategoryFromCache(category);
             },
         });
         const zoomAvailable = isChartZoomPluginAvailable();
@@ -1040,6 +1148,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
     }
 
+
     // --- Chart Color Variables ---
     // We use 'let' so we can update them when the theme changes.
     let chartTextColor, chartGridColor, miniChartLineColor;
@@ -1055,54 +1164,30 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Initial call to set colors on page load
     updateChartColorVariables();
 
-    // Helper function to show spinner with animation restart
+    // Helper function to show spinner with animation restart.
+    // Uses a generation token so a pending rAF cannot re-show after hide
+    // (common when cached API responses return within the same frame).
     function showChartSpinner(spinner) {
-        if (spinner) {
-            // Remove and re-add the spinner-border class to restart animation
-            spinner.classList.remove('spinner-border');
-            // Use requestAnimationFrame to ensure the class removal is processed
-            requestAnimationFrame(() => {
-                spinner.style.display = 'block';
-                spinner.classList.add('spinner-border');
-            });
-        }
+        if (!spinner) return;
+        const nextGen = String(Number(spinner.dataset.spinnerGen || 0) + 1);
+        spinner.dataset.spinnerGen = nextGen;
+        spinner.dataset.spinnerVisible = '1';
+        spinner.classList.remove('spinner-border');
+        requestAnimationFrame(() => {
+            if (spinner.dataset.spinnerGen !== nextGen) return;
+            if (spinner.dataset.spinnerVisible !== '1') return;
+            spinner.style.display = 'block';
+            spinner.classList.add('spinner-border');
+        });
     }
 
     // Helper function to hide spinner
     function hideChartSpinner(spinner) {
-        if (spinner) {
-            spinner.style.display = 'none';
-        }
+        if (!spinner) return;
+        spinner.dataset.spinnerVisible = '0';
+        spinner.dataset.spinnerGen = String(Number(spinner.dataset.spinnerGen || 0) + 1);
+        spinner.style.display = 'none';
     }
-
-    // Centralized Chart Colors
-    const CHART_COLORS = {
-        POWER_BATTERY: 'rgba(54, 162, 235, 1)',
-        POWER_SOLAR: 'rgba(255, 159, 64, 1)',
-        POWER_DRAW: 'rgba(255, 99, 132, 1)',
-        CTD_TEMP: 'rgba(0, 191, 255, 1)',
-        CTD_SALINITY: 'rgba(255, 105, 180, 1)',
-        CTD_CONDUCTIVITY: 'rgba(123, 104, 238, 1)', // Medium Slate Blue
-        CTD_DO: 'rgba(60, 179, 113, 1)', // Medium Sea Green (re-use from weather)
-        WEATHER_AIR_TEMP: 'rgba(255, 99, 71, 1)',
-        WEATHER_WIND_SPEED: 'rgba(60, 179, 113, 1)',
-        WAVES_SIG_HEIGHT: 'rgba(255, 206, 86, 1)',
-        WAVES_PERIOD: 'rgba(153, 102, 255, 1)',
-        VR2C_DETECTION: 'rgba(75, 192, 192, 1)', // Teal
-        WG_VM4_CH0_DETECTION: 'rgba(255, 159, 64, 1)', // Orange for WG-VM4 Channel 0
-        WAVE_SPECTRUM: 'rgba(255, 99, 132, 1)', // A distinct color for the spectrum line
-        FLUORO_C_AVG_PRIMARY: 'rgba(75, 192, 192, 1)', // Teal for C1_Avg
-        SOLAR_PANEL_1: 'rgba(255, 215, 0, 1)', // Gold
-        SOLAR_PANEL_2: 'rgba(173, 216, 230, 1)', // Light Blue
-        SOLAR_PANEL_4: 'rgba(144, 238, 144, 1)', // Light Green
-        FLUORO_TEMP: 'rgba(255, 99, 132, 1)', // Red for Fluorometer Temp
-        NAV_SPEED: 'rgba(138, 43, 226, 1)', // BlueViolet for Glider Speed
-        NAV_SOG: 'rgba(0, 128, 0, 0.7)',   // Green (slightly transparent) for SOG
-        NAV_HEADING: 'rgba(255, 140, 0, 1)', // DarkOrange for Heading
-        OCEAN_CURRENT_SPEED: 'rgba(30, 144, 255, 1)', // DodgerBlue
-        OCEAN_CURRENT_DIRECTION: 'rgba(255, 69, 0, 1)', // OrangeRed
-        HEADING_DIFF: 'rgba(218, 112, 214, 1)' // Orchid
-    };
 
     const currentSource = urlParams.get('source') || 'remote';
     const currentLocalPath = urlParams.get('local_path') || '';
@@ -1241,6 +1326,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             if (loader) {
                 loader();
             }
+            if (reportType === 'waves') {
+                fetchAndRenderWaveSpectrum(missionId);
+            }
         }
     }
 
@@ -1272,6 +1360,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         const loader = getSensorLoader(reportType);
         if (loader) {
             loader();
+        }
+        if (reportType === 'waves') {
+            fetchAndRenderWaveSpectrum(missionId);
         }
     }
 
@@ -1523,10 +1614,11 @@ document.addEventListener('DOMContentLoaded', async function() {
      * @param {number} hours - The number of hours back to fetch data for.
      * @returns {Promise<Array<Object>|null>} A promise that resolves with the chart data array or null if fetching fails.
      */
-    async function fetchChartData(reportType, mission) {
+    async function fetchChartData(reportType, mission, options = {}) {
+        const manageSpinner = options.manageSpinner !== false;
         const chartCanvas = document.getElementById(`${reportType}Chart`); 
         const spinner = chartCanvas ? chartCanvas.parentElement.querySelector('.chart-spinner') : null;
-        showChartSpinner(spinner);
+        if (manageSpinner) showChartSpinner(spinner);
 
         // Find controls specific to this report type, if they exist.
         const hoursInput = document.querySelector(`.hours-back-input[data-report-type="${reportType}"]`);
@@ -1592,378 +1684,9 @@ document.addEventListener('DOMContentLoaded', async function() {
             displayGlobalError(`Network error while fetching ${reportType} chart data.`);
             return null;
         } finally {
-            hideChartSpinner(spinner);
+            if (manageSpinner) hideChartSpinner(spinner);
         }
     }
-
-    /**
-     * Renders the LARGE Power Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderPowerChart(chartData) {
-        const ctx = document.getElementById('powerChart').getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner); // Hide spinner before rendering or showing "no data"
-
-
-        if (!chartData || chartData.length === 0) {
-            // Display a message on the canvas if no data
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No power trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (powerChartInstance) { clearWgChartInstance('powerChart'); powerChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        // Dynamically add datasets based on available data
-        if (chartData.some(d => d.BatteryWattHours !== null && d.BatteryWattHours !== undefined)) {
-            datasets.push({
-                label: 'Battery (Wh)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.BatteryWattHours })),
-                borderColor: CHART_COLORS.POWER_BATTERY,
-                yAxisID: 'yBattery', // Assign to new right-hand Y-axis
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.PowerDrawWatts !== null && d.PowerDrawWatts !== undefined)) {
-            datasets.push({
-                label: 'Power Draw (W)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.PowerDrawWatts })),
-                borderColor: CHART_COLORS.POWER_DRAW,
-                yAxisID: 'ySolar', // Share with Solar Input
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No plottable power data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (powerChartInstance) { clearWgChartInstance('powerChart'); powerChartInstance = null; }
-            return;
-        }
-
-        if (powerChartInstance) {
-            clearWgChartInstance('powerChart');
-            powerChartInstance = null;
-        }
-
-        powerChartInstance = createWgTimeSeriesChart('powerChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, // Keep responsive
-                maintainAspectRatio: false, // Keep aspect ratio false
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } },
-                        title: { display: true, text: 'Time', color: chartTextColor },
-                        ticks: {
-                            color: chartTextColor,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            autoSkipPadding: 20
-                        },
-                        grid: { color: chartGridColor }
-                    },
-                    ySolar: { type: 'linear', position: 'left', title: { display: true, text: 'Watts (W)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { color: chartGridColor } },
-                    yBattery: { type: 'linear', position: 'right', title: { display: true, text: 'Watt-hours (Wh)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { drawOnChartArea: false } } // New axis for Battery
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-    /**
-     * Renders the CTD Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderCtdChart(chartData) { // This function was missing in the previous diff
-        const ctx = document.getElementById('ctdChart').getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No CTD trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (ctdChartInstance) { clearWgChartInstance('ctdChart'); ctdChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        if (chartData.some(d => d.WaterTemperature !== null && d.WaterTemperature !== undefined)) {
-            datasets.push({
-                label: 'Water Temp (°C)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.WaterTemperature })),
-                borderColor: CHART_COLORS.CTD_TEMP,
-                yAxisID: 'yTemp', // Assign to a specific Y axis
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.Salinity !== null && d.Salinity !== undefined)) {
-            datasets.push({
-                label: 'Salinity (PSU)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.Salinity })),
-                borderColor: CHART_COLORS.CTD_SALINITY,
-                yAxisID: 'ySalinity', // Assign to a different Y axis
-                tension: 0.1, fill: false
-            });
-        }
-        // Add other CTD metrics (Conductivity, DissolvedOxygen, Pressure) similarly, potentially on new axes or separate charts
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No plottable CTD data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (ctdChartInstance) { clearWgChartInstance('ctdChart'); ctdChartInstance = null; }
-            return;
-        }
-
-        if (ctdChartInstance) {
-            clearWgChartInstance('ctdChart');
-            ctdChartInstance = null;
-        }
-
-        ctdChartInstance = createWgTimeSeriesChart('ctdChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                                responsive: true, // Keep responsive
-                maintainAspectRatio: false, // Keep aspect ratio false
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } },
-                        title: { display: true, text: 'Time', color: chartTextColor },
-                        ticks: {
-                            color: chartTextColor,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            autoSkipPadding: 20
-                        },
-                        grid: { color: chartGridColor }
-                    },
-                    yTemp: { type: 'linear', position: 'left', title: { display: true, text: 'Temperature (°C)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { color: chartGridColor } },
-                    ySalinity: { type: 'linear', position: 'right', title: { display: true, text: 'Salinity (PSU)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { drawOnChartArea: false } } // Secondary axis for Salinity
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-    // Fetch and render the CTD chart on page load (only if enabled)
-    if (isSensorEnabled('ctd')) {
-        fetchChartData('ctd', missionId).then(data => {
-            renderCtdChart(data); // Existing chart for Temp & Salinity
-            renderCtdProfileChart(data); // New chart for Temp, Conductivity, DO
-        });
-    }
-    // Fetch and render the Weather Sensor chart on page load (only if enabled)
-    if (isSensorEnabled('weather')) {
-        fetchChartData('weather', missionId).then(data => {
-            renderWeatherSensorChart(data);
-        });
-    }
-
-    // Fetch Power and Solar data concurrently, then render their charts (only if power is enabled)
-    if (isSensorEnabled('power')) {
-        Promise.all([
-            fetchChartData('power', missionId),
-            fetchChartData('solar', missionId)
-        ]).then(([powerData, solarData]) => {
-            renderPowerChart(powerData); // Renders power chart (now without total solar)
-            renderSolarPanelChart(solarData, powerData); // Pass both solar (individual) and power (for total solar) data
-        }).catch(error => {
-            showToast(`Error loading power/solar data: ${error.message}`, 'danger');
-            renderPowerChart(null);
-            renderSolarPanelChart(null, null);
-        });
-    }
-    
-    // If Navigation is the default active view, fetch telemetry data (only if enabled)
-    if (isSensorEnabled('navigation')) {
-        fetchChartData('telemetry', missionId).then(data => {
-            renderTelemetryChart(data);
-            renderNavigationCurrentChart(data);
-            renderNavigationHeadingDiffChart(data);
-        });
-    }
-    
-    /**
-     * Renders the CTD Profile Chart using Chart.js.
-     * Plots Water Temperature (left Y1), Conductivity (right Y), Dissolved Oxygen (left Y2).
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderCtdProfileChart(chartData) {
-        const canvas = document.getElementById('ctdProfileChart');
-        if (!canvas) {
-            return; // Canvas not found - silent fail (DOM issue)
-        }
-        const ctx = canvas.getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No CTD profile data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (ctdProfileChartInstance) { clearWgChartInstance('ctdProfileChart'); ctdProfileChartInstance = null; }
-            return;
-        }
-
-        const datasets = []; // Define datasets here
-        // Water Temperature (Left Y-axis 1, more transparent)
-        if (chartData.some(d => d.WaterTemperature !== null && d.WaterTemperature !== undefined)) {
-            datasets.push({
-                label: 'Water Temp (°C)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.WaterTemperature })),
-                borderColor: CHART_COLORS.CTD_TEMP.replace('1)', '0.2)'), // Make Water Temp more transparent
-                yAxisID: 'yTemp',
-                tension: 0.1, fill: false
-            });
-        }
-        
-        // Conductivity (Right Y-axis, now more transparent)
-        if (chartData.some(d => d.Conductivity !== null && d.Conductivity !== undefined)) {
-            datasets.push({
-                label: 'Conductivity (S/m)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.Conductivity })),
-                borderColor: CHART_COLORS.CTD_CONDUCTIVITY.replace('1)', '0.2)'), // Make Conductivity more transparent
-                yAxisID: 'yCond',
-                tension: 0.1, fill: false
-            });
-        }
-        // Dissolved Oxygen (Left Y-axis 2, hidden, now less transparent relative to others)
-        if (chartData.some(d => d.DissolvedOxygen !== null && d.DissolvedOxygen !== undefined)) {
-            datasets.push({
-                label: 'DO (Hz)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.DissolvedOxygen })),
-                borderColor: CHART_COLORS.CTD_DO, // Use original alpha (1.0), making it the most opaque
-                yAxisID: 'yDO',
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No plottable CTD profile data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (ctdProfileChartInstance) { clearWgChartInstance('ctdProfileChart'); ctdProfileChartInstance = null; }
-            return;
-        }
-
-        if (ctdProfileChartInstance) { ctdProfileChartInstance.destroy(); }
-
-        ctdProfileChartInstance = createWgTimeSeriesChart('ctdProfileChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true, autoSkipPadding: 20 }, grid: { color: chartGridColor } },
-                    yTemp: { type: 'linear', position: 'left', title: { display: true, text: 'Temperature (°C)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { color: chartGridColor } },
-                    yCond: { type: 'linear', position: 'right', title: { display: true, text: 'Conductivity (S/m)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { drawOnChartArea: false } },
-                    yDO: { type: 'linear', position: 'left', display: false, grid: { drawOnChartArea: false } } // Hidden Y-axis for DO
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-    function renderWeatherSensorChart(chartData) { // This function was missing in the previous diff
-        const ctx = document.getElementById('weatherSensorChart').getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No weather sensor trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (weatherSensorChartInstance) { clearWgChartInstance('weatherSensorChart'); weatherSensorChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        if (chartData.some(d => d.AirTemperature !== null && d.AirTemperature !== undefined)) {
-            datasets.push({
-                label: 'Air Temp (°C)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.AirTemperature })),
-                borderColor: CHART_COLORS.WEATHER_AIR_TEMP,
-                yAxisID: 'yTemp',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.WindSpeed !== null && d.WindSpeed !== undefined)) {
-            datasets.push({
-                label: 'Wind Speed (kt)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.WindSpeed })),
-                borderColor: CHART_COLORS.WEATHER_WIND_SPEED,
-                yAxisID: 'yWind',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.WindGust !== null && d.WindGust !== undefined)) {
-            datasets.push({
-                label: 'Wind Gust (kt)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.WindGust })),
-                borderColor: CHART_COLORS.WEATHER_WIND_SPEED.replace('1)', '0.7)'), // Lighter version of wind speed
-                borderDash: [5, 5], // Dashed line for gusts
-                yAxisID: 'yWind', // Share axis with WindSpeed
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No plottable weather data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (weatherSensorChartInstance) { clearWgChartInstance('weatherSensorChart'); weatherSensorChartInstance = null; }
-            return;
-        }
-
-        if (weatherSensorChartInstance) {
-            clearWgChartInstance('weatherSensorChart');
-            weatherSensorChartInstance = null;
-        }
-
-        weatherSensorChartInstance = createWgTimeSeriesChart('weatherSensorChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } },
-                        title: { display: true, text: 'Time', color: chartTextColor },
-                        ticks: {
-                            color: chartTextColor,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            autoSkipPadding: 20
-                        },
-                        grid: { color: chartGridColor }
-                    },
-                    yTemp: { type: 'linear', position: 'left', title: { display: true, text: 'Temperature (°C)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { color: chartGridColor } },
-                    yWind: { type: 'linear', position: 'right', title: { display: true, text: 'Wind (kt)', color: chartTextColor }, ticks: { color: chartTextColor, beginAtZero: true }, grid: { drawOnChartArea: false, color: chartGridColor } }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-    /**
-     * Fetches weather forecast data from the API.
-     * @param {string} mission - The mission ID.
-     */
     // --- Weather Forecast ---
     async function fetchForecastData(mission) {
         try {
@@ -2224,85 +1947,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     fetchForecastData(missionId).then(data => {
         renderForecast(data);
     });
-    /**
-     * Renders the Wave Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderWaveChart(chartData) { 
-        const ctx = document.getElementById('waveChart').getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-                if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No wave trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (waveChartInstance) { clearWgChartInstance('waveChart'); waveChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        if (chartData.some(d => d.SignificantWaveHeight !== null && d.SignificantWaveHeight !== undefined)) {
-            datasets.push({
-                label: 'Sig. Wave Height (m)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.SignificantWaveHeight })),
-                borderColor: CHART_COLORS.WAVES_SIG_HEIGHT,
-                yAxisID: 'yHeight',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.WavePeriod !== null && d.WavePeriod !== undefined)) {
-            datasets.push({
-                label: 'Wave Period (s)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.WavePeriod })),
-                borderColor: CHART_COLORS.WAVES_PERIOD,
-                yAxisID: 'yPeriod',
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No plottable wave data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (waveChartInstance) { clearWgChartInstance('waveChart'); waveChartInstance = null; }
-            return;
-        }
-
-        if (waveChartInstance) {
-            clearWgChartInstance('waveChart');
-            waveChartInstance = null;
-        }
-
-        waveChartInstance = createWgTimeSeriesChart('waveChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: {
-                        type: 'time',
-                        time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } },
-                        title: { display: true, text: 'Time', color: chartTextColor },
-                        ticks: {
-                            color: chartTextColor,
-                            maxRotation: 0,
-                            autoSkip: true,
-                            autoSkipPadding: 20
-                        },
-                        grid: { color: chartGridColor }
-                    },
-                    yHeight: { type: 'linear', position: 'left', title: { display: true, text: 'Wave Height (m)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { color: chartGridColor } },
-                    yPeriod: { type: 'linear', position: 'right', title: { display: true, text: 'Wave Period (s)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { drawOnChartArea: false, color: chartGridColor } }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
     const ESS_WAVE_HEIGHT_THRESHOLD_M = 4.5;
     const ESS_APPROACHING_THRESHOLD_M = 2.5;
 
@@ -2437,167 +2081,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (fromForecast) fromForecast.textContent = formatEssCourseFromWaveDirection(forecastDir);
     }
 
-    // Fetch and render the Wave chart on page load (only if enabled)
-    if (isSensorEnabled('waves')) {
-        fetchChartData('waves', missionId).then(data => {
-            renderWaveChart(data); // Renders Hs vs Tp chart (time-series)
-            renderWaveHeightDirectionChart(data); // Call the reinstated function
-        }); // Wave spectrum is loaded on demand when its detail card is clicked
-    }
-    
-    /**
-     * Renders the VR2C Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderVr2cChart(chartData) {
-        const ctx = document.getElementById('vr2cChart').getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No VR2C trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (vr2cChartInstance) { clearWgChartInstance('vr2cChart'); vr2cChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        if (chartData.some(d => d.DetectionCount !== null && d.DetectionCount !== undefined)) {
-            datasets.push({
-                label: 'Detection Count (DC)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.DetectionCount })),
-                borderColor: CHART_COLORS.VR2C_DETECTION,
-                yAxisID: 'yCounts',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.PingCountDelta !== null && d.PingCountDelta !== undefined)) {
-            datasets.push({
-                label: 'Ping Count Delta (ΔPC/hr)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.PingCountDelta })),
-                borderColor: CHART_COLORS.POWER_DRAW, // Re-use a contrasting color like red
-                yAxisID: 'yDelta', // Assign to new right-hand Y-axis
-                tension: 0.1, fill: false, // No fill for delta
-                borderDash: [5, 5] // Optional: make it dashed
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No plottable VR2C data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (vr2cChartInstance) { clearWgChartInstance('vr2cChart'); vr2cChartInstance = null; }
-            return;
-        }
-
-        if (vr2cChartInstance) {
-            clearWgChartInstance('vr2cChart');
-            vr2cChartInstance = null;
-        }
-
-        vr2cChartInstance = createWgTimeSeriesChart('vr2cChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true, autoSkipPadding: 20 }, grid: { color: chartGridColor } },
-                    yCounts: { type: 'linear', position: 'left', title: { display: true, text: 'Detection Count (DC)', color: chartTextColor }, ticks: { color: chartTextColor, beginAtZero: true }, grid: { color: chartGridColor } },
-                    yDelta: { type: 'linear', position: 'right', title: { display: true, text: 'Ping Count Delta (ΔPC/hr)', color: chartTextColor }, ticks: { color: chartTextColor /* beginAtZero: false might be better for deltas */ }, grid: { drawOnChartArea: false } }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-        /**
-     * Renders the Wave Height vs. Direction Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderWaveHeightDirectionChart(chartData) {
-        const canvas = document.getElementById('waveHeightDirectionChart');
-        if (!canvas) { return; } // Canvas not found - silent fail (DOM issue)
-        const ctx = canvas.getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No wave Ht/Dir data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (waveHeightDirectionChartInstance) { clearWgChartInstance('waveHeightDirectionChart'); waveHeightDirectionChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        if (chartData.some(d => d.SignificantWaveHeight !== null && d.SignificantWaveHeight !== undefined)) {
-            datasets.push({
-                label: 'Sig. Wave Height (m)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.SignificantWaveHeight })),
-                borderColor: CHART_COLORS.WAVES_SIG_HEIGHT,
-                yAxisID: 'yHeight',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.MeanWaveDirection !== null && d.MeanWaveDirection !== undefined)) {
-            datasets.push({
-                label: 'Mean Wave Dir (°)',
-                data: chartData.map(item => {
-                    const waveDirNum = parseFloat(item.MeanWaveDirection);
-                    return { x: new Date(item.Timestamp), y: waveDirNum };
-                }),
-                borderColor: CHART_COLORS.CTD_SALINITY.replace('1)', '0.7)'), // Re-use a color
-                yAxisID: 'yDirection',
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No plottable wave Ht/Dir data.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (waveHeightDirectionChartInstance) { clearWgChartInstance('waveHeightDirectionChart'); waveHeightDirectionChartInstance = null; }
-            return;
-        }
-
-        if (waveHeightDirectionChartInstance) { waveHeightDirectionChartInstance.destroy(); }
-        waveHeightDirectionChartInstance = createWgTimeSeriesChart('waveHeightDirectionChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true }, grid: { color: chartGridColor } },
-                    yHeight: { type: 'linear', position: 'left', title: { display: true, text: 'Wave Height (m)', color: chartTextColor }, ticks: { color: chartTextColor, beginAtZero: true }, grid: { color: chartGridColor } },
-                    yDirection: { type: 'linear', position: 'right', title: { display: true, text: 'Wave Direction (°)', color: chartTextColor }, ticks: { color: chartTextColor, min: 0, max: 360 }, grid: { drawOnChartArea: false } }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-    // Fetch and render the VR2C chart on page load (only if enabled)
-    if (isSensorEnabled('vr2c')) {
-        fetchChartData('vr2c', missionId).then(data => {
-            renderVr2cChart(data);
-        });
-    }
-
-    // Fetch and render the Fluorometer chart on page load (only if enabled)
-    if (isSensorEnabled('fluorometer')) {
-        fetchChartData('fluorometer', missionId).then(data => {
-            renderFluorometerChart(data);
-        });
-    }
-
-    // Fetch and render the WG-VM4 chart on page load (only if enabled)
-    if (isSensorEnabled('wg_vm4')) {
-        fetchChartData('wg_vm4', missionId).then(data => {
-            renderWgVm4Chart(data);
-        });
-    }
-
     /**
      * Fetches and renders the latest wave spectrum data.
      * @param {string} mission - The mission ID.
@@ -2674,464 +2157,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
         });
     }
-
-     /**
-     * Renders the Fluorometer Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderFluorometerChart(chartData) {
-        const canvas = document.getElementById('fluorometerChart');
-        if (!canvas) { return; } // Canvas not found - silent fail (DOM issue)
-        const ctx = canvas.getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No fluorometer data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (fluorometerChartInstance) { clearWgChartInstance('fluorometerChart'); fluorometerChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        if (chartData.some(d => d.C1_Avg !== null && d.C1_Avg !== undefined)) {
-            datasets.push({
-                label: fluorometerDatasetLabel('C1_Avg', 'C1 Avg'),
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.C1_Avg })),
-                borderColor: CHART_COLORS.FLUORO_C_AVG_PRIMARY,
-                yAxisID: 'yPrimary',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.C2_Avg !== null && d.C2_Avg !== undefined)) {
-            datasets.push({
-                label: fluorometerDatasetLabel('C2_Avg', 'C2 Avg'),
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.C2_Avg })),
-                borderColor: CHART_COLORS.WAVES_SIG_HEIGHT, // Re-use a distinct color
-                yAxisID: 'yPrimary', // Share the primary Y-axis
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.C3_Avg !== null && d.C3_Avg !== undefined)) {
-            datasets.push({
-                label: fluorometerDatasetLabel('C3_Avg', 'C3 Avg'),
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.C3_Avg })),
-                borderColor: CHART_COLORS.WAVES_PERIOD, // Re-use another distinct color
-                yAxisID: 'yPrimary', // Share the primary Y-axis
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.Temperature_Fluor !== null && d.Temperature_Fluor !== undefined)) {
-            datasets.push({
-                label: 'Temperature (°C)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.Temperature_Fluor })),
-                borderColor: CHART_COLORS.FLUORO_TEMP, // Use a distinct color
-                yAxisID: 'yTemp', // Use a secondary axis for temperature
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No plottable fluorometer data.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (fluorometerChartInstance) { clearWgChartInstance('fluorometerChart'); fluorometerChartInstance = null; }
-            return;
-        }
-
-        if (fluorometerChartInstance) { fluorometerChartInstance.destroy(); }
-        fluorometerChartInstance = createWgTimeSeriesChart('fluorometerChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true }, grid: { color: chartGridColor } },
-                    yPrimary: { type: 'linear', position: 'left', title: { display: true, text: 'Fluorescence Units', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { color: chartGridColor } },
-                    yTemp: { type: 'linear', position: 'right', title: { display: true, text: 'Temperature (°C)', color: chartTextColor }, ticks: { color: chartTextColor }, grid: { drawOnChartArea: false } }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-  
-    /**
-     * Renders the Solar Panel Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     * @param {Array<Object>|null} powerData - The data array for the main power report, used for total solar input.
-     */
-    function renderSolarPanelChart(chartData, powerData) {
-        const ctx = document.getElementById('solarPanelChart')?.getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "grey";
-            ctx.textAlign = "center";
-            ctx.fillText("No solar panel trend data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (solarPanelChartInstance) { clearWgChartInstance('solarPanelChart'); solarPanelChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        // Add Total Solar Input from powerData
-        if (powerData && powerData.some(d => d.SolarInputWatts !== null && d.SolarInputWatts !== undefined)) {
-            datasets.push({
-                label: 'Total Solar Input (W)',
-                data: powerData.map(item => ({ x: new Date(item.Timestamp), y: item.SolarInputWatts })),
-                borderColor: CHART_COLORS.POWER_SOLAR, // Use the existing color for total solar
-                yAxisID: 'yTotalSolar', // Assign to the new right y-axis
-                borderDash: [5, 5], // Optional: Differentiate with a dashed line
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.Panel1Power !== null && d.Panel1Power !== undefined)) {
-            datasets.push({
-                label: 'Panel 1 Power (W)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.Panel1Power })),
-                borderColor: CHART_COLORS.SOLAR_PANEL_1,
-                yAxisID: 'yIndividualPanels', // Assign to the left y-axis
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.Panel2Power !== null && d.Panel2Power !== undefined)) {
-            datasets.push({
-                label: 'Panel 2 Power (W)', // Corresponds to panelPower3 from CSV
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.Panel2Power })),
-                borderColor: CHART_COLORS.SOLAR_PANEL_2,
-                yAxisID: 'yIndividualPanels', // Assign to the left y-axis
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.Panel4Power !== null && d.Panel4Power !== undefined)) {
-            datasets.push({
-                label: 'Panel 4 Power (W)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.Panel4Power })),
-                borderColor: CHART_COLORS.SOLAR_PANEL_4,
-                yAxisID: 'yIndividualPanels', // Assign to the left y-axis
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No plottable solar panel data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (solarPanelChartInstance) { clearWgChartInstance('solarPanelChart'); solarPanelChartInstance = null; }
-            return;
-        }
-
-        if (solarPanelChartInstance) { solarPanelChartInstance.destroy(); }
-
-        solarPanelChartInstance = createWgTimeSeriesChart('solarPanelChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true, autoSkipPadding: 20 }, grid: { color: chartGridColor } },
-                    yIndividualPanels: { // Y-axis for individual panel powers
-                        type: 'linear',
-                        position: 'left',
-                        title: { display: true, text: 'Panel Power (W)', color: chartTextColor },
-                        ticks: { color: chartTextColor, beginAtZero: true },
-                        grid: { color: chartGridColor }
-                    },
-                    yTotalSolar: { // New Y-axis for Total Solar Input
-                        type: 'linear',
-                        position: 'right',
-                        title: { display: true, text: 'Total Solar (W)', color: chartTextColor },
-                        ticks: { color: chartTextColor, beginAtZero: true },
-                        grid: { drawOnChartArea: false } // Only draw grid lines for the primary y-axis (left)
-                    }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-    /**
-     * Renders the Telemetry Chart (Glider Speed/Heading) using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderTelemetryChart(chartData) { // Renamed from renderNavigationChart
-        const canvas = document.getElementById('telemetryChart'); // Updated ID
-        if (!canvas) { return; } // Canvas not found - silent fail (DOM issue)
-        const ctx = canvas.getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No navigation trend data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (telemetryChartInstance) { clearWgChartInstance('telemetryChart'); telemetryChartInstance = null; } // Updated instance variable
-            return;
-        }
-
-        const datasets = [];
-        if (chartData.some(d => d.GliderSpeed !== null && d.GliderSpeed !== undefined)) {
-            datasets.push({
-                label: 'Glider Speed (knots)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.GliderSpeed })),
-                borderColor: CHART_COLORS.NAV_SPEED,
-                yAxisID: 'ySpeed',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.SpeedOverGround !== null && d.SpeedOverGround !== undefined)) {
-            datasets.push({
-                label: 'SOG (knots)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.SpeedOverGround })),
-                borderColor: CHART_COLORS.NAV_SOG,
-                yAxisID: 'ySpeed', // Share Y-axis with GliderSpeed
-                borderDash: [5, 5], // Dashed line
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.GliderHeading !== null && d.GliderHeading !== undefined)) {
-            datasets.push({
-                label: 'Glider Heading (°)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.GliderHeading })),
-                borderColor: CHART_COLORS.NAV_HEADING,
-                yAxisID: 'yHeading',
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No plottable navigation data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (telemetryChartInstance) { clearWgChartInstance('telemetryChart'); telemetryChartInstance = null; } // Updated instance variable
-            return;
-        }
-
-        if (telemetryChartInstance) { telemetryChartInstance.destroy(); } // Updated instance variable
-        telemetryChartInstance = createWgTimeSeriesChart('telemetryChart', ctx, { // Updated instance variable
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true }, grid: { color: chartGridColor } },
-                    ySpeed: { type: 'linear', position: 'left', title: { display: true, text: 'Speed (knots)', color: chartTextColor }, ticks: { color: chartTextColor, beginAtZero: true }, grid: { color: chartGridColor } },
-                    yHeading: { type: 'linear', position: 'right', title: { display: true, text: 'Heading (°)', color: chartTextColor }, ticks: { color: chartTextColor, min: 0, max: 360 }, grid: { drawOnChartArea: false } }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-    /**
-     * Renders the Navigation Ocean Current Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderNavigationCurrentChart(chartData) {
-        const canvas = document.getElementById('telemetryCurrentChart');
-        if (!canvas) { return; } // Canvas not found - silent fail (DOM issue)
-        const ctx = canvas.getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No ocean current data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (navigationCurrentChartInstance) { clearWgChartInstance('telemetryCurrentChart'); navigationCurrentChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        if (chartData.some(d => d.OceanCurrentSpeed !== null && d.OceanCurrentSpeed !== undefined)) {
-            datasets.push({
-                label: 'Ocean Current Speed (kn)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.OceanCurrentSpeed })),
-                borderColor: CHART_COLORS.OCEAN_CURRENT_SPEED,
-                yAxisID: 'ySpeed',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.OceanCurrentDirection !== null && d.OceanCurrentDirection !== undefined)) {
-            datasets.push({
-                label: 'Ocean Current Dir (°)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.OceanCurrentDirection })),
-                borderColor: CHART_COLORS.OCEAN_CURRENT_DIRECTION,
-                yAxisID: 'yDirection',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.SpeedOverGround !== null && d.SpeedOverGround !== undefined)) {
-            datasets.push({
-                label: 'SOG (knots)', // Will use yDirection axis
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.SpeedOverGround })),
-                borderColor: CHART_COLORS.NAV_SOG.replace('0.7)', '0.5)'), // Make it 50% transparent
-                yAxisID: 'ySpeed', // Plot SOG against the speed axis
-                borderDash: [5, 5],
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No plottable ocean current data.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (navigationCurrentChartInstance) { clearWgChartInstance('telemetryCurrentChart'); navigationCurrentChartInstance = null; }
-            return;
-        }
-
-        if (navigationCurrentChartInstance) { navigationCurrentChartInstance.destroy(); }
-        navigationCurrentChartInstance = createWgTimeSeriesChart('telemetryCurrentChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true }, grid: { color: chartGridColor } },
-                    ySpeed: { type: 'linear', position: 'left', title: { display: true, text: 'Speed (knots)', color: chartTextColor }, ticks: { color: chartTextColor, beginAtZero: true }, grid: { color: chartGridColor } },
-                    yDirection: { type: 'linear', position: 'right', title: { display: true, text: 'Direction (°)', color: chartTextColor }, ticks: { color: chartTextColor, min: 0, max: 360 }, grid: { drawOnChartArea: false } }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
-    /**
-     * Renders the Navigation Heading Difference Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderNavigationHeadingDiffChart(chartData) {
-        const canvas = document.getElementById('telemetryHeadingDiffChart');
-        if (!canvas) { return; } // Canvas not found - silent fail (DOM issue)
-        const ctx = canvas.getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No heading difference data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (navigationHeadingDiffChartInstance) { clearWgChartInstance('telemetryHeadingDiffChart'); navigationHeadingDiffChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        // Calculate Heading Difference
-        const headingDiffData = chartData.map(item => {
-            let diff = null;
-            if (item.HeadingSubDegrees !== null && item.DesiredBearingDegrees !== null) {
-                diff = item.HeadingSubDegrees - item.DesiredBearingDegrees;
-                // Normalize to -180 to 180 range
-                while (diff > 180) diff -= 360;
-                while (diff < -180) diff += 360;
-            }
-            return { x: new Date(item.Timestamp), y: diff };
-        }).filter(item => item.y !== null);
-
-        if (headingDiffData.length > 0) {
-            datasets.push({
-                label: 'Sub Heading Diff (°)',
-                data: headingDiffData,
-                borderColor: CHART_COLORS.HEADING_DIFF,
-                yAxisID: 'yDiff',
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (chartData.some(d => d.OceanCurrentSpeed !== null && d.OceanCurrentSpeed !== undefined)) {
-            datasets.push({
-                label: 'Ocean Current Speed (kn)',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.OceanCurrentSpeed })),
-                borderColor: CHART_COLORS.OCEAN_CURRENT_SPEED.replace('1)', '0.7)'), // Slightly transparent
-                borderDash: [5, 5],
-                yAxisID: 'ySpeed',
-                tension: 0.1, fill: false
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No plottable heading diff data.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (navigationHeadingDiffChartInstance) { clearWgChartInstance('telemetryHeadingDiffChart'); navigationHeadingDiffChartInstance = null; }
-            return;
-        }
-
-        if (navigationHeadingDiffChartInstance) { navigationHeadingDiffChartInstance.destroy(); }
-        navigationHeadingDiffChartInstance = createWgTimeSeriesChart('telemetryHeadingDiffChart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true }, grid: { color: chartGridColor } },
-                    ySpeed: { type: 'linear', position: 'left', title: { display: true, text: 'Ocean Current (kn)', color: chartTextColor }, ticks: { color: chartTextColor, beginAtZero: true }, grid: { color: chartGridColor } },
-                    yDiff: { type: 'linear', position: 'right', title: { display: true, text: 'Heading Diff (°)', color: chartTextColor }, ticks: { color: chartTextColor, min: -180, max: 180 }, grid: { drawOnChartArea: false } }
-                },
-                plugins: {
-                    tooltip: { mode: 'index', intersect: false },
-                    legend: { position: 'top', labels: { color: chartTextColor } },
-                }
-            }
-        });
-    }
-
-    /**
-     * Renders the WG-VM4 Chart using Chart.js.
-     * @param {Array<Object>|null} chartData - The data array fetched from the API.
-     */
-    function renderWgVm4Chart(chartData) {
-        const canvas = document.getElementById('wgVm4Chart');
-        if (!canvas) { return; } // Canvas not found - silent fail (DOM issue)
-        const ctx = canvas.getContext('2d');
-        const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
-        hideChartSpinner(spinner);
-
-        if (!chartData || chartData.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No WG-VM4 trend data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (wgVm4ChartInstance) { clearWgChartInstance('wgVm4Chart'); wgVm4ChartInstance = null; }
-            return;
-        }
-
-        const datasets = [];
-        // Assuming 'Channel0DetectionCount' and 'Channel1DetectionCount' from processor
-        if (chartData.some(d => d.Channel0DetectionCount !== null && d.Channel0DetectionCount !== undefined)) {
-            datasets.push({
-                label: 'Ch0 Detections',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.Channel0DetectionCount })),
-                borderColor: CHART_COLORS.WG_VM4_CH0_DETECTION,
-                yAxisID: 'yDetections',
-                tension: 0.1, fill: false
-            });
-        }
-        if (chartData.some(d => d.Channel1DetectionCount !== null && d.Channel1DetectionCount !== undefined)) {
-            datasets.push({
-                label: 'Ch1 Detections',
-                data: chartData.map(item => ({ x: new Date(item.Timestamp), y: item.Channel1DetectionCount })),
-                borderColor: CHART_COLORS.CTD_SALINITY, // Re-use a contrasting color
-                yAxisID: 'yDetections', // Share the same axis
-                tension: 0.1, fill: false,
-                borderDash: [5, 5] // Optional: dashed line for second channel
-            });
-        }
-
-        if (datasets.length === 0) {
-            ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
-            ctx.fillText("No plottable WG-VM4 data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (wgVm4ChartInstance) { clearWgChartInstance('wgVm4Chart'); wgVm4ChartInstance = null; }
-            return;
-        }
-
-        if (wgVm4ChartInstance) { wgVm4ChartInstance.destroy(); }
-        wgVm4ChartInstance = createWgTimeSeriesChart('wgVm4Chart', ctx, {
-            type: 'line',
-            data: { datasets: datasets },
-            options: {
-                responsive: true, maintainAspectRatio: false,
-                scales: {
-                    x: { type: 'time', time: { unit: 'hour', tooltipFormat: 'MMM d, yyyy HH:mm', displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' } }, title: { display: true, text: 'Time', color: chartTextColor }, ticks: { color: chartTextColor, maxRotation: 0, autoSkip: true }, grid: { color: chartGridColor } },
-                    yDetections: { type: 'linear', position: 'left', title: { display: true, text: 'Detection Counts', color: chartTextColor }, ticks: { color: chartTextColor, beginAtZero: true }, grid: { color: chartGridColor } }
-                },
-                plugins: { tooltip: { mode: 'index', intersect: false }, legend: { position: 'top', labels: { color: chartTextColor } } }
-            }
-        });
-    }
-
     // Refresh Data Button Logic (Moved here for better organization)
     const refreshDataBtn = document.getElementById('refreshDataBtnBanner');
     if (refreshDataBtn) {
@@ -3294,7 +2319,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                     const loader = getSensorLoader(category);
                     if (loader) {
                         loadedCategories.add(category);
-                        loader();
+                        Promise.resolve(loader()).finally(() => {
+                            resizeWgChartsInCategory(category);
+                        });
+                    } else {
+                        resizeWgChartsInCategory(category);
                     }
                 }
             });
@@ -3302,39 +2331,19 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     function getSensorLoader(reportType) {
-        // Map the UI category 'navigation' to the data/API report type 'telemetry'.
-        // This allows the 'navigation' card click and initial load to trigger the 'telemetry' data loader,
-        // while the controls within the detail view can still correctly use 'telemetry'.
-        if (reportType === 'navigation') {
-            reportType = 'telemetry';
+        // Map UI category 'navigation' for any legacy callers; configs use UI keys directly.
+        if (reportType === 'telemetry') {
+            reportType = 'navigation';
         }
-        const loaders = {
-            'power': () => isSensorEnabled('power') ? Promise.all([fetchChartData('power', missionId), fetchChartData('solar', missionId)]).then(([powerData, solarData]) => {
-                renderPowerChart(powerData);
-                renderSolarPanelChart(solarData, powerData);
-            }).catch(error => { showToast(`Error loading power/solar data: ${error.message}`, 'danger'); renderPowerChart(null); renderSolarPanelChart(null, null); }) : Promise.resolve(),
-            'ctd': () => isSensorEnabled('ctd') ? fetchChartData('ctd', missionId).then(data => {
-                renderCtdChart(data);
-                renderCtdProfileChart(data);
-            }) : Promise.resolve(),
-            'weather': () => isSensorEnabled('weather') ? fetchChartData('weather', missionId).then(data => renderWeatherSensorChart(data)) : Promise.resolve(),
-            'waves': () => isSensorEnabled('waves') ? fetchChartData('waves', missionId).then(data => {
-                renderWaveChart(data);
-                renderWaveHeightDirectionChart(data);
-            }) : Promise.resolve(),
-            'vr2c': () => isSensorEnabled('vr2c') ? fetchChartData('vr2c', missionId).then(data => renderVr2cChart(data)) : Promise.resolve(),
-            'fluorometer': () => isSensorEnabled('fluorometer') ? fetchChartData('fluorometer', missionId).then(data => renderFluorometerChart(data)) : Promise.resolve(),
-            'wg_vm4': () => isSensorEnabled('wg_vm4') ? fetchChartData('wg_vm4', missionId).then(data => renderWgVm4Chart(data)) : Promise.resolve(),
-            'telemetry': () => isSensorEnabled('navigation') ? fetchChartData('telemetry', missionId).then(data => { // This key is used by controls and mapped from 'navigation'
-                renderTelemetryChart(data); // Updated function name
-                renderNavigationCurrentChart(data);
-                renderNavigationHeadingDiffChart(data);
-            }).catch(error => { showToast(`Error loading telemetry data: ${error.message}`, 'danger'); renderTelemetryChart(null); renderNavigationCurrentChart(null); renderNavigationHeadingDiffChart(null); }) : Promise.resolve(), // Add catch for telemetry
-            'errors': () => isSensorEnabled('errors') ? Promise.resolve().then(() => {
-                renderErrorCategoryChart();
-            }) : Promise.resolve()
-        };
-        return loaders[reportType];
+        if (WG_TIME_SERIES_CARD_CONFIGS[reportType]) {
+            return () => loadWgTimeSeriesCategory(reportType);
+        }
+        if (reportType === 'errors') {
+            return () => isSensorEnabled('errors')
+                ? Promise.resolve().then(() => { renderErrorCategoryChart(); })
+                : Promise.resolve();
+        }
+        return undefined;
     }
 
     function initializeInteractiveControls() {
@@ -3344,6 +2353,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                 loadedCategories.forEach(category => {
                     const loader = getSensorLoader(category);
                     if (loader) loader();
+                    // Spectrum is imperative and must refresh with waves controls (not on plot-style).
+                    if (category === 'waves') {
+                        fetchAndRenderWaveSpectrum(missionId);
+                    }
                 });
             });
         });
@@ -3351,35 +2364,36 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     // --- Theme Change Handler ---
     function updateAllChartInstances() {
-        const chartInstances = [
-            powerChartInstance, ctdChartInstance, weatherSensorChartInstance,
-            waveChartInstance, vr2cChartInstance, ctdProfileChartInstance,
-            solarPanelChartInstance, fluorometerChartInstance, wgVm4ChartInstance,
-            waveHeightDirectionChartInstance, waveSpectrumChartInstance,
-            telemetryChartInstance, navigationCurrentChartInstance,
-            navigationHeadingDiffChartInstance
-        ];
-
-        chartInstances.forEach(chart => {
-            if (chart) {
-                // Update scales
-                Object.keys(chart.options.scales).forEach(scaleKey => {
-                    const scale = chart.options.scales[scaleKey];
-                    if (scale.title) scale.title.color = chartTextColor;
-                    if (scale.ticks) scale.ticks.color = chartTextColor;
-                    if (scale.grid && scale.grid.drawOnChartArea !== false) {
-                        scale.grid.color = chartGridColor;
-                    }
-                });
-                // Update legend
-                if (chart.options.plugins.legend) {
-                    chart.options.plugins.legend.labels.color = chartTextColor;
-                }
-                chart.update('none'); // Update without animation
+        // Declarative time-series: re-render from series cache (theme colors read at render time).
+        const categoriesToRefresh = new Set([
+            ...loadedCategories,
+            ...Object.keys(wgSeriesCache),
+        ]);
+        categoriesToRefresh.forEach((category) => {
+            const key = category === 'telemetry' ? 'navigation' : category;
+            if (WG_TIME_SERIES_CARD_CONFIGS[key]) {
+                reRenderWgCategoryFromCache(key);
             }
         });
-        
-        // Re-render mini charts as their colors are in the dataset
+
+        // Imperative charts (spectrum): patch theme colors in place.
+        const imperative = [waveSpectrumChartInstance];
+        imperative.forEach((chart) => {
+            if (!chart) return;
+            Object.keys(chart.options.scales || {}).forEach((scaleKey) => {
+                const scale = chart.options.scales[scaleKey];
+                if (scale.title) scale.title.color = chartTextColor;
+                if (scale.ticks) scale.ticks.color = chartTextColor;
+                if (scale.grid && scale.grid.drawOnChartArea !== false) {
+                    scale.grid.color = chartGridColor;
+                }
+            });
+            if (chart.options.plugins?.legend) {
+                chart.options.plugins.legend.labels.color = chartTextColor;
+            }
+            chart.update('none');
+        });
+
         initializeMiniCharts();
     }
 
@@ -3503,25 +2517,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             return;
         }
 
-        const chartInstanceMap = {
-            powerChart: powerChartInstance,
-            solarPanelChart: solarPanelChartInstance,
-            ctdChart: ctdChartInstance,
-            ctdProfileChart: ctdProfileChartInstance,
-            weatherSensorChart: weatherSensorChartInstance,
-            waveChart: waveChartInstance,
-            waveHeightDirectionChart: waveHeightDirectionChartInstance,
-            waveSpectrumChart: waveSpectrumChartInstance,
-            vr2cChart: vr2cChartInstance,
-            fluorometerChart: fluorometerChartInstance,
-            wgVm4Chart: wgVm4ChartInstance,
-            telemetryChart: telemetryChartInstance,
-            telemetryCurrentChart: navigationCurrentChartInstance,
-            telemetryHeadingDiffChart: navigationHeadingDiffChartInstance,
+        const resolveChartInstance = (chartId) => {
+            if (chartId === 'waveSpectrumChart') return waveSpectrumChartInstance;
+            return chartInstancesByCanvasId[chartId] || null;
         };
-
-        // Prefer live registry (time-series) when present
-        const resolveChartInstance = (chartId) => chartInstancesByCanvasId[chartId] || chartInstanceMap[chartId] || null;
 
         // Store original chart states for restoration
         const originalStates = {};
@@ -3626,19 +2625,21 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Ensure all date range inputs are properly initialized
     initializeAllDateRangeStates();
 
-    // Initial data load for the default active view (Navigation)
-    const defaultActiveCategory = document.querySelector('#left-nav-panel .summary-card.active-card')?.dataset.category;
-    if (defaultActiveCategory) {
-        loadedCategories.add(defaultActiveCategory);
-        if (defaultActiveCategory === 'waves') {
-            fetchAndRenderWaveSpectrum(missionId);
-            fetchMarineForecastData(missionId).then(data => renderMarineForecast(data));
-            const loader = getSensorLoader(defaultActiveCategory);
-            if (loader) loader();
-        } else {
-            const loader = getSensorLoader(defaultActiveCategory);
-            if (loader) loader();
+
+    // Eager-load time-series categories that previously prefetched on page load.
+    // Spectrum still loads only when the waves detail is shown / refreshed.
+    ['navigation', 'power', 'ctd', 'weather', 'waves', 'vr2c', 'fluorometer', 'wg_vm4'].forEach((category) => {
+        if (isSensorEnabled(WG_TIME_SERIES_CARD_CONFIGS[category]?.enabledSensor || category)) {
+            loadWgTimeSeriesCategory(category);
+            loadedCategories.add(category);
         }
+    });
+
+    // Default active view extras (spectrum / marine for waves)
+    const defaultActiveCategory = document.querySelector('#left-nav-panel .summary-card.active-card')?.dataset.category;
+    if (defaultActiveCategory === 'waves') {
+        fetchAndRenderWaveSpectrum(missionId);
+        fetchMarineForecastData(missionId).then(data => renderMarineForecast(data));
     }
 
     // Open ESS waypoint planner with same data source as dashboard (use form; when local and no custom path, use config default)

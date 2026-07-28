@@ -4,7 +4,10 @@
  * Active datasets: auto-refresh via /api/slocum/cache-status. Historical: no auto-refresh.
  */
 import { apiRequest, showToast, escapeHTML, fetchWithAuth } from '/static/js/api.js';
-import { datetimeLocalToUtcIso, formatUtcDateTime } from '/static/js/datetime_utils.js';
+import { datetimeLocalToUtcIso, formatUtcDateTime, toUtcDate } from '/static/js/datetime_utils.js';
+import {
+    registerForceUtcTimeDisplayPlugin,
+} from '/static/js/chart_utc_utils.js';
 import { initializeMiniCharts } from '/static/js/mini_charts.js';
 import {
     applyTimeAxisZoom,
@@ -25,6 +28,13 @@ import {
     filterOverlayFromLegend,
     getOverlayEnabledForCanvas,
 } from '/static/js/chart_overlay_utils.js';
+import {
+    recordsToPoints as recordsToPointsShared,
+    drawNoDataOnCanvas,
+    buildTimeScaleX,
+} from '/static/js/chart_time_series_utils.js';
+
+registerForceUtcTimeDisplayPlugin();
 
 const DEFAULT_HOURS = 24;
 const DEFAULT_GRANULARITY = 0;
@@ -67,24 +77,14 @@ const SERIES_COLORS = [
     'rgba(23, 162, 184, 1)',
 ];
 
-/** Wave Glider–style Chart.js time axis (month + day on ticks). */
+/** Chart.js time axis with UTC tick/tooltip display. */
 function buildSlocumTimeScaleX() {
-    return {
-        type: 'time',
-        time: {
-            unit: 'hour',
-            tooltipFormat: 'MMM d, yyyy HH:mm',
-            displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' },
-        },
-        title: { display: true, text: 'Time', color: chartTextColor },
-        ticks: {
-            color: chartTextColor,
-            maxRotation: 0,
-            autoSkip: true,
-            autoSkipPadding: 20,
-        },
-        grid: { color: chartGridColor },
-    };
+    return buildTimeScaleX({
+        tickColor: chartTextColor,
+        gridColor: chartGridColor,
+        titleColor: chartTextColor,
+        titleText: 'Time (UTC)',
+    });
 }
 
 /** Declarative time-series card configs (Power / Flight / Navigation / Vehicle Health). */
@@ -455,21 +455,8 @@ function destroyCtdCharts() {
     });
 }
 
-function drawNoDataOnCanvas(canvasId, message = 'No data available') {
-    const canvas = document.getElementById(canvasId);
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const width = canvas.parentElement?.clientWidth || canvas.width || 300;
-    const height = canvas.parentElement?.clientHeight || canvas.height || 300;
-    canvas.width = width;
-    canvas.height = height;
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#6c757d';
-    ctx.font = '16px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(message, width / 2, height / 2);
+function recordsToPoints(records) {
+    return recordsToPointsShared(records, { keepGaps: false });
 }
 
 function buildProfileDataset(points, variable, range, stops) {
@@ -482,7 +469,9 @@ function buildProfileDataset(points, variable, range, stops) {
         if (value == null || !Number.isFinite(value) || p.depth == null || !Number.isFinite(p.depth) || !p.t) {
             continue;
         }
-        data.push({ x: new Date(p.t), y: p.depth, v: value });
+        const x = toUtcDate(p.t);
+        if (!x) continue;
+        data.push({ x, y: p.depth, v: value });
         colors.push(colorForValue(value, min, max, stops));
     }
     return { data, colors };
@@ -550,8 +539,7 @@ function renderOneProfileChart(config, payload) {
                         title(items) {
                             const raw = items?.[0]?.raw;
                             if (!raw?.x) return '';
-                            const d = raw.x instanceof Date ? raw.x : new Date(raw.x);
-                            return Number.isNaN(d.getTime()) ? '' : d.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+                            return formatUtcDateTime(raw.x);
                         },
                         label(item) {
                             const raw = item.raw || {};
@@ -627,8 +615,8 @@ function buildProfileDataUrl() {
 
 function formatRelativeTimeAgo(isoTimestamp) {
     if (!isoTimestamp) return 'N/A';
-    const then = new Date(isoTimestamp);
-    if (Number.isNaN(then.getTime())) return 'N/A';
+    const then = toUtcDate(isoTimestamp);
+    if (!then) return 'N/A';
     const seconds = Math.max(0, Math.floor((Date.now() - then.getTime()) / 1000));
     if (seconds < 60) return seconds <= 1 ? '1 second ago' : `${seconds} seconds ago`;
     const minutes = Math.floor(seconds / 60);
@@ -707,13 +695,6 @@ function loadCtdProfileCharts() {
 function setSharedChartToolbarVisible(isVisible) {
     const toolbar = document.getElementById('slocumSharedChartToolbar');
     if (toolbar) toolbar.style.display = isVisible ? 'block' : 'none';
-}
-
-function recordsToPoints(records) {
-    if (!Array.isArray(records)) return [];
-    return records
-        .filter((row) => row && row.Timestamp != null && row.Value != null && Number.isFinite(Number(row.Value)))
-        .map((row) => ({ x: new Date(row.Timestamp), y: Number(row.Value) }));
 }
 
 function destroyTimeSeriesCharts(category) {
@@ -959,10 +940,10 @@ async function refreshSfmcCallLengthChart(categoryCfg) {
         sfmcCallPointsCache = connections
             .filter((row) => row?.start && row?.duration_seconds != null)
             .map((row) => ({
-                x: new Date(row.start),
+                x: toUtcDate(row.start),
                 y: Number(row.duration_seconds) / 60.0,
             }))
-            .filter((p) => Number.isFinite(p.y));
+            .filter((p) => p.x != null && Number.isFinite(p.y));
 
         const showNote = !payload?.sfmc_configured || sfmcCallPointsCache.length === 0;
         if (noteEl) noteEl.style.display = showNote ? 'block' : 'none';
@@ -2046,6 +2027,7 @@ async function loadSlocumChecklists() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    registerForceUtcTimeDisplayPlugin();
     const datasetId = getDatasetId();
     if (!datasetId) {
         const errEl = document.getElementById('slocumDashboardError');

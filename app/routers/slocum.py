@@ -392,6 +392,11 @@ async def _load_bundle_result(
 _DERIVED_CHART_LOOKBACK_HOURS = 36  # Rolling coulomb rate needs samples before the display window.
 
 
+def _utc_iso_z(series: pd.Series) -> pd.Series:
+    """Format timestamps as explicit UTC ISO 8601 with trailing Z (avoids browser local reinterpretation)."""
+    return pd.to_datetime(series, utc=True).dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _filter_records_to_time_window(
     records: list[dict[str, Any]],
     time_start_str: Optional[str],
@@ -426,7 +431,7 @@ def _resample_series(
     else:
         out_df = series.reset_index()
     out_df = out_df.rename(columns={value_col: "Value"})
-    out_df["Timestamp"] = out_df["Timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+    out_df["Timestamp"] = _utc_iso_z(out_df["Timestamp"])
     out_df = out_df.replace({np.nan: None})
     return out_df.to_dict(orient="records")
 
@@ -439,7 +444,7 @@ def _series_records_from_index(
         return []
     out_df = series.rename("Value").reset_index()
     ts_col = out_df.columns[0]
-    out_df["Timestamp"] = pd.to_datetime(out_df[ts_col], utc=True).dt.strftime("%Y-%m-%dT%H:%M:%S")
+    out_df["Timestamp"] = _utc_iso_z(out_df[ts_col])
     out_df = out_df[["Timestamp", "Value"]].replace({np.nan: None})
     return out_df.to_dict(orient="records")
 
@@ -857,7 +862,7 @@ def _build_profile_payload(sliced: pd.DataFrame) -> dict[str, Any]:
         return empty
 
     out = pd.DataFrame({
-        "t": ts.dt.strftime("%Y-%m-%dT%H:%M:%S"),
+        "t": _utc_iso_z(ts),
         "depth": work["depth"].astype(float),
     })
     for key in value_cols:
@@ -1204,7 +1209,7 @@ async def get_slocum_csv(
         out_df = recent[numeric_cols].resample(f"{granularity_minutes}min").mean().reset_index()
     else:
         out_df = recent[numeric_cols].reset_index()
-    out_df["Timestamp"] = out_df["Timestamp"].dt.strftime("%Y-%m-%dT%H:%M:%S")
+    out_df["Timestamp"] = _utc_iso_z(out_df["Timestamp"])
     out_df = out_df.rename(columns=_SLOCUM_CSV_COLUMN_RENAME)
     output = io.StringIO()
     out_df.to_csv(output, index=False)
