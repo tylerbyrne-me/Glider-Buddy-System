@@ -18,6 +18,7 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from pathlib import Path
 from typing import Any, Iterator, Literal, Optional
 
 import pandas as pd
@@ -303,6 +304,34 @@ def _merge_for_response(
     return _slice_df(merged, start_utc, end_utc)
 
 
+async def _finalize_bundle_merge(
+    mirror_df: pd.DataFrame,
+    overage_df: pd.DataFrame,
+    requested_start: datetime,
+    requested_end: datetime,
+    *,
+    dataset_id: str,
+    bundle: str,
+) -> pd.DataFrame:
+    """Merge mirror + overage and slice; fetch mirror tail gap when overage missed post-mirror data."""
+    merged = _merge_for_response(mirror_df, overage_df, requested_start, requested_end)
+    if not merged.empty:
+        return merged
+    if mirror_df.empty or "Timestamp" not in mirror_df.columns:
+        return merged
+    ts = pd.to_datetime(mirror_df["Timestamp"], utc=True)
+    mirror_max_dt = ts.max()
+    if pd.isna(mirror_max_dt) or mirror_max_dt >= requested_end:
+        return merged
+    gap_start = mirror_max_dt - timedelta(minutes=1)
+    gap_norm_start, gap_norm_end = normalize_overage_window(gap_start, requested_end)
+    gap_decimation = _decimation_for_request(bundle, gap_norm_start, gap_norm_end)
+    gap_df = await _fetch_overage_window(
+        dataset_id, bundle, gap_norm_start, gap_norm_end, gap_decimation
+    )
+    return _merge_for_response(mirror_df, gap_df, requested_start, requested_end)
+
+
 def _iter_sidecars() -> Iterator[Path]:
     root = get_overage_root()
     if not root.is_dir():
@@ -468,7 +497,15 @@ async def get_bundle_dataframe(
             logger.warning("Mirror sync before overage load failed for %s: %s", dataset_id, err)
 
     mirror_df = load_mirror_df(dataset_id, bundle)
-    if mirror_covers_window(dataset_id, bundle, requested_start, requested_end):
+    if not mirror_df.empty and "Timestamp" in mirror_df.columns:
+        ts = pd.to_datetime(mirror_df["Timestamp"], utc=True)
+        mirror_max_dt = ts.max()
+        if not pd.isna(mirror_max_dt) and mirror_max_dt < requested_start:
+            # Mirror ends before the display window starts (stale tail / rounding).
+            # Pull start back so partial mirror overlap is included instead of an empty chart.
+            requested_start = mirror_max_dt
+    covers = mirror_covers_window(dataset_id, bundle, requested_start, requested_end)
+    if covers:
         sliced = _slice_df(mirror_df, requested_start, requested_end)
         return OverageResult(
             df=sliced,
@@ -494,7 +531,10 @@ async def get_bundle_dataframe(
     if cached is not None:
         _STATS["hits"] += 1
         overage_df, meta = cached
-        merged = _merge_for_response(mirror_df, overage_df, requested_start, requested_end)
+        merged = await _finalize_bundle_merge(
+            mirror_df, overage_df, requested_start, requested_end,
+            dataset_id=dataset_id, bundle=bundle,
+        )
         return OverageResult(
             df=merged,
             metadata={
@@ -539,7 +579,10 @@ async def get_bundle_dataframe(
             if current is task:
                 _IN_FLIGHT.pop(cache_key, None)
 
-    merged = _merge_for_response(mirror_df, overage_df, requested_start, requested_end)
+    merged = await _finalize_bundle_merge(
+        mirror_df, overage_df, requested_start, requested_end,
+        dataset_id=dataset_id, bundle=bundle,
+    )
     return OverageResult(
         df=merged,
         metadata={

@@ -6,10 +6,12 @@ and fetch chart data for the Slocum mission dashboard.
 """
 import asyncio
 import io
+import json
 import logging
 import math
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, List, Optional
 
 import matplotlib
@@ -385,6 +387,29 @@ async def _load_bundle_result(
         df = result if isinstance(result, pd.DataFrame) else pd.DataFrame()
         return OverageResult(df=df if df is not None else pd.DataFrame(), metadata={"data_source": "mirror"})
     return result
+
+
+_DERIVED_CHART_LOOKBACK_HOURS = 36  # Rolling coulomb rate needs samples before the display window.
+
+
+def _filter_records_to_time_window(
+    records: list[dict[str, Any]],
+    time_start_str: Optional[str],
+    time_end_str: Optional[str],
+) -> list[dict[str, Any]]:
+    if not records or not time_start_str or not time_end_str:
+        return records
+    start_dt = pd.to_datetime(time_start_str, utc=True)
+    end_dt = pd.to_datetime(time_end_str, utc=True)
+    filtered: list[dict[str, Any]] = []
+    for row in records:
+        ts = row.get("Timestamp")
+        if ts is None:
+            continue
+        pt = pd.to_datetime(ts, utc=True)
+        if start_dt <= pt <= end_dt:
+            filtered.append(row)
+    return filtered
 
 
 def _resample_series(
@@ -931,6 +956,16 @@ async def get_slocum_chart_data_bulk(
     ]
     needs_dashboard = bool(dash_vars or derived_vars)
 
+    time_start_str, time_end_str, _use_date_range = _parse_slocum_time_window(
+        dataset_id, hours_back, is_historical, start_date, end_date
+    )
+    load_hours_back = hours_back
+    if not start_date and not end_date:
+        # Widen load so stale mirror tails overlap the display window (24h vs 48h gap bug).
+        load_hours_back = max(load_hours_back, min(72, hours_back + 24))
+        if derived_vars:
+            load_hours_back = max(load_hours_back, hours_back + _DERIVED_CHART_LOOKBACK_HOURS)
+
     try:
         dashboard_result = None
         ctd_result = None
@@ -938,7 +973,7 @@ async def get_slocum_chart_data_bulk(
             dashboard_result = await _load_bundle_result(
                 dataset_id,
                 "dashboard",
-                hours_back=hours_back,
+                hours_back=load_hours_back,
                 is_historical=is_historical,
                 start_date=start_date,
                 end_date=end_date,
@@ -961,16 +996,39 @@ async def get_slocum_chart_data_bulk(
     series: dict[str, list[dict[str, Any]]] = {}
     last_dt: Optional[datetime] = None
     source_meta: dict[str, Any] = {}
+    display_df = pd.DataFrame()
 
     if needs_dashboard and dashboard_result is not None and not dashboard_result.df.empty:
-        sliced = dashboard_result.df
-        last_dt = _last_dt_from_processed(sliced)
+        full_df = dashboard_result.df
+        display_df = slice_processed_df(
+            full_df,
+            hours_back=hours_back,
+            use_date_range=True,
+            time_start_str=time_start_str,
+            time_end_str=time_end_str,
+        )
+        if display_df.empty and not full_df.empty:
+            data_max = pd.to_datetime(full_df["Timestamp"], utc=True).max()
+            if pd.notna(data_max):
+                anchored_end = data_max
+                anchored_start = anchored_end - pd.Timedelta(hours=hours_back)
+                display_df = slice_processed_df(
+                    full_df,
+                    hours_back=hours_back,
+                    use_date_range=True,
+                    time_start_str=anchored_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    time_end_str=anchored_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                )
+        last_dt = _last_dt_from_processed(display_df) or _last_dt_from_processed(full_df)
         source_meta = dashboard_result.metadata or source_meta
         for variable in dash_vars:
             value_col = _SLOCUM_VARIABLE_TO_COLUMN[variable]
-            series[variable] = _resample_series(sliced, value_col, granularity_minutes)
+            series[variable] = _resample_series(display_df, value_col, granularity_minutes)
         for variable in derived_vars:
-            series[variable] = _build_derived_series(sliced, variable, granularity_minutes)
+            derived_records = _build_derived_series(full_df, variable, granularity_minutes)
+            series[variable] = _filter_records_to_time_window(
+                derived_records, time_start_str, time_end_str,
+            )
 
     if ctd_vars and ctd_result is not None and not ctd_result.df.empty:
         sliced = ctd_result.df
