@@ -4,6 +4,11 @@
  */
 import { apiRequest, showToast } from '/static/js/api.js';
 import { checkAuth } from '/static/js/auth.js';
+import {
+    applyTimeAxisZoom,
+    bindResetZoomButton,
+    CHART_ZOOM_HINT,
+} from '/static/js/chart_zoom_utils.js';
 
 /** Mirror of backend CHECKLIST_PLOTTABLE_ITEMS keys — add entries there first. */
 const PLOTTABLE_ITEM_IDS = new Set([
@@ -386,152 +391,138 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         }
 
-        plotChart = new Chart(canvas.getContext('2d'), {
-            data: { datasets },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                layout: {
-                    padding: { top: 8, right: 12, bottom: 4, left: 8 },
+        const chartOptions = {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: {
+                padding: { top: 8, right: 12, bottom: 4, left: 8 },
+            },
+            interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
+            plugins: {
+                title: {
+                    display: true,
+                    text: titleText,
+                    color: colors.text,
+                    font: { size: 15, weight: '600' },
+                    padding: { bottom: 10 },
                 },
-                interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
-                plugins: {
-                    title: {
-                        display: true,
-                        text: titleText,
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
                         color: colors.text,
-                        font: { size: 15, weight: '600' },
-                        padding: { bottom: 10 },
-                    },
-                    legend: {
-                        display: true,
-                        position: 'top',
-                        labels: {
-                            color: colors.text,
-                            usePointStyle: true,
-                            pointStyle: 'rectRounded',
-                            padding: 16,
-                            font: { size: 13 },
-                            generateLabels(chart) {
-                                const dsList = chart.data.datasets || [];
-                                return dsList.map((ds, i) => ({
-                                    text: ds.label || `Series ${i + 1}`,
-                                    fillStyle: ds.borderColor || ds.backgroundColor,
-                                    strokeStyle: ds.borderColor || ds.backgroundColor,
-                                    fontColor: colors.text,
-                                    hidden: !chart.isDatasetVisible(i),
-                                    datasetIndex: i,
-                                    pointStyle: ds.type === 'scatter'
-                                        ? (ds.pointStyle || 'circle')
-                                        : 'line',
-                                }));
-                            },
-                        },
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(33, 37, 41, 0.95)',
-                        titleColor: colors.text,
-                        bodyColor: colors.text,
-                        borderColor: colors.border,
-                        borderWidth: 1,
-                        callbacks: {
-                            title(items) {
-                                const ts = items?.[0]?.parsed?.x;
-                                if (ts == null) return '';
-                                try {
-                                    return new Date(ts).toISOString().replace('.000Z', 'Z');
-                                } catch {
-                                    return String(items[0].label || '');
-                                }
-                            },
-                            label(ctx) {
-                                const v = ctx.parsed?.y;
-                                const name = ctx.dataset.label || 'Value';
-                                if (v == null || Number.isNaN(v)) return `${name}: N/A`;
-
-                                if (ctx.dataset.type === 'scatter' || ctx.dataset.yAxisID === 'y2') {
-                                    const depthM = nearestWholeDepthMeters(
-                                        depthPts,
-                                        -1,
-                                        ctx.parsed?.x ?? ctx.raw?.x,
-                                    );
-                                    const depthBit = depthM == null ? 'Depth: N/A' : `Depth: ${depthM} m`;
-                                    return [
-                                        `${name}: ${Number(v).toFixed(3)}`,
-                                        depthBit,
-                                    ];
-                                }
-
-                                return `${name}: ${Math.round(Number(v))} m`;
-                            },
-                        },
-                    },
-                    zoom: {
-                        limits: {
-                            x: { min: 'original', max: 'original' },
-                        },
-                        pan: {
-                            enabled: true,
-                            mode: 'x',
-                        },
-                        zoom: {
-                            wheel: { enabled: true },
-                            pinch: { enabled: true },
-                            mode: 'x',
+                        usePointStyle: true,
+                        pointStyle: 'rectRounded',
+                        padding: 16,
+                        font: { size: 13 },
+                        generateLabels(chart) {
+                            const dsList = chart.data.datasets || [];
+                            return dsList.map((ds, i) => ({
+                                text: ds.label || `Series ${i + 1}`,
+                                fillStyle: ds.borderColor || ds.backgroundColor,
+                                strokeStyle: ds.borderColor || ds.backgroundColor,
+                                fontColor: colors.text,
+                                hidden: !chart.isDatasetVisible(i),
+                                datasetIndex: i,
+                                pointStyle: ds.type === 'scatter'
+                                    ? (ds.pointStyle || 'circle')
+                                    : 'line',
+                            }));
                         },
                     },
                 },
-                scales: {
-                    x: {
-                        type: 'time',
-                        title: {
-                            display: true,
-                            text: 'Time (UTC)',
-                            color: colors.text,
-                            font: { size: 13, weight: '600' },
-                            padding: { top: 8 },
+                tooltip: {
+                    backgroundColor: 'rgba(33, 37, 41, 0.95)',
+                    titleColor: colors.text,
+                    bodyColor: colors.text,
+                    borderColor: colors.border,
+                    borderWidth: 1,
+                    callbacks: {
+                        title(items) {
+                            const ts = items?.[0]?.parsed?.x;
+                            if (ts == null) return '';
+                            try {
+                                return new Date(ts).toISOString().replace('.000Z', 'Z');
+                            } catch {
+                                return String(items[0].label || '');
+                            }
                         },
-                        ticks: { color: colors.muted, maxRotation: 0 },
-                        grid: { color: colors.border },
-                    },
-                    y: {
-                        type: 'linear',
-                        position: 'left',
-                        reverse: true,
-                        title: {
-                            display: true,
-                            text: depthAxisTitle,
-                            color: colors.depth,
-                            font: { size: 13, weight: '600' },
+                        label(ctx) {
+                            const v = ctx.parsed?.y;
+                            const name = ctx.dataset.label || 'Value';
+                            if (v == null || Number.isNaN(v)) return `${name}: N/A`;
+
+                            if (ctx.dataset.type === 'scatter' || ctx.dataset.yAxisID === 'y2') {
+                                const depthM = nearestWholeDepthMeters(
+                                    depthPts,
+                                    -1,
+                                    ctx.parsed?.x ?? ctx.raw?.x,
+                                );
+                                const depthBit = depthM == null ? 'Depth: N/A' : `Depth: ${depthM} m`;
+                                return [
+                                    `${name}: ${Number(v).toFixed(3)}`,
+                                    depthBit,
+                                ];
+                            }
+
+                            return `${name}: ${Math.round(Number(v))} m`;
                         },
-                        ticks: { color: colors.depth },
-                        grid: { color: colors.border },
-                    },
-                    y2: {
-                        type: 'linear',
-                        position: 'right',
-                        title: {
-                            display: true,
-                            text: valueAxisTitle,
-                            color: colors.value,
-                            font: { size: 13, weight: '600' },
-                        },
-                        ticks: { color: colors.value },
-                        grid: { drawOnChartArea: false },
                     },
                 },
             },
+            scales: {
+                x: {
+                    type: 'time',
+                    title: {
+                        display: true,
+                        text: 'Time (UTC)',
+                        color: colors.text,
+                        font: { size: 13, weight: '600' },
+                        padding: { top: 8 },
+                    },
+                    ticks: { color: colors.muted, maxRotation: 0 },
+                    grid: { color: colors.border },
+                },
+                y: {
+                    type: 'linear',
+                    position: 'left',
+                    reverse: true,
+                    title: {
+                        display: true,
+                        text: depthAxisTitle,
+                        color: colors.depth,
+                        font: { size: 13, weight: '600' },
+                    },
+                    ticks: { color: colors.depth },
+                    grid: { color: colors.border },
+                },
+                y2: {
+                    type: 'linear',
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: valueAxisTitle,
+                        color: colors.value,
+                        font: { size: 13, weight: '600' },
+                    },
+                    ticks: { color: colors.value },
+                    grid: { drawOnChartArea: false },
+                },
+            },
+        };
+        applyTimeAxisZoom(chartOptions);
+
+        plotChart = new Chart(canvas.getContext('2d'), {
+            data: { datasets },
+            options: chartOptions,
         });
     }
 
     const resetZoomBtn = document.getElementById('checklistPlotResetZoomBtn');
-    if (resetZoomBtn) {
-        resetZoomBtn.addEventListener('click', () => {
-            if (plotChart && typeof plotChart.resetZoom === 'function') {
-                plotChart.resetZoom();
-            }
-        });
-    }
+    bindResetZoomButton(resetZoomBtn, () => plotChart);
+
+    const plotZoomHint = document.getElementById('checklistPlotZoomHint');
+    if (plotZoomHint) plotZoomHint.textContent = CHART_ZOOM_HINT;
 
     function renderSchema(schema, savedSubmission = null) {
         currentSchema = schema;

@@ -161,6 +161,135 @@ def get_slocum_ctd_mini_trend(df_ctd: Optional[pd.DataFrame]) -> List[Dict[str, 
     )
 
 
+def _passthrough_dashboard_df(df: Optional[pd.DataFrame]) -> pd.DataFrame:
+    """Dashboard mirror rows are already preprocessed; normalize empty inputs."""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    return df.copy()
+
+
+def _status_from_last_row(
+    df: Optional[pd.DataFrame],
+    *,
+    value_keys: Sequence[str],
+    trend_name: str,
+    last_update_timestamp: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    """Build a left-nav status shell from the latest dashboard mirror row."""
+    try:
+        result_shell, _df_processed, last_row = _get_common_status_data(
+            df,
+            _passthrough_dashboard_df,
+            trend_name,
+            last_update_timestamp,
+        )
+        if last_row is None:
+            if result_shell.get("values") is None:
+                result_shell["values"] = {}
+            return result_shell
+        values: Dict[str, Any] = {}
+        for key in value_keys:
+            values[key] = last_row.get(key)
+        values["Timestamp"] = (
+            last_row["Timestamp"].isoformat()
+            if "Timestamp" in last_row.index and pd.notna(last_row.get("Timestamp"))
+            else "N/A"
+        )
+        result_shell["values"] = _sanitize_values(values)
+        return result_shell
+    except Exception as e:
+        logger.warning("Error in %s status: %s", trend_name, e, exc_info=True)
+        return dict(_EMPTY_SHELL)
+
+
+def get_slocum_power_status(
+    df: Optional[pd.DataFrame],
+    last_update_timestamp: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    return _status_from_last_row(
+        df,
+        value_keys=("MBattery", "MCoulombAmphrTotal"),
+        trend_name="Slocum Power",
+        last_update_timestamp=last_update_timestamp,
+    )
+
+
+def get_slocum_power_mini_trend(df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
+    return _generate_mini_trend(
+        df=df,
+        preprocessor=_passthrough_dashboard_df,
+        metric_col="MBattery",
+        hours_back=24,
+        trend_name="Slocum Power",
+    )
+
+
+def get_slocum_flight_status(
+    df: Optional[pd.DataFrame],
+    last_update_timestamp: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    return _status_from_last_row(
+        df,
+        value_keys=("MPitch", "MRoll"),
+        trend_name="Slocum Flight",
+        last_update_timestamp=last_update_timestamp,
+    )
+
+
+def get_slocum_flight_mini_trend(df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
+    return _generate_mini_trend(
+        df=df,
+        preprocessor=_passthrough_dashboard_df,
+        metric_col="MPitch",
+        hours_back=24,
+        trend_name="Slocum Flight",
+    )
+
+
+def get_slocum_navigation_status(
+    df: Optional[pd.DataFrame],
+    last_update_timestamp: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    return _status_from_last_row(
+        df,
+        value_keys=("MHeading", "MSpeed"),
+        trend_name="Slocum Navigation",
+        last_update_timestamp=last_update_timestamp,
+    )
+
+
+def get_slocum_navigation_mini_trend(df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
+    return _generate_mini_trend(
+        df=df,
+        preprocessor=_passthrough_dashboard_df,
+        metric_col="MHeading",
+        hours_back=24,
+        trend_name="Slocum Navigation",
+    )
+
+
+def get_slocum_vehicle_health_status(
+    df: Optional[pd.DataFrame],
+    last_update_timestamp: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    return _status_from_last_row(
+        df,
+        value_keys=("MVacuum", "MLeakdetectVoltage"),
+        trend_name="Slocum Vehicle Health",
+        last_update_timestamp=last_update_timestamp,
+    )
+
+
+def get_slocum_vehicle_health_mini_trend(df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
+    return _generate_mini_trend(
+        df=df,
+        preprocessor=_passthrough_dashboard_df,
+        metric_col="MVacuum",
+        hours_back=24,
+        trend_name="Slocum Vehicle Health",
+    )
+
+
 # Transfer point for future sensors (dissolved_oxygen, etc.)
 SLOCUM_SENSOR_SUMMARY_SPECS: Dict[str, Dict[str, Any]] = {
     "ctd": {
@@ -169,6 +298,34 @@ SLOCUM_SENSOR_SUMMARY_SPECS: Dict[str, Dict[str, Any]] = {
         "mini_trend_fn": get_slocum_ctd_mini_trend,
         "info_key": "ctd_info",
         "values_key": "ctd_values",
+    },
+    "power": {
+        "bundle": "dashboard",
+        "status_fn": get_slocum_power_status,
+        "mini_trend_fn": get_slocum_power_mini_trend,
+        "info_key": "power_info",
+        "values_key": "power_values",
+    },
+    "flight": {
+        "bundle": "dashboard",
+        "status_fn": get_slocum_flight_status,
+        "mini_trend_fn": get_slocum_flight_mini_trend,
+        "info_key": "flight_info",
+        "values_key": "flight_values",
+    },
+    "navigation": {
+        "bundle": "dashboard",
+        "status_fn": get_slocum_navigation_status,
+        "mini_trend_fn": get_slocum_navigation_mini_trend,
+        "info_key": "navigation_info",
+        "values_key": "navigation_values",
+    },
+    "vehicle_health": {
+        "bundle": "dashboard",
+        "status_fn": get_slocum_vehicle_health_status,
+        "mini_trend_fn": get_slocum_vehicle_health_mini_trend,
+        "info_key": "vehicle_health_info",
+        "values_key": "vehicle_health_values",
     },
 }
 

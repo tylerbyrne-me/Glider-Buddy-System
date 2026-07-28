@@ -1,0 +1,27 @@
+{# Shared per-chart plot controls: style, optional depth overlay, reset zoom.
+   Usage:
+     {% from "_chart_plot_controls.html" import chart_plot_controls %}
+     {{ chart_plot_controls('myCanvasId') }}
+     {{ chart_plot_controls('myCanvasId', show_depth=false) }}
+#}
+{% macro chart_plot_controls(canvas_id, show_depth=true, show_reset_zoom=true) %}
+<div class="d-flex flex-wrap align-items-center gap-2 mb-1 chart-plot-opts" data-canvas-id="{{ canvas_id }}">
+  <div class="input-group input-group-sm" style="width: 170px;">
+    <label class="input-group-text" for="plotStyle-{{ canvas_id }}">Style</label>
+    <select class="form-select chart-plot-style" id="plotStyle-{{ canvas_id }}" data-canvas-id="{{ canvas_id }}">
+      <option value="line" selected>Line</option>
+      <option value="line_scatter">Line + scatter</option>
+      <option value="scatter">Scatter</option>
+    </select>
+  </div>
+  {% if show_depth %}
+  <div class="form-check form-check-inline mb-0">
+    <input class="form-check-input chart-depth-overlay" type="checkbox" id="depthOverlay-{{ canvas_id }}" data-canvas-id="{{ canvas_id }}">
+    <label class="form-check-label small" for="depthOverlay-{{ canvas_id }}">Show depth</label>
+  </div>
+  {% endif %}
+  {% if show_reset_zoom %}
+  <button type="button" class="btn btn-outline-secondary btn-sm chart-reset-zoom" data-canvas-id="{{ canvas_id }}" title="Reset chart zoom to the full loaded window">Reset zoom</button>
+  {% endif %}
+</div>
+{% endmacro %}

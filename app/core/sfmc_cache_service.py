@@ -17,9 +17,13 @@ from sqlmodel import Session, select
 
 from . import models
 from .sfmc_client import load_sfmc_checklist_values, sfmc_is_configured
+from .sfmc_transforms import merge_connection_durations
 from .slocum_mirror_service import is_historical_dataset
 
 logger = logging.getLogger(__name__)
+
+_CONNECTION_DURATIONS_KEY = "connection_durations"
+_CONNECTION_DURATIONS_MAX_DAYS = 90
 
 
 def _deployment_linked_to_historical(deployment: models.SlocumDeployment) -> bool:
@@ -30,7 +34,7 @@ def _deployment_linked_to_historical(deployment: models.SlocumDeployment) -> boo
         return True
     return False
 
-def _parse_values_json(raw: Optional[str]) -> dict[str, str]:
+def _parse_values_json(raw: Optional[str]) -> dict[str, Any]:
     if not raw or not str(raw).strip():
         return {}
     try:
@@ -39,9 +43,20 @@ def _parse_values_json(raw: Optional[str]) -> dict[str, str]:
         return {}
     if not isinstance(payload, dict):
         return {}
-    out: dict[str, str] = {}
+    out: dict[str, Any] = {}
     for key, value in payload.items():
         if value is None:
+            continue
+        if key == _CONNECTION_DURATIONS_KEY:
+            if isinstance(value, list):
+                out[key] = value
+            elif isinstance(value, str) and value.strip():
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, list):
+                        out[key] = parsed
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    pass
             continue
         text = str(value).strip()
         if text:
@@ -49,19 +64,25 @@ def _parse_values_json(raw: Optional[str]) -> dict[str, str]:
     return out
 
 
-def _dump_values_json(values: dict[str, str]) -> str:
-    cleaned = {
-        str(key): str(value).strip()
-        for key, value in (values or {}).items()
-        if value is not None and str(value).strip()
-    }
+def _dump_values_json(values: dict[str, Any]) -> str:
+    cleaned: dict[str, Any] = {}
+    for key, value in (values or {}).items():
+        if value is None:
+            continue
+        if key == _CONNECTION_DURATIONS_KEY:
+            if isinstance(value, list):
+                cleaned[key] = value
+            continue
+        text = str(value).strip()
+        if text:
+            cleaned[str(key)] = text
     return json.dumps(cleaned, ensure_ascii=True, sort_keys=True)
 
 
 def get_cached_sfmc_values(
     session: Session,
     deployment_id: Optional[int],
-) -> tuple[dict[str, str], Optional[datetime], Optional[str]]:
+) -> tuple[dict[str, Any], Optional[datetime], Optional[str]]:
     """
     Return ``(values, fetched_at_utc, fetch_error)`` for a deployment.
 
@@ -77,6 +98,21 @@ def get_cached_sfmc_values(
     if row is None:
         return {}, None, None
     return _parse_values_json(row.values_json), row.fetched_at_utc, row.fetch_error
+
+
+def get_cached_connection_durations(
+    session: Session,
+    deployment_id: Optional[int],
+) -> tuple[list[dict[str, Any]], Optional[datetime], Optional[str], bool]:
+    """
+    Return ``(durations, fetched_at_utc, fetch_error, sfmc_configured)``.
+    """
+    configured = sfmc_is_configured()
+    values, fetched_at, fetch_error = get_cached_sfmc_values(session, deployment_id)
+    durations = values.get(_CONNECTION_DURATIONS_KEY) if isinstance(values, dict) else None
+    if not isinstance(durations, list):
+        durations = []
+    return durations, fetched_at, fetch_error, configured
 
 
 def _get_or_create_snapshot(
@@ -112,6 +148,7 @@ async def refresh_sfmc_snapshot(
 
     On failure, records ``fetch_error`` and keeps the previous ``values_json``
     (last-known-good). Caller is responsible for committing when desired.
+    Connection durations are merged with prior history (capped to ~90 days).
     """
     glider = (deployment.glider_name or "").strip()
     row = _get_or_create_snapshot(session, deployment)
@@ -149,7 +186,19 @@ async def refresh_sfmc_snapshot(
 
     try:
         values = await load_sfmc_checklist_values(glider)
-        row.values_json = _dump_values_json(values)
+        previous = _parse_values_json(row.values_json)
+        incoming_durations = values.pop(_CONNECTION_DURATIONS_KEY, None) if isinstance(values, dict) else None
+        merged_durations = merge_connection_durations(
+            previous.get(_CONNECTION_DURATIONS_KEY),
+            incoming_durations,
+            max_days=_CONNECTION_DURATIONS_MAX_DAYS,
+        )
+        payload = dict(values or {})
+        if merged_durations:
+            payload[_CONNECTION_DURATIONS_KEY] = merged_durations
+        elif previous.get(_CONNECTION_DURATIONS_KEY):
+            payload[_CONNECTION_DURATIONS_KEY] = previous.get(_CONNECTION_DURATIONS_KEY)
+        row.values_json = _dump_values_json(payload)
         row.fetched_at_utc = datetime.now(timezone.utc)
         row.fetch_error = None
     except Exception as err:

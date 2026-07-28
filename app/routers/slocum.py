@@ -10,7 +10,7 @@ import logging
 import math
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Literal, Optional
+from typing import Any, List, Optional
 
 import matplotlib
 matplotlib.use("Agg")
@@ -225,12 +225,25 @@ _SLOCUM_VARIABLE_TO_COLUMN = {
     "c_pitch": "CPitch",
     "m_pitch": "MPitch",
     "m_roll": "MRoll",
+    "c_roll": "CRoll",
     "c_heading": "CHeading",
     "m_heading": "MHeading",
     "c_fin": "CFin",
     "m_fin": "MFin",
     "m_battery": "MBattery",
     "m_coulomb_amphr_total": "MCoulombAmphrTotal",
+    "m_coulomb_current": "MCoulombCurrent",
+    "m_bms_pitch_current": "MBmsPitchCurrent",
+    "m_bms_aft_current": "MBmsAftCurrent",
+    "m_bms_ebay_current": "MBmsEbayCurrent",
+    "m_speed": "MSpeed",
+    "m_depth_rate_avg_final": "MDepthRateAvgFinal",
+    "m_final_water_vx": "MFinalWaterVx",
+    "m_final_water_vy": "MFinalWaterVy",
+    "m_vacuum": "MVacuum",
+    "m_leakdetect_voltage": "MLeakdetectVoltage",
+    "m_leakdetect_voltage_forward": "MLeakdetectVoltageForward",
+    "m_leakdetect_voltage_science": "MLeakdetectVoltageScience",
     "conductivity": "Conductivity",
     "temperature": "Temperature",
     "pressure": "Pressure",
@@ -239,6 +252,9 @@ _SLOCUM_VARIABLE_TO_COLUMN = {
 }
 
 _SLOCUM_CTD_CHART_VARIABLES = ("conductivity", "temperature", "pressure", "salinity", "density")
+
+# Derived chart keys computed from dashboard columns (not direct ERDDAP columns).
+_SLOCUM_DERIVED_CHART_VARIABLES = frozenset({"coulomb_amphr_daily", "water_depth_altimeter", "water_current_speed"})
 
 # CTD depth-vs-time profile variables for Chart.js scatter + cmocean color grading
 _SLOCUM_PROFILE_VARIABLES = {
@@ -273,19 +289,38 @@ _SLOCUM_CSV_COLUMN_RENAME = {
     "CPitch": "c_pitch",
     "MPitch": "m_pitch",
     "MRoll": "m_roll",
+    "CRoll": "c_roll",
     "CHeading": "c_heading",
     "MHeading": "m_heading",
     "CFin": "c_fin",
     "MFin": "m_fin",
     "MBattery": "m_battery",
     "MCoulombAmphrTotal": "m_coulomb_amphr_total",
+    "MCoulombCurrent": "m_coulomb_current",
+    "MBmsPitchCurrent": "m_bms_pitch_current",
+    "MBmsAftCurrent": "m_bms_aft_current",
+    "MBmsEbayCurrent": "m_bms_ebay_current",
+    "MSpeed": "m_speed",
+    "MDepthRateAvgFinal": "m_depth_rate_avg_final",
+    "MFinalWaterVx": "m_final_water_vx",
+    "MFinalWaterVy": "m_final_water_vy",
+    "MVacuum": "m_vacuum",
+    "MLeakdetectVoltage": "m_leakdetect_voltage",
+    "MLeakdetectVoltageForward": "m_leakdetect_voltage_forward",
+    "MLeakdetectVoltageScience": "m_leakdetect_voltage_science",
 }
 
 _SLOCUM_CHART_VARIABLES = [
     "m_depth", "m_altitude", "m_raw_altitude", "m_water_depth",
-    "c_pitch", "m_pitch", "m_roll",
+    "c_pitch", "m_pitch", "m_roll", "c_roll",
     "c_heading", "m_heading", "c_fin", "m_fin",
-    "m_battery", "m_coulomb_amphr_total",
+    "m_battery", "m_coulomb_amphr_total", "m_coulomb_current",
+    "m_bms_pitch_current", "m_bms_aft_current", "m_bms_ebay_current",
+    "m_speed", "m_depth_rate_avg_final",
+    "m_final_water_vx", "m_final_water_vy",
+    "m_vacuum",
+    "m_leakdetect_voltage", "m_leakdetect_voltage_forward", "m_leakdetect_voltage_science",
+    "coulomb_amphr_daily", "water_depth_altimeter", "water_current_speed",
     "conductivity", "temperature", "pressure", "salinity", "density",
 ]
 
@@ -371,6 +406,133 @@ def _resample_series(
     return out_df.to_dict(orient="records")
 
 
+def _series_records_from_index(
+    series: pd.Series,
+) -> list[dict[str, Any]]:
+    """Convert a Timestamp-indexed Series into chart ``{Timestamp, Value}`` records."""
+    if series is None or series.empty:
+        return []
+    out_df = series.rename("Value").reset_index()
+    ts_col = out_df.columns[0]
+    out_df["Timestamp"] = pd.to_datetime(out_df[ts_col], utc=True).dt.strftime("%Y-%m-%dT%H:%M:%S")
+    out_df = out_df[["Timestamp", "Value"]].replace({np.nan: None})
+    return out_df.to_dict(orient="records")
+
+
+def _derive_coulomb_amphr_daily(
+    processed: pd.DataFrame,
+    granularity_minutes: Optional[int] = None,
+) -> list[dict[str, Any]]:
+    """
+    Rolling AmpHr/day consumption matching checklist ``compute_amphr_usage_rate``.
+
+    At each output timestamp ``t``, find the nearest sample near ``t - 24h`` and
+    emit ``(v_now - v_prior) * (24 / hours_elapsed)``. Points without a lookback
+    sample in [12h, 36h] are null. Negative deltas (counter reset) are null.
+    """
+    from ..core.slocum_checklist_autofill import compute_amphr_usage_rate
+
+    if processed.empty or "Timestamp" not in processed.columns:
+        return []
+    if "MCoulombAmphrTotal" not in processed.columns:
+        return []
+    working = processed[["Timestamp", "MCoulombAmphrTotal"]].dropna(subset=["Timestamp"]).copy()
+    if working.empty:
+        return []
+    working["MCoulombAmphrTotal"] = pd.to_numeric(working["MCoulombAmphrTotal"], errors="coerce")
+    working = working.dropna(subset=["MCoulombAmphrTotal"]).sort_values("Timestamp")
+    if working.empty:
+        return []
+
+    working = working.set_index("Timestamp")
+    # Deduplicate index (keep last) so asof/loc stay scalar.
+    series = working["MCoulombAmphrTotal"].astype(float)
+    if not series.index.is_unique:
+        series = series.groupby(level=0).last()
+
+    if granularity_minutes and granularity_minutes > 0:
+        sample_series = series.resample(f"{granularity_minutes}min").last().dropna()
+    else:
+        sample_series = series
+
+    if sample_series.empty:
+        return []
+
+    ts_values = series.index.to_numpy(dtype="datetime64[ns]")
+    amp_values = series.to_numpy(dtype=float)
+    lookback = np.timedelta64(24, "h")
+    min_lag = np.timedelta64(12, "h")
+    max_lag = np.timedelta64(36, "h")
+
+    rates: list[float] = []
+    out_ts: list[Any] = []
+    for t, v_now in sample_series.items():
+        t64 = np.datetime64(pd.Timestamp(t).to_datetime64())
+        target = t64 - lookback
+        prior_mask = ts_values < t64
+        if not prior_mask.any():
+            rates.append(float("nan"))
+            out_ts.append(t)
+            continue
+        prior_ts = ts_values[prior_mask]
+        prior_amps = amp_values[prior_mask]
+        idx = int(np.abs(prior_ts - target).argmin())
+        prior_t = prior_ts[idx]
+        lag = t64 - prior_t
+        if lag < min_lag or lag > max_lag:
+            rates.append(float("nan"))
+            out_ts.append(t)
+            continue
+        hours_elapsed = float(lag / np.timedelta64(1, "h"))
+        rate = compute_amphr_usage_rate(float(v_now), float(prior_amps[idx]), hours_elapsed)
+        rates.append(float(rate) if rate is not None else float("nan"))
+        out_ts.append(t)
+
+    result = pd.Series(rates, index=pd.DatetimeIndex(out_ts), dtype=float)
+    return _series_records_from_index(result)
+
+
+def _derive_water_depth_altimeter(processed: pd.DataFrame, granularity_minutes: Optional[int]) -> list[dict[str, Any]]:
+    """Water depth estimate: ``MDepth + MAltitude`` when both present."""
+    if processed.empty or "Timestamp" not in processed.columns:
+        return []
+    if "MDepth" not in processed.columns or "MAltitude" not in processed.columns:
+        return []
+    working = processed[["Timestamp", "MDepth", "MAltitude"]].copy()
+    working["WaterDepthAltimeter"] = (
+        pd.to_numeric(working["MDepth"], errors="coerce")
+        + pd.to_numeric(working["MAltitude"], errors="coerce")
+    )
+    return _resample_series(working, "WaterDepthAltimeter", granularity_minutes)
+
+
+def _derive_water_current_speed(processed: pd.DataFrame, granularity_minutes: Optional[int]) -> list[dict[str, Any]]:
+    """Depth-averaged current magnitude from ``MFinalWaterVx`` / ``MFinalWaterVy``."""
+    if processed.empty or "Timestamp" not in processed.columns:
+        return []
+    if "MFinalWaterVx" not in processed.columns or "MFinalWaterVy" not in processed.columns:
+        return []
+    working = processed[["Timestamp", "MFinalWaterVx", "MFinalWaterVy"]].copy()
+    vx = pd.to_numeric(working["MFinalWaterVx"], errors="coerce")
+    vy = pd.to_numeric(working["MFinalWaterVy"], errors="coerce")
+    working["WaterCurrentSpeed"] = np.sqrt(vx.pow(2) + vy.pow(2))
+    return _resample_series(working, "WaterCurrentSpeed", granularity_minutes)
+
+
+def _build_derived_series(
+    processed: pd.DataFrame,
+    variable: str,
+    granularity_minutes: Optional[int],
+) -> list[dict[str, Any]]:
+    if variable == "coulomb_amphr_daily":
+        return _derive_coulomb_amphr_daily(processed, granularity_minutes)
+    if variable == "water_depth_altimeter":
+        return _derive_water_depth_altimeter(processed, granularity_minutes)
+    if variable == "water_current_speed":
+        return _derive_water_current_speed(processed, granularity_minutes)
+    return []
+
+
 def _last_dt_from_processed(processed: pd.DataFrame) -> Optional[datetime]:
     """Extract last Timestamp from processed dashboard DataFrame as timezone-aware datetime."""
     if processed.empty or "Timestamp" not in processed.columns:
@@ -388,7 +550,14 @@ def _last_dt_from_processed(processed: pd.DataFrame) -> Optional[datetime]:
 
 
 # Single source for CSV empty/header-only content (must match _SLOCUM_CSV_COLUMN_RENAME keys)
-_SLOCUM_CSV_EMPTY_HEADER = "Timestamp,m_depth,m_altitude,m_raw_altitude,m_water_depth,c_pitch,m_pitch,m_roll,c_heading,m_heading,c_fin,m_fin,m_battery,m_coulomb_amphr_total\n"
+_SLOCUM_CSV_EMPTY_HEADER = (
+    "Timestamp,m_depth,m_altitude,m_raw_altitude,m_water_depth,"
+    "c_pitch,m_pitch,m_roll,c_roll,c_heading,m_heading,c_fin,m_fin,"
+    "m_battery,m_coulomb_amphr_total,m_coulomb_current,"
+    "m_bms_pitch_current,m_bms_aft_current,m_bms_ebay_current,"
+    "m_speed,m_depth_rate_avg_final,m_final_water_vx,m_final_water_vy,"
+    "m_vacuum,m_leakdetect_voltage,m_leakdetect_voltage_forward,m_leakdetect_voltage_science\n"
+)
 
 
 @router.get("/cache-status/{dataset_id}")
@@ -401,6 +570,44 @@ async def get_slocum_cache_status(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
     status_payload = get_mirror_cache_status(dataset_id)
     return status_payload
+
+
+@router.get("/sfmc/connection-durations/{dataset_id}")
+async def get_slocum_sfmc_connection_durations(
+    dataset_id: str,
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """
+    Cached SFMC surface-call connection durations for Vehicle Health charts.
+
+    Reads the SFMC snapshot only (no live SFMC HTTP). Returns an empty list
+    with ``sfmc_configured=false`` when SFMC credentials are not set.
+    """
+    if not is_feature_enabled("slocum_platform"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
+
+    from ..core.sfmc_cache_service import get_cached_connection_durations
+    from ..core.slocum_deployment_service import resolve_deployment_for_dataset
+
+    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    if deployment is None:
+        return {
+            "connections": [],
+            "sfmc_configured": False,
+            "fetched_at_utc": None,
+            "fetch_error": "No deployment found for dataset",
+        }
+
+    durations, fetched_at, fetch_error, configured = get_cached_connection_durations(
+        session, deployment.id
+    )
+    return {
+        "connections": durations,
+        "sfmc_configured": configured,
+        "fetched_at_utc": fetched_at.isoformat() if fetched_at else None,
+        "fetch_error": fetch_error,
+    }
 
 
 @router.get("/sensor-summaries/{dataset_id}")
@@ -717,12 +924,17 @@ async def get_slocum_chart_data_bulk(
         )
 
     ctd_vars = [v for v in requested if v in _SLOCUM_CTD_CHART_VARIABLES]
-    dash_vars = [v for v in requested if v not in _SLOCUM_CTD_CHART_VARIABLES]
+    derived_vars = [v for v in requested if v in _SLOCUM_DERIVED_CHART_VARIABLES]
+    dash_vars = [
+        v for v in requested
+        if v not in _SLOCUM_CTD_CHART_VARIABLES and v not in _SLOCUM_DERIVED_CHART_VARIABLES
+    ]
+    needs_dashboard = bool(dash_vars or derived_vars)
 
     try:
         dashboard_result = None
         ctd_result = None
-        if dash_vars:
+        if needs_dashboard:
             dashboard_result = await _load_bundle_result(
                 dataset_id,
                 "dashboard",
@@ -750,13 +962,15 @@ async def get_slocum_chart_data_bulk(
     last_dt: Optional[datetime] = None
     source_meta: dict[str, Any] = {}
 
-    if dash_vars and dashboard_result is not None and not dashboard_result.df.empty:
+    if needs_dashboard and dashboard_result is not None and not dashboard_result.df.empty:
         sliced = dashboard_result.df
         last_dt = _last_dt_from_processed(sliced)
         source_meta = dashboard_result.metadata or source_meta
         for variable in dash_vars:
             value_col = _SLOCUM_VARIABLE_TO_COLUMN[variable]
             series[variable] = _resample_series(sliced, value_col, granularity_minutes)
+        for variable in derived_vars:
+            series[variable] = _build_derived_series(sliced, variable, granularity_minutes)
 
     if ctd_vars and ctd_result is not None and not ctd_result.df.empty:
         sliced = ctd_result.df
@@ -783,13 +997,7 @@ async def get_slocum_chart_data_bulk(
 @router.get("/chart-data/{dataset_id}")
 async def get_slocum_chart_data(
     dataset_id: str,
-    variable: Literal[
-        "m_depth", "m_altitude", "m_raw_altitude", "m_water_depth",
-        "c_pitch", "m_pitch", "m_roll",
-        "c_heading", "m_heading", "c_fin", "m_fin",
-        "m_battery", "m_coulomb_amphr_total",
-        "conductivity", "temperature", "pressure", "salinity", "density",
-    ] = Query(..., description="Variable to plot"),
+    variable: str = Query(..., description="Variable to plot"),
     hours_back: int = Query(24, ge=1, le=8760, description="Hours of data (used when start_date/end_date not provided)"),
     granularity_minutes: Optional[int] = Query(15, ge=0, le=60, description="Resampling interval (minutes). 0 = show all data (no resampling)."),
     is_historical: bool = Query(False, description="If true, fetch full dataset and show last N hours from data end (like WG historical)."),
@@ -799,15 +1007,20 @@ async def get_slocum_chart_data(
 ):
     """
     Fetch Slocum ERDDAP data for one dashboard variable and return resampled series
-    for charting. Supports dashboard variables and CTD (conductivity, temperature, pressure, salinity, density).
+    for charting. Supports dashboard variables, derived series, and CTD science vars.
     """
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
         )
-    value_col = _SLOCUM_VARIABLE_TO_COLUMN[variable]
+    if variable not in _SLOCUM_CHART_VARIABLES:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Unknown variable: {variable}",
+        )
     is_ctd = variable in _SLOCUM_CTD_CHART_VARIABLES
+    is_derived = variable in _SLOCUM_DERIVED_CHART_VARIABLES
     try:
         result = await _load_bundle_result(
             dataset_id,
@@ -827,14 +1040,26 @@ async def get_slocum_chart_data(
         ) from e
 
     recent = result.df if result.df is not None else pd.DataFrame()
-    if recent.empty or "Timestamp" not in recent.columns or value_col not in recent.columns:
+    if recent.empty or "Timestamp" not in recent.columns:
         return {
             "data": [],
             "cache_metadata": _merge_overage_metadata(_cache_metadata(), result.metadata),
         }
 
     last_dt = _last_dt_from_processed(recent)
-    data = _resample_series(recent, value_col, granularity_minutes)
+    if is_derived:
+        data = _build_derived_series(recent, variable, granularity_minutes)
+    else:
+        value_col = _SLOCUM_VARIABLE_TO_COLUMN[variable]
+        if value_col not in recent.columns:
+            return {
+                "data": [],
+                "cache_metadata": _merge_overage_metadata(
+                    _cache_metadata(last_dt.isoformat() if last_dt else None),
+                    result.metadata,
+                ),
+            }
+        data = _resample_series(recent, value_col, granularity_minutes)
     return {
         "data": data,
         "cache_metadata": _merge_overage_metadata(
@@ -937,13 +1162,7 @@ async def get_slocum_csv(
 @router.get("/data/{variable}/{dataset_id}")
 async def get_slocum_data_shim(
     dataset_id: str,
-    variable: Literal[
-        "m_depth", "m_altitude", "m_raw_altitude", "m_water_depth",
-        "c_pitch", "m_pitch", "m_roll",
-        "c_heading", "m_heading", "c_fin", "m_fin",
-        "m_battery", "m_coulomb_amphr_total",
-        "conductivity", "temperature", "pressure", "salinity", "density",
-    ],
+    variable: str,
     hours_back: int = Query(72, ge=1, le=8760),
     granularity_minutes: Optional[int] = Query(15, ge=0, le=60),
     is_historical: bool = Query(False),

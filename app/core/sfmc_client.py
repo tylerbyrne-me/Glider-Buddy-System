@@ -26,6 +26,7 @@ from .sfmc_transforms import (
     dialog_values_for_checklist,
     extract_from_dockserver_commands,
     extract_from_surface_events_payload,
+    extract_connection_durations,
     merge_sfmc_checklist_values,
     parse_goto_ma,
     parse_surface_dialog_log,
@@ -699,7 +700,7 @@ def _normalize_active_deployment_for_transforms(payload: dict[str, Any]) -> dict
     return out
 
 
-async def load_sfmc_checklist_values(glider_name: str) -> dict[str, str]:
+async def load_sfmc_checklist_values(glider_name: str) -> dict[str, Any]:
     """
     Pull SFMC-derived checklist autofill for ``glider_name`` (e.g. ``peggy``).
 
@@ -710,6 +711,8 @@ async def load_sfmc_checklist_values(glider_name: str) -> dict[str, str]:
     Scope: **active** SFMC deployments only (``active-deployment``, newest mission,
     live folder listings). Archived SFMC missions are not covered — callers must
     skip archived Buddy ``SlocumDeployment`` rows on the background refresh loop.
+
+    May include a non-string ``connection_durations`` list for Vehicle Health charts.
     """
     name = (glider_name or "").strip()
     if not name or not sfmc_is_configured():
@@ -719,6 +722,7 @@ async def load_sfmc_checklist_values(glider_name: str) -> dict[str, str]:
     # Prefer active-deployment script name over scripts catalog (catalog has no assignment).
     active_script: Optional[str] = None
     surface: Optional[dict[str, Any]] = None
+    connection_durations: list[dict[str, Any]] = []
 
     try:
         mission = await fetch_newest_mission_details(name)
@@ -731,10 +735,10 @@ async def load_sfmc_checklist_values(glider_name: str) -> dict[str, str]:
     try:
         surface = await fetch_surface_events_payload(name)
         if surface:
-            transformed = extract_from_surface_events_payload(
-                _normalize_active_deployment_for_transforms(surface)
-            )
+            normalized = _normalize_active_deployment_for_transforms(surface)
+            transformed = extract_from_surface_events_payload(normalized)
             parts.append(transformed)
+            connection_durations = extract_connection_durations(normalized)
             script_from_active = transformed.get("script_running_val")
             if script_from_active:
                 active_script = script_from_active
@@ -789,7 +793,13 @@ async def load_sfmc_checklist_values(glider_name: str) -> dict[str, str]:
     except Exception as err:
         logger.warning("SFMC goto archive fetch failed for %s: %s", name, err)
 
-    merged = merge_sfmc_checklist_values(*parts)
+    merged: dict[str, Any] = merge_sfmc_checklist_values(*parts)
+    if connection_durations:
+        merged["connection_durations"] = connection_durations
     if merged:
-        logger.info("SFMC checklist autofill for %s: %s", name, sorted(merged.keys()))
+        logger.info(
+            "SFMC checklist autofill for %s: %s",
+            name,
+            sorted(k for k in merged.keys() if k != "connection_durations"),
+        )
     return merged

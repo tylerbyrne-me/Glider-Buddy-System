@@ -11,6 +11,8 @@ const MINI_CHART_COLORS = {
     FLUORO_C_AVG_PRIMARY: 'rgba(75, 192, 192, 1)',
     NAV_SPEED: 'rgba(138, 43, 226, 1)',
     WG_VM4_CH0_DETECTION: 'rgba(255, 159, 64, 1)',
+    FLIGHT_PITCH: 'rgba(70, 130, 180, 1)',
+    VEHICLE_HEALTH: 'rgba(220, 20, 60, 1)',
 };
 
 const miniChartInstances = {};
@@ -41,6 +43,10 @@ function colorForCategory(category, fallbackColor) {
             return MINI_CHART_COLORS.FLUORO_C_AVG_PRIMARY;
         case 'navigation':
             return MINI_CHART_COLORS.NAV_SPEED;
+        case 'flight':
+            return MINI_CHART_COLORS.FLIGHT_PITCH;
+        case 'vehicle_health':
+            return MINI_CHART_COLORS.VEHICLE_HEALTH;
         case 'wg_vm4':
             return MINI_CHART_COLORS.WG_VM4_CH0_DETECTION;
         default:
@@ -50,6 +56,7 @@ function colorForCategory(category, fallbackColor) {
 
 function miniChartCanvasIdForCategory(category) {
     if (category === 'waves') return 'miniWaveChart';
+    if (category === 'vehicle_health') return 'miniVehicleHealthChart';
     return `mini${category.charAt(0).toUpperCase()}${category.slice(1)}Chart`;
 }
 

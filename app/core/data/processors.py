@@ -668,6 +668,9 @@ _SLOCUM_DASHBOARD_RENAME = {
     "m_roll": "MRoll",
     "m_roll (degrees)": "MRoll",
     "m_roll (deg)": "MRoll",
+    "c_roll": "CRoll",
+    "c_roll (degrees)": "CRoll",
+    "c_roll (deg)": "CRoll",
     "c_heading": "CHeading",
     "c_heading (degrees)": "CHeading",
     "c_heading (deg)": "CHeading",
@@ -687,41 +690,9 @@ _SLOCUM_DASHBOARD_RENAME = {
     "m_coulomb_amphr_total (A.hr)": "MCoulombAmphrTotal",
     "m_coulomb_amphr_total (A*hr)": "MCoulombAmphrTotal",
     "m_coulomb_amphr_total (ah)": "MCoulombAmphrTotal",
-    "latitude (degrees_north)": "Latitude",
-    "longitude (degrees_east)": "Longitude",
-}
-
-_SLOCUM_CHECKLIST_RENAME = {
-    **_SLOCUM_DASHBOARD_RENAME,
     "m_coulomb_current": "MCoulombCurrent",
     "m_coulomb_current (A)": "MCoulombCurrent",
     "m_coulomb_current (amps)": "MCoulombCurrent",
-    "m_vacuum": "MVacuum",
-    "m_vacuum (inHg)": "MVacuum",
-    "m_leakdetect_voltage": "MLeakdetectVoltage",
-    "m_leakdetect_voltage (volts)": "MLeakdetectVoltage",
-    "m_leakdetect_voltage (V)": "MLeakdetectVoltage",
-    "m_leakdetect_voltage_forward": "MLeakdetectVoltageForward",
-    "m_leakdetect_voltage_forward (volts)": "MLeakdetectVoltageForward",
-    "m_leakdetect_voltage_forward (V)": "MLeakdetectVoltageForward",
-    "m_leakdetect_voltage_science": "MLeakdetectVoltageScience",
-    "m_leakdetect_voltage_science (volts)": "MLeakdetectVoltageScience",
-    "m_leakdetect_voltage_science (V)": "MLeakdetectVoltageScience",
-    "c_de_oil_vol": "CDeOilVol",
-    "c_de_oil_vol (cc)": "CDeOilVol",
-    "m_de_oil_vol": "MDeOilVol",
-    "m_de_oil_vol (cc)": "MDeOilVol",
-    "c_ballast_pumped": "CBallastPumped",
-    "c_ballast_pumped (cc)": "CBallastPumped",
-    "m_ballast_pumped": "MBallastPumped",
-    "m_ballast_pumped (cc)": "MBallastPumped",
-    "c_battpos": "CBattpos",
-    "c_battpos (in)": "CBattpos",
-    "m_battpos": "MBattpos",
-    "m_battpos (in)": "MBattpos",
-    "m_depth_rate_avg_final": "MDepthRateAvgFinal",
-    "m_depth_rate_avg_final (m/s)": "MDepthRateAvgFinal",
-    "m_depth_rate_avg_final (m s-1)": "MDepthRateAvgFinal",
     "m_bms_pitch_current": "MBmsPitchCurrent",
     "m_bms_pitch_current (A)": "MBmsPitchCurrent",
     "m_bms_pitch_current (amps)": "MBmsPitchCurrent",
@@ -734,12 +705,53 @@ _SLOCUM_CHECKLIST_RENAME = {
     "m_speed": "MSpeed",
     "m_speed (m/s)": "MSpeed",
     "m_speed (m s-1)": "MSpeed",
+    "m_depth_rate_avg_final": "MDepthRateAvgFinal",
+    "m_depth_rate_avg_final (m/s)": "MDepthRateAvgFinal",
+    "m_depth_rate_avg_final (m s-1)": "MDepthRateAvgFinal",
     "m_final_water_vx": "MFinalWaterVx",
     "m_final_water_vx (m/s)": "MFinalWaterVx",
     "m_final_water_vx (m s-1)": "MFinalWaterVx",
     "m_final_water_vy": "MFinalWaterVy",
     "m_final_water_vy (m/s)": "MFinalWaterVy",
     "m_final_water_vy (m s-1)": "MFinalWaterVy",
+    "m_vacuum": "MVacuum",
+    "m_vacuum (inHg)": "MVacuum",
+    "m_leakdetect_voltage": "MLeakdetectVoltage",
+    "m_leakdetect_voltage (volts)": "MLeakdetectVoltage",
+    "m_leakdetect_voltage (V)": "MLeakdetectVoltage",
+    "m_leakdetect_voltage_forward": "MLeakdetectVoltageForward",
+    "m_leakdetect_voltage_forward (volts)": "MLeakdetectVoltageForward",
+    "m_leakdetect_voltage_forward (V)": "MLeakdetectVoltageForward",
+    "m_leakdetect_voltage_science": "MLeakdetectVoltageScience",
+    "m_leakdetect_voltage_science (volts)": "MLeakdetectVoltageScience",
+    "m_leakdetect_voltage_science (V)": "MLeakdetectVoltageScience",
+    "latitude (degrees_north)": "Latitude",
+    "longitude (degrees_east)": "Longitude",
+    # ERDDAP also emits radians for attitude; preprocess converts to degrees.
+    "c_pitch (rad)": "CPitch",
+    "c_pitch (radians)": "CPitch",
+    "m_pitch (rad)": "MPitch",
+    "m_pitch (radians)": "MPitch",
+    "m_roll (rad)": "MRoll",
+    "m_roll (radians)": "MRoll",
+    "c_roll (rad)": "CRoll",
+    "c_roll (radians)": "CRoll",
+}
+
+_SLOCUM_CHECKLIST_RENAME = {
+    **_SLOCUM_DASHBOARD_RENAME,
+    "c_de_oil_vol": "CDeOilVol",
+    "c_de_oil_vol (cc)": "CDeOilVol",
+    "m_de_oil_vol": "MDeOilVol",
+    "m_de_oil_vol (cc)": "MDeOilVol",
+    "c_ballast_pumped": "CBallastPumped",
+    "c_ballast_pumped (cc)": "CBallastPumped",
+    "m_ballast_pumped": "MBallastPumped",
+    "m_ballast_pumped (cc)": "MBallastPumped",
+    "c_battpos": "CBattpos",
+    "c_battpos (in)": "CBattpos",
+    "m_battpos": "MBattpos",
+    "m_battpos (in)": "MBattpos",
     "m_gps_lat": "MGpsLat",
     "m_gps_lat (deg)": "MGpsLat",
     "m_gps_lat (degree_north)": "MGpsLat",
@@ -756,13 +768,6 @@ _SLOCUM_CHECKLIST_RENAME = {
     "density (kg/m^3)": "Density",
     "density (kg/m3)": "Density",
     "density (kg.m-3)": "Density",
-    # ERDDAP also emits radians for attitude; preprocess converts to degrees.
-    "c_pitch (rad)": "CPitch",
-    "c_pitch (radians)": "CPitch",
-    "m_pitch (rad)": "MPitch",
-    "m_pitch (radians)": "MPitch",
-    "m_roll (rad)": "MRoll",
-    "m_roll (radians)": "MRoll",
 }
 
 # Stem (before unit suffix) -> standard column. Used when ERDDAP unit text varies.
@@ -775,6 +780,7 @@ _SLOCUM_CHECKLIST_STEMS: dict[str, str] = {
     "c_pitch": "CPitch",
     "m_pitch": "MPitch",
     "m_roll": "MRoll",
+    "c_roll": "CRoll",
     "c_heading": "CHeading",
     "m_heading": "MHeading",
     "c_fin": "CFin",
@@ -809,7 +815,7 @@ _SLOCUM_CHECKLIST_STEMS: dict[str, str] = {
 _SLOCUM_CHECKLIST_STD_COLS = [
     "Latitude", "Longitude",
     "MDepth", "MAltitude", "MWaterDepth",
-    "CPitch", "MPitch", "MRoll",
+    "CPitch", "MPitch", "MRoll", "CRoll",
     "CHeading", "MHeading", "CFin", "MFin",
     "MBattery", "MCoulombAmphrTotal", "MCoulombCurrent",
     "MVacuum",
@@ -825,8 +831,10 @@ _SLOCUM_CHECKLIST_STD_COLS = [
     "Density",
 ]
 
-# Attitude columns stored as radians on OceanTrack ERDDAP; convert to degrees for pilots.
-_SLOCUM_ATTITUDE_RAD_TO_DEG = ("CPitch", "MPitch", "MRoll", "CHeading", "MHeading")
+# Attitude columns stored as radians on OceanTrack ERDDAP; always convert to degrees.
+_SLOCUM_ATTITUDE_RAD_TO_DEG = (
+    "CPitch", "MPitch", "MRoll", "CRoll", "CHeading", "MHeading", "CFin", "MFin",
+)
 
 # Slocum / ERDDAP sentinel fill magnitudes (~2.147e9 and huge _FillValue).
 _SLOCUM_SENTINEL_ABS = 1.0e8
@@ -964,9 +972,14 @@ def preprocess_slocum_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     std_cols = [
         "Latitude", "Longitude",
         "MDepth", "MAltitude", "MRawAltitude", "MWaterDepth",
-        "CPitch", "MPitch", "MRoll",
+        "CPitch", "MPitch", "MRoll", "CRoll",
         "CHeading", "MHeading", "CFin", "MFin",
-        "MBattery", "MCoulombAmphrTotal",
+        "MBattery", "MCoulombAmphrTotal", "MCoulombCurrent",
+        "MBmsPitchCurrent", "MBmsAftCurrent", "MBmsEbayCurrent",
+        "MSpeed", "MDepthRateAvgFinal",
+        "MFinalWaterVx", "MFinalWaterVy",
+        "MVacuum",
+        "MLeakdetectVoltage", "MLeakdetectVoltageForward", "MLeakdetectVoltageScience",
     ]
     df_processed = _initial_dataframe_setup(df, "Timestamp")
     if df_processed.empty:
@@ -987,6 +1000,11 @@ def preprocess_slocum_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
         if std_name not in df_processed.columns:
             df_processed[std_name] = np.nan
         df_processed[std_name] = _nan_slocum_sentinels(df_processed[std_name])
+
+    # OceanTrack stores attitude in radians; always convert to degrees for charts.
+    for col in _SLOCUM_ATTITUDE_RAD_TO_DEG:
+        if col in df_processed.columns and df_processed[col].notna().any():
+            df_processed[col] = df_processed[col] * (180.0 / math.pi)
 
     # Mask GPS-unlock (0,0) without dropping rows (other sensors may still be valid).
     df_processed = mask_null_island_coordinates(df_processed)
@@ -1016,12 +1034,12 @@ def preprocess_slocum_checklist_df(df: pd.DataFrame) -> pd.DataFrame:
             df_processed[std_name] = np.nan
         df_processed[std_name] = _nan_slocum_sentinels(df_processed[std_name])
 
-    # OceanTrack attitude vars are radians; pilots / checklist refs use degrees.
+    # OceanTrack attitude vars are radians; always convert to degrees for pilots.
     for col in _SLOCUM_ATTITUDE_RAD_TO_DEG:
         if col not in df_processed.columns:
             continue
         series = df_processed[col]
-        if series.notna().any() and float(series.abs().max()) <= (math.pi + 0.05):
+        if series.notna().any():
             df_processed[col] = series * (180.0 / math.pi)
 
     keep = ["Timestamp"] + [c for c in std_cols if c in df_processed.columns]

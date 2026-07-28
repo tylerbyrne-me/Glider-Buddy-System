@@ -61,14 +61,16 @@ def _merge_slocum_summary_context(
         if key == "sensors":
             continue
         template_context[key] = value
-    # Ensure template keys exist even when CTD is disabled
-    template_context.setdefault("ctd_info", {
+    # Ensure template keys exist even when CTD / other cards are disabled
+    empty_info = {
         "values": {},
         "latest_timestamp_str": "N/A",
         "time_ago_str": "N/A",
         "mini_trend": [],
-    })
-    template_context.setdefault("ctd_values", {})
+    }
+    for card in ("ctd", "power", "flight", "navigation", "vehicle_health"):
+        template_context.setdefault(f"{card}_info", dict(empty_info))
+        template_context.setdefault(f"{card}_values", {})
 
 
 @router.get("/platform", response_class=HTMLResponse)

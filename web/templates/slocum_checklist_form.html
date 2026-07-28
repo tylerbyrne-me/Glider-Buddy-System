@@ -143,7 +143,7 @@
                     <div id="checklistPlotCanvasWrap">
                         <canvas id="checklistPlotCanvas" aria-label="Checklist time-series plot"></canvas>
                     </div>
-                    <p class="small text-muted mt-2 mb-0">Scroll to zoom · drag to pan · Reset zoom restores the full window.</p>
+                    <p class="small text-muted mt-2 mb-0" id="checklistPlotZoomHint">Ctrl+scroll to zoom · drag to pan · Reset zoom restores the full window.</p>
                     <div id="checklistPlotVerifyPanel">
                         <div class="row g-3 align-items-start">
                             <div class="col-lg-9">
@@ -172,7 +172,6 @@
 {% endblock %}
 
 {% block body_extra_js %}
-    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.2.0/dist/chartjs-plugin-zoom.min.js"></script>
+    {% include "_chart_zoom_scripts.html" %}
     <script type="module" src="/static/js/slocum_checklist_form.js?v={{ app_version }}"></script>
 {% endblock %}

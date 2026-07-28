@@ -6,10 +6,33 @@
 import { apiRequest, showToast, escapeHTML, fetchWithAuth } from '/static/js/api.js';
 import { datetimeLocalToUtcIso, formatUtcDateTime } from '/static/js/datetime_utils.js';
 import { initializeMiniCharts } from '/static/js/mini_charts.js';
+import {
+    applyTimeAxisZoom,
+    bindResetZoomButton,
+    CHART_ZOOM_HINT,
+    isChartZoomPluginAvailable,
+} from '/static/js/chart_zoom_utils.js';
+import {
+    bindPlotStyleControls,
+    getPlotStyleForCanvas,
+    plotStyleDatasetProps,
+} from '/static/js/chart_plot_style_utils.js';
+import {
+    bindOverlayToggleControls,
+    buildBackgroundOverlayDataset,
+    buildHiddenOverlayScale,
+    buildOverlayAwareTooltipOptions,
+    filterOverlayFromLegend,
+    getOverlayEnabledForCanvas,
+} from '/static/js/chart_overlay_utils.js';
 
 const DEFAULT_HOURS = 24;
-const DEFAULT_GRANULARITY = 15;
+const DEFAULT_GRANULARITY = 0;
 const DASHBOARD_RECENT_NOTE_LIMIT = 4;
+const PLOT_STYLE_STORAGE_PREFIX = 'slocumPlotStyle:';
+const DEPTH_OVERLAY_STORAGE_PREFIX = 'slocumDepthOverlay:';
+const DEPTH_OVERLAY_COLOR = 'rgba(108, 117, 125, 0.85)';
+const DEPTH_OVERLAY_LABEL = 'Depth (m)';
 
 let currentDeploymentId = null;
 let currentOverviewInfo = null;
@@ -17,6 +40,8 @@ let lastMissionNotesForEdit = [];
 let activeChartCategory = null;
 let ctdProfilesLoaded = false;
 const ctdChartInstances = {};
+const timeSeriesLoaded = new Set();
+const timeSeriesChartInstances = {};
 
 let chartTextColor = '#212529';
 let chartGridColor = '#dee2e6';
@@ -32,6 +57,198 @@ const CTD_PROFILE_CHARTS = [
     { variable: 'conductivity', canvasId: 'slocumCtdConductivityChart', spinnerId: 'slocumCtdConductivitySpinner', label: 'Conductivity' },
     { variable: 'density', canvasId: 'slocumCtdDensityChart', spinnerId: 'slocumCtdDensitySpinner', label: 'Sea Water Density' },
 ];
+
+const SERIES_COLORS = [
+    'rgba(13, 110, 253, 1)',
+    'rgba(255, 159, 64, 1)',
+    'rgba(40, 167, 69, 1)',
+    'rgba(220, 53, 69, 1)',
+    'rgba(111, 66, 193, 1)',
+    'rgba(23, 162, 184, 1)',
+];
+
+/** Wave Glider–style Chart.js time axis (month + day on ticks). */
+function buildSlocumTimeScaleX() {
+    return {
+        type: 'time',
+        time: {
+            unit: 'hour',
+            tooltipFormat: 'MMM d, yyyy HH:mm',
+            displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' },
+        },
+        title: { display: true, text: 'Time', color: chartTextColor },
+        ticks: {
+            color: chartTextColor,
+            maxRotation: 0,
+            autoSkip: true,
+            autoSkipPadding: 20,
+        },
+        grid: { color: chartGridColor },
+    };
+}
+
+/** Declarative time-series card configs (Power / Flight / Navigation / Vehicle Health). */
+const TIME_SERIES_CARD_CONFIGS = {
+    power: {
+        variables: [
+            'm_battery', 'm_coulomb_amphr_total', 'coulomb_amphr_daily',
+            'm_bms_pitch_current', 'm_bms_aft_current', 'm_bms_ebay_current',
+            'm_depth',
+        ],
+        footerId: 'slocumPowerLastDataFooter',
+        charts: [
+            {
+                canvasId: 'slocumPowerBatteryChart',
+                spinnerId: 'slocumPowerBatterySpinner',
+                yLabel: 'Voltage (V)',
+                series: [{ key: 'm_battery', label: 'Battery' }],
+            },
+            {
+                canvasId: 'slocumPowerCoulombChart',
+                spinnerId: 'slocumPowerCoulombSpinner',
+                yLabel: 'Ah/day (rolling 24h)',
+                y2Label: 'Total AmpHr',
+                series: [
+                    { key: 'coulomb_amphr_daily', label: 'Daily consumption', type: 'bar', yAxisID: 'y' },
+                    { key: 'm_coulomb_amphr_total', label: 'Total AmpHr', type: 'line', yAxisID: 'y1' },
+                ],
+            },
+            {
+                canvasId: 'slocumPowerBmsChart',
+                spinnerId: 'slocumPowerBmsSpinner',
+                yLabel: 'Current (A)',
+                series: [
+                    { key: 'm_bms_pitch_current', label: 'Pitch' },
+                    { key: 'm_bms_aft_current', label: 'Aft' },
+                    { key: 'm_bms_ebay_current', label: 'Ebay' },
+                ],
+            },
+        ],
+    },
+    flight: {
+        variables: ['m_pitch', 'c_pitch', 'm_roll', 'c_roll', 'm_fin', 'c_fin', 'm_depth'],
+        footerId: 'slocumFlightLastDataFooter',
+        charts: [
+            {
+                canvasId: 'slocumFlightPitchChart',
+                spinnerId: 'slocumFlightPitchSpinner',
+                yLabel: 'Pitch (°)',
+                series: [
+                    { key: 'm_pitch', label: 'Measured' },
+                    { key: 'c_pitch', label: 'Commanded', dashed: true },
+                ],
+            },
+            {
+                canvasId: 'slocumFlightRollChart',
+                spinnerId: 'slocumFlightRollSpinner',
+                yLabel: 'Roll (°)',
+                series: [
+                    { key: 'm_roll', label: 'Measured' },
+                    { key: 'c_roll', label: 'Commanded', dashed: true },
+                ],
+            },
+            {
+                canvasId: 'slocumFlightFinChart',
+                spinnerId: 'slocumFlightFinSpinner',
+                yLabel: 'Fin (°)',
+                series: [
+                    { key: 'm_fin', label: 'Measured' },
+                    { key: 'c_fin', label: 'Commanded', dashed: true },
+                ],
+            },
+        ],
+    },
+    navigation: {
+        variables: [
+            'm_heading', 'c_heading', 'm_depth_rate_avg_final',
+            'm_depth', 'm_water_depth', 'water_depth_altimeter',
+            'm_speed', 'm_final_water_vx', 'm_final_water_vy', 'water_current_speed',
+        ],
+        footerId: 'slocumNavigationLastDataFooter',
+        charts: [
+            {
+                canvasId: 'slocumNavHeadingChart',
+                spinnerId: 'slocumNavHeadingSpinner',
+                yLabel: 'Heading (°)',
+                series: [
+                    { key: 'm_heading', label: 'Measured' },
+                    { key: 'c_heading', label: 'Commanded', dashed: true },
+                ],
+            },
+            {
+                canvasId: 'slocumNavDepthRateChart',
+                spinnerId: 'slocumNavDepthRateSpinner',
+                yLabel: 'Depth rate (m/s)',
+                series: [{ key: 'm_depth_rate_avg_final', label: 'Depth rate' }],
+            },
+            {
+                canvasId: 'slocumNavDepthChart',
+                spinnerId: 'slocumNavDepthSpinner',
+                yLabel: 'Depth (m)',
+                invertY: true,
+                skipDepthOverlay: true,
+                series: [
+                    { key: 'm_depth', label: 'Depth' },
+                    { key: 'water_depth_altimeter', label: 'Depth + altitude', dashed: true },
+                    { key: 'm_water_depth', label: 'm_water_depth' },
+                ],
+            },
+            {
+                canvasId: 'slocumNavSpeedChart',
+                spinnerId: 'slocumNavSpeedSpinner',
+                yLabel: 'Speed (m/s)',
+                series: [{ key: 'm_speed', label: 'Speed over ground' }],
+            },
+            {
+                canvasId: 'slocumNavCurrentChart',
+                spinnerId: 'slocumNavCurrentSpinner',
+                yLabel: 'Current (m/s)',
+                series: [
+                    { key: 'm_final_water_vx', label: 'Vx' },
+                    { key: 'm_final_water_vy', label: 'Vy' },
+                    { key: 'water_current_speed', label: 'Speed', dashed: true },
+                ],
+            },
+        ],
+    },
+    vehicle_health: {
+        variables: [
+            'm_vacuum',
+            'm_leakdetect_voltage',
+            'm_leakdetect_voltage_forward',
+            'm_leakdetect_voltage_science',
+            'm_depth',
+        ],
+        footerId: 'slocumVehicleHealthLastDataFooter',
+        charts: [
+            {
+                canvasId: 'slocumHealthVacuumChart',
+                spinnerId: 'slocumHealthVacuumSpinner',
+                yLabel: 'Vacuum (inHg)',
+                series: [{ key: 'm_vacuum', label: 'Vacuum' }],
+            },
+            {
+                canvasId: 'slocumHealthLeakChart',
+                spinnerId: 'slocumHealthLeakSpinner',
+                yLabel: 'Voltage (V)',
+                series: [
+                    { key: 'm_leakdetect_voltage', label: 'Leak detect' },
+                    { key: 'm_leakdetect_voltage_forward', label: 'Forward' },
+                    { key: 'm_leakdetect_voltage_science', label: 'Science' },
+                ],
+            },
+        ],
+        sfmcCallChart: {
+            canvasId: 'slocumHealthCallChart',
+            spinnerId: 'slocumHealthCallSpinner',
+            noteId: 'slocumHealthSfmcNote',
+        },
+    },
+};
+
+const TIME_SERIES_CATEGORIES = Object.keys(TIME_SERIES_CARD_CONFIGS);
+const timeSeriesSeriesCache = {};
+let sfmcCallPointsCache = null;
 
 // Auto-refresh via cache-status polling (no full page reload)
 const AUTO_REFRESH_INTERVAL_MINUTES = 5;
@@ -56,7 +273,9 @@ function getHoursBack() {
 
 function getGranularity() {
     const el = document.getElementById('slocumGranularity');
-    return el ? parseInt(el.value, 10) || DEFAULT_GRANULARITY : DEFAULT_GRANULARITY;
+    if (!el) return DEFAULT_GRANULARITY;
+    const n = parseInt(el.value, 10);
+    return Number.isFinite(n) ? n : DEFAULT_GRANULARITY;
 }
 
 /** @returns {{ startISO: string, endISO: string } | null} when both From/To are set. */
@@ -313,22 +532,7 @@ function renderOneProfileChart(config, payload) {
                 padding: { right: 72 },
             },
             scales: {
-                x: {
-                    type: 'time',
-                    time: {
-                        unit: 'hour',
-                        tooltipFormat: 'MMM d, yyyy HH:mm',
-                        displayFormats: { hour: 'MMM d HH:mm', day: 'MMM d' },
-                    },
-                    title: { display: true, text: 'Time', color: chartTextColor },
-                    ticks: {
-                        color: chartTextColor,
-                        maxRotation: 0,
-                        autoSkip: true,
-                        autoSkipPadding: 20,
-                    },
-                    grid: { color: chartGridColor },
-                },
+                x: buildSlocumTimeScaleX(),
                 y: {
                     type: 'linear',
                     reverse: true,
@@ -500,12 +704,391 @@ function loadCtdProfileCharts() {
     return refreshCtdProfileCharts();
 }
 
-function saveSlocumChartsAsPng(highResolution = false) {
-    if (!ctdProfilesLoaded || activeChartCategory !== 'ctd') {
-        showToast('Open the CTD tab first to download profile plots.', 'info');
+function setSharedChartToolbarVisible(isVisible) {
+    const toolbar = document.getElementById('slocumSharedChartToolbar');
+    if (toolbar) toolbar.style.display = isVisible ? 'block' : 'none';
+}
+
+function recordsToPoints(records) {
+    if (!Array.isArray(records)) return [];
+    return records
+        .filter((row) => row && row.Timestamp != null && row.Value != null && Number.isFinite(Number(row.Value)))
+        .map((row) => ({ x: new Date(row.Timestamp), y: Number(row.Value) }));
+}
+
+function destroyTimeSeriesCharts(category) {
+    const prefix = `${category}::`;
+    Object.keys(timeSeriesChartInstances).forEach((key) => {
+        if (category && !key.startsWith(prefix)) return;
+        try {
+            timeSeriesChartInstances[key].destroy();
+        } catch (_) { /* ignore */ }
+        delete timeSeriesChartInstances[key];
+    });
+}
+
+function buildBulkChartDataUrl(variables) {
+    const datasetId = getDatasetId();
+    if (!datasetId || !variables?.length) return '';
+    const params = buildSlocumQueryParams({
+        granularity_minutes: getGranularity(),
+        hours_back: getHoursBack(),
+        dateRange: getSlocumDateRange(),
+        is_historical: isHistoricalDataset(),
+    });
+    params.set('variables', variables.join(','));
+    return `/api/slocum/chart-data-bulk/${encodeURIComponent(datasetId)}?${params.toString()}`;
+}
+
+function setCategoryLastDataFooter(footerId, lastTs) {
+    const footer = document.getElementById(footerId);
+    if (!footer) return;
+    if (!lastTs) {
+        footer.textContent = 'Last data: N/A';
         return;
     }
-    const detailView = document.getElementById('detail-ctd');
+    const absolute = formatUtcDateTime(lastTs);
+    const relative = formatRelativeTimeAgo(lastTs);
+    footer.textContent = `Last data: ${absolute} (${relative})`;
+}
+
+function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
+    const canvas = document.getElementById(chartCfg.canvasId);
+    if (!canvas || typeof Chart === 'undefined') return;
+    const instanceKey = `${category}::${chartCfg.canvasId}`;
+    if (timeSeriesChartInstances[instanceKey]) {
+        try { timeSeriesChartInstances[instanceKey].destroy(); } catch (_) { /* ignore */ }
+        delete timeSeriesChartInstances[instanceKey];
+    }
+
+    const plotStyle = getPlotStyleForCanvas(PLOT_STYLE_STORAGE_PREFIX, chartCfg.canvasId);
+    const showDepth = !chartCfg.skipDepthOverlay
+        && getOverlayEnabledForCanvas(DEPTH_OVERLAY_STORAGE_PREFIX, chartCfg.canvasId);
+
+    const datasets = [];
+    (chartCfg.series || []).forEach((spec, idx) => {
+        const points = recordsToPoints(seriesPayload?.[spec.key] || []);
+        if (!points.length) return;
+        const color = SERIES_COLORS[idx % SERIES_COLORS.length];
+        const isBar = spec.type === 'bar';
+        const styleProps = plotStyleDatasetProps(plotStyle, isBar);
+        datasets.push({
+            type: isBar ? 'bar' : 'line',
+            label: spec.label || spec.key,
+            data: points,
+            borderColor: color,
+            backgroundColor: isBar ? color.replace(', 1)', ', 0.55)') : color,
+            borderDash: spec.dashed ? [6, 4] : undefined,
+            yAxisID: spec.yAxisID || 'y',
+            pointRadius: styleProps.pointRadius,
+            pointHoverRadius: styleProps.pointRadius ? styleProps.pointRadius + 1.5 : 3,
+            showLine: styleProps.showLine,
+            borderWidth: 1.5,
+            tension: 0.15,
+            fill: false,
+        });
+    });
+
+    if (showDepth) {
+        const depthPoints = recordsToPoints(seriesPayload?.m_depth || []);
+        if (depthPoints.length) {
+            datasets.push(buildBackgroundOverlayDataset({
+                points: depthPoints,
+                label: DEPTH_OVERLAY_LABEL,
+                color: DEPTH_OVERLAY_COLOR,
+                yAxisID: 'yDepth',
+            }));
+        }
+    }
+
+    if (!datasets.length) {
+        drawNoDataOnCanvas(chartCfg.canvasId, 'No data for selected window');
+        return;
+    }
+
+    const hasBar = datasets.some((ds) => ds.type === 'bar');
+    const scales = {
+        x: buildSlocumTimeScaleX(),
+        y: {
+            position: 'left',
+            reverse: !!chartCfg.invertY,
+            title: { display: !!chartCfg.yLabel, text: chartCfg.yLabel || '', color: chartTextColor },
+            ticks: { color: chartTextColor },
+            grid: { color: chartGridColor },
+        },
+    };
+    if (chartCfg.y2Label || (chartCfg.series || []).some((s) => s.yAxisID === 'y1')) {
+        scales.y1 = {
+            position: 'right',
+            title: { display: true, text: chartCfg.y2Label || '', color: chartTextColor },
+            ticks: { color: chartTextColor },
+            grid: { drawOnChartArea: false },
+        };
+    }
+    if (showDepth) {
+        scales.yDepth = buildHiddenOverlayScale('yDepth', { reverse: true });
+    }
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'nearest', intersect: false },
+        plugins: {
+            legend: {
+                display: datasets.length > 1,
+                labels: {
+                    color: chartTextColor,
+                    filter: filterOverlayFromLegend,
+                },
+            },
+            tooltip: buildOverlayAwareTooltipOptions({ overlayLabel: 'Depth' }),
+        },
+        scales,
+    };
+    applyTimeAxisZoom(chartOptions);
+
+    timeSeriesChartInstances[instanceKey] = new Chart(canvas.getContext('2d'), {
+        type: hasBar ? 'bar' : 'line',
+        data: { datasets },
+        options: chartOptions,
+    });
+}
+
+function renderSfmcCallChartFromCache(categoryCfg) {
+    const callCfg = categoryCfg?.sfmcCallChart;
+    if (!callCfg) return;
+    const canvas = document.getElementById(callCfg.canvasId);
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const instanceKey = `vehicle_health::${callCfg.canvasId}`;
+    if (timeSeriesChartInstances[instanceKey]) {
+        try { timeSeriesChartInstances[instanceKey].destroy(); } catch (_) { /* ignore */ }
+        delete timeSeriesChartInstances[instanceKey];
+    }
+
+    const points = Array.isArray(sfmcCallPointsCache) ? sfmcCallPointsCache : [];
+    const plotStyle = getPlotStyleForCanvas(PLOT_STYLE_STORAGE_PREFIX, callCfg.canvasId);
+    const showDepth = getOverlayEnabledForCanvas(DEPTH_OVERLAY_STORAGE_PREFIX, callCfg.canvasId);
+    const datasets = [];
+    if (points.length) {
+        const callStyle = plotStyleDatasetProps(plotStyle, false);
+        // Discrete call events: keep visible points even in "line" style.
+        const pointRadius = callStyle.pointRadius || 2.5;
+        datasets.push({
+            type: 'line',
+            label: 'Call length (min)',
+            data: points,
+            borderColor: 'rgba(220, 53, 69, 1)',
+            backgroundColor: 'rgba(220, 53, 69, 0.55)',
+            yAxisID: 'y',
+            pointRadius,
+            pointHoverRadius: pointRadius + 1.5,
+            showLine: callStyle.showLine,
+            borderWidth: 1.5,
+            tension: 0.1,
+            fill: false,
+        });
+    }
+    if (showDepth) {
+        const depthPoints = recordsToPoints(timeSeriesSeriesCache.vehicle_health?.m_depth || []);
+        if (depthPoints.length) {
+            datasets.push(buildBackgroundOverlayDataset({
+                points: depthPoints,
+                label: DEPTH_OVERLAY_LABEL,
+                color: DEPTH_OVERLAY_COLOR,
+                yAxisID: 'yDepth',
+            }));
+        }
+    }
+
+    if (!datasets.length) {
+        drawNoDataOnCanvas(callCfg.canvasId, 'No cached SFMC connection durations');
+        return;
+    }
+
+    const scales = {
+        x: buildSlocumTimeScaleX(),
+        y: {
+            title: { display: true, text: 'Duration (min)', color: chartTextColor },
+            ticks: { color: chartTextColor },
+            grid: { color: chartGridColor },
+            beginAtZero: true,
+        },
+    };
+    if (showDepth) {
+        scales.yDepth = buildHiddenOverlayScale('yDepth', { reverse: true });
+    }
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: datasets.length > 1,
+                labels: {
+                    color: chartTextColor,
+                    filter: filterOverlayFromLegend,
+                },
+            },
+            tooltip: buildOverlayAwareTooltipOptions({ overlayLabel: 'Depth' }),
+        },
+        scales,
+    };
+    applyTimeAxisZoom(chartOptions);
+
+    timeSeriesChartInstances[instanceKey] = new Chart(canvas.getContext('2d'), {
+        type: 'line',
+        data: { datasets },
+        options: chartOptions,
+    });
+}
+
+async function refreshSfmcCallLengthChart(categoryCfg) {
+    const callCfg = categoryCfg?.sfmcCallChart;
+    if (!callCfg) return;
+    const datasetId = getDatasetId();
+    if (!datasetId) return;
+    showProfileSpinner(callCfg.spinnerId);
+    const noteEl = document.getElementById(callCfg.noteId);
+    try {
+        const payload = await apiRequest(
+            `/api/slocum/sfmc/connection-durations/${encodeURIComponent(datasetId)}`,
+            'GET',
+        );
+        const connections = Array.isArray(payload?.connections) ? payload.connections : [];
+        sfmcCallPointsCache = connections
+            .filter((row) => row?.start && row?.duration_seconds != null)
+            .map((row) => ({
+                x: new Date(row.start),
+                y: Number(row.duration_seconds) / 60.0,
+            }))
+            .filter((p) => Number.isFinite(p.y));
+
+        const showNote = !payload?.sfmc_configured || sfmcCallPointsCache.length === 0;
+        if (noteEl) noteEl.style.display = showNote ? 'block' : 'none';
+
+        if (!sfmcCallPointsCache.length) {
+            drawNoDataOnCanvas(callCfg.canvasId, payload?.sfmc_configured
+                ? 'No cached SFMC connection durations'
+                : 'SFMC not configured');
+            return;
+        }
+        renderSfmcCallChartFromCache(categoryCfg);
+    } catch (err) {
+        console.error('SFMC connection durations failed:', err);
+        if (noteEl) noteEl.style.display = 'block';
+        sfmcCallPointsCache = null;
+        drawNoDataOnCanvas(callCfg.canvasId, 'Failed to load connection durations');
+    } finally {
+        hideProfileSpinner(callCfg.spinnerId);
+    }
+}
+
+function reRenderCategoryFromCache(category) {
+    const cfg = TIME_SERIES_CARD_CONFIGS[category];
+    const series = timeSeriesSeriesCache[category];
+    if (!cfg || !series) return;
+    updateChartColorVariables();
+    cfg.charts.forEach((chartCfg) => renderTimeSeriesChart(category, chartCfg, series));
+    if (category === 'vehicle_health' && Array.isArray(sfmcCallPointsCache)) {
+        renderSfmcCallChartFromCache(cfg);
+    }
+}
+
+async function refreshTimeSeriesCategory(category) {
+    const cfg = TIME_SERIES_CARD_CONFIGS[category];
+    if (!cfg) return;
+    const url = buildBulkChartDataUrl(cfg.variables);
+    if (!url) return;
+
+    cfg.charts.forEach((chartCfg) => showProfileSpinner(chartCfg.spinnerId));
+    const badge = document.getElementById('slocumDataSourceBadge');
+    if (badge) {
+        badge.className = 'badge text-bg-secondary ms-1';
+        badge.textContent = 'Source: loading…';
+    }
+
+    try {
+        updateChartColorVariables();
+        const payload = await apiRequest(url, 'GET');
+        const series = payload?.series || {};
+        timeSeriesSeriesCache[category] = series;
+        destroyTimeSeriesCharts(category);
+        cfg.charts.forEach((chartCfg) => renderTimeSeriesChart(category, chartCfg, series));
+        setSlocumDataSourceBadge(payload?.cache_metadata || {});
+        setCategoryLastDataFooter(cfg.footerId, payload?.cache_metadata?.last_data_timestamp);
+        if (category === 'vehicle_health') {
+            await refreshSfmcCallLengthChart(cfg);
+        }
+    } catch (err) {
+        console.error(`Failed to load ${category} charts:`, err);
+        showToast(`${category} chart load failed: ${err.message || err}`, 'danger');
+        destroyTimeSeriesCharts(category);
+        cfg.charts.forEach((chartCfg) => drawNoDataOnCanvas(chartCfg.canvasId, 'Failed to load chart data'));
+        setSlocumDataSourceBadge({});
+        setCategoryLastDataFooter(cfg.footerId, null);
+    } finally {
+        cfg.charts.forEach((chartCfg) => hideProfileSpinner(chartCfg.spinnerId));
+    }
+}
+
+function findCategoryForCanvas(canvasId) {
+    for (const [category, cfg] of Object.entries(TIME_SERIES_CARD_CONFIGS)) {
+        if ((cfg.charts || []).some((c) => c.canvasId === canvasId)) return category;
+        if (cfg.sfmcCallChart?.canvasId === canvasId) return category;
+    }
+    return null;
+}
+
+function findTimeSeriesChartByCanvasId(canvasId) {
+    if (!canvasId) return null;
+    return Object.values(timeSeriesChartInstances).find((inst) => inst?.canvas?.id === canvasId) || null;
+}
+
+function initSlocumChartControls() {
+    bindPlotStyleControls({
+        selectSelector: '.chart-plot-style',
+        storagePrefix: PLOT_STYLE_STORAGE_PREFIX,
+        onChange(canvasId) {
+            const category = findCategoryForCanvas(canvasId);
+            if (category) reRenderCategoryFromCache(category);
+        },
+    });
+    bindOverlayToggleControls({
+        checkboxSelector: '.chart-depth-overlay',
+        storagePrefix: DEPTH_OVERLAY_STORAGE_PREFIX,
+        onChange(canvasId) {
+            const category = findCategoryForCanvas(canvasId);
+            if (category) reRenderCategoryFromCache(category);
+        },
+    });
+    const zoomAvailable = isChartZoomPluginAvailable();
+    document.querySelectorAll('.chart-reset-zoom').forEach((button) => {
+        const canvasId = button.dataset.canvasId;
+        if (!canvasId) return;
+        if (!zoomAvailable) {
+            button.disabled = true;
+            button.title = 'Chart zoom plugin not loaded';
+            return;
+        }
+        bindResetZoomButton(button, () => findTimeSeriesChartByCanvasId(canvasId));
+    });
+    const zoomHint = document.getElementById('slocumChartZoomHint');
+    if (zoomHint) zoomHint.textContent = CHART_ZOOM_HINT;
+}
+
+function loadTimeSeriesCategory(category) {
+    timeSeriesLoaded.add(category);
+    return refreshTimeSeriesCategory(category);
+}
+
+function saveSlocumChartsAsPng(highResolution = false) {
+    const category = activeChartCategory;
+    if (!category || category === 'overview' || category === 'dissolved_oxygen') {
+        showToast('Open a sensor tab with charts first.', 'info');
+        return;
+    }
+    const detailView = document.getElementById(`detail-${category}`);
     if (!detailView) return;
     const datasetId = getDatasetId() || 'slocum';
     const canvases = detailView.querySelectorAll('canvas');
@@ -515,7 +1098,8 @@ function saveSlocumChartsAsPng(highResolution = false) {
     const scaleFactor = highResolution ? 4 : 1;
 
     canvases.forEach((canvas) => {
-        const chartInstance = ctdChartInstances[canvas.id];
+        const chartInstance = ctdChartInstances[canvas.id]
+            || Object.values(timeSeriesChartInstances).find((inst) => inst?.canvas?.id === canvas.id);
         if (!chartInstance) return;
         const source = chartInstance.canvas;
         const out = document.createElement('canvas');
@@ -537,11 +1121,14 @@ function saveSlocumChartsAsPng(highResolution = false) {
         document.body.removeChild(link);
         count += 1;
     });
-    if (count === 0) showToast('No profile charts available to save.', 'info');
+    if (count === 0) showToast('No charts available to save.', 'info');
 }
 
 function refreshLoadedChartTabs() {
     if (ctdProfilesLoaded) refreshCtdProfileCharts();
+    TIME_SERIES_CATEGORIES.forEach((category) => {
+        if (timeSeriesLoaded.has(category)) refreshTimeSeriesCategory(category);
+    });
 }
 
 /** Build query params for Slocum chart-data or CSV (time window + granularity). */
@@ -588,10 +1175,13 @@ function handleLeftPanelClicks() {
                 activeDetailView.style.display = 'block';
             }
             const isOverview = category === 'overview';
+            const isChartCategory = category === 'ctd' || TIME_SERIES_CATEGORIES.includes(category);
+            setSharedChartToolbarVisible(isChartCategory);
             // CTD profiles must keep full resolution; time-mean resample would destroy structure.
             setGranularityControlEnabled(!isOverview && category !== 'ctd');
             activeChartCategory = isOverview ? null : category;
             if (category === 'ctd') loadCtdProfileCharts();
+            if (TIME_SERIES_CATEGORIES.includes(category)) loadTimeSeriesCategory(category);
         });
     });
 }
@@ -647,6 +1237,22 @@ function updateSlocumCardFromSummary(category, summary) {
         const temp = formatCardSummaryValue(values.Temperature);
         const sal = formatCardSummaryValue(values.Salinity);
         miniSummary.innerHTML = `Temp: ${temp} °C<br>Sal: ${sal} PSU`;
+    } else if (category === 'power' && miniSummary) {
+        const batt = formatCardSummaryValue(values.MBattery, 2);
+        const ah = formatCardSummaryValue(values.MCoulombAmphrTotal, 1);
+        miniSummary.innerHTML = `Batt: ${batt} V<br>Ah: ${ah}`;
+    } else if (category === 'flight' && miniSummary) {
+        const pitch = formatCardSummaryValue(values.MPitch, 1);
+        const roll = formatCardSummaryValue(values.MRoll, 1);
+        miniSummary.innerHTML = `Pitch: ${pitch}°<br>Roll: ${roll}°`;
+    } else if (category === 'navigation' && miniSummary) {
+        const hdg = formatCardSummaryValue(values.MHeading, 1);
+        const spd = formatCardSummaryValue(values.MSpeed, 2);
+        miniSummary.innerHTML = `Hdg: ${hdg}°<br>Spd: ${spd} m/s`;
+    } else if (category === 'vehicle_health' && miniSummary) {
+        const vac = formatCardSummaryValue(values.MVacuum, 2);
+        const leak = formatCardSummaryValue(values.MLeakdetectVoltage, 2);
+        miniSummary.innerHTML = `Vac: ${vac} inHg<br>Leak: ${leak} V`;
     }
     if (footer) {
         footer.textContent = summary.time_ago_str || 'N/A';
@@ -1503,5 +2109,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     initAutoRefresh();
     initializeMiniCharts();
+    initSlocumChartControls();
     handleLeftPanelClicks();
 });

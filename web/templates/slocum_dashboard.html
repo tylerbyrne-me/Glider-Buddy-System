@@ -50,6 +50,90 @@
         </div>
       </div>
       {% endif %}
+      {% if "power" in (slocum_enabled_sensor_cards or []) %}
+      <div class="summary-card" data-category="power" data-mini-trend='{{ power_info.mini_trend | tojson | safe if power_info and "mini_trend" in power_info and power_info.mini_trend is not none else "[]" }}'>
+        <div class="summary-card-main-content">
+          <div class="mini-chart-container">
+            <canvas id="miniPowerChart"></canvas>
+          </div>
+          <div class="summary-card-text-content">
+            <h5>Power</h5>
+            <div class="mini-summary">
+              {% if power_info and power_values %}
+                Batt: {{ "%.2f"|format(power_values.get('MBattery')) if power_values.get('MBattery') is not none else 'N/A' }} V<br>
+                Ah: {{ "%.1f"|format(power_values.get('MCoulombAmphrTotal')) if power_values.get('MCoulombAmphrTotal') is not none else 'N/A' }}
+              {% else %} N/A {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="summary-card-footer text-muted small">
+          {{ power_info.time_ago_str if power_info else 'N/A' }}
+        </div>
+      </div>
+      {% endif %}
+      {% if "flight" in (slocum_enabled_sensor_cards or []) %}
+      <div class="summary-card" data-category="flight" data-mini-trend='{{ flight_info.mini_trend | tojson | safe if flight_info and "mini_trend" in flight_info and flight_info.mini_trend is not none else "[]" }}'>
+        <div class="summary-card-main-content">
+          <div class="mini-chart-container">
+            <canvas id="miniFlightChart"></canvas>
+          </div>
+          <div class="summary-card-text-content">
+            <h5>Flight</h5>
+            <div class="mini-summary">
+              {% if flight_info and flight_values %}
+                Pitch: {{ "%.1f"|format(flight_values.get('MPitch')) if flight_values.get('MPitch') is not none else 'N/A' }}°<br>
+                Roll: {{ "%.1f"|format(flight_values.get('MRoll')) if flight_values.get('MRoll') is not none else 'N/A' }}°
+              {% else %} N/A {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="summary-card-footer text-muted small">
+          {{ flight_info.time_ago_str if flight_info else 'N/A' }}
+        </div>
+      </div>
+      {% endif %}
+      {% if "navigation" in (slocum_enabled_sensor_cards or []) %}
+      <div class="summary-card" data-category="navigation" data-mini-trend='{{ navigation_info.mini_trend | tojson | safe if navigation_info and "mini_trend" in navigation_info and navigation_info.mini_trend is not none else "[]" }}'>
+        <div class="summary-card-main-content">
+          <div class="mini-chart-container">
+            <canvas id="miniNavigationChart"></canvas>
+          </div>
+          <div class="summary-card-text-content">
+            <h5>Navigation</h5>
+            <div class="mini-summary">
+              {% if navigation_info and navigation_values %}
+                Hdg: {{ "%.1f"|format(navigation_values.get('MHeading')) if navigation_values.get('MHeading') is not none else 'N/A' }}°<br>
+                Spd: {{ "%.2f"|format(navigation_values.get('MSpeed')) if navigation_values.get('MSpeed') is not none else 'N/A' }} m/s
+              {% else %} N/A {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="summary-card-footer text-muted small">
+          {{ navigation_info.time_ago_str if navigation_info else 'N/A' }}
+        </div>
+      </div>
+      {% endif %}
+      {% if "vehicle_health" in (slocum_enabled_sensor_cards or []) %}
+      <div class="summary-card" data-category="vehicle_health" data-mini-trend='{{ vehicle_health_info.mini_trend | tojson | safe if vehicle_health_info and "mini_trend" in vehicle_health_info and vehicle_health_info.mini_trend is not none else "[]" }}'>
+        <div class="summary-card-main-content">
+          <div class="mini-chart-container">
+            <canvas id="miniVehicleHealthChart"></canvas>
+          </div>
+          <div class="summary-card-text-content">
+            <h5>Vehicle Health</h5>
+            <div class="mini-summary">
+              {% if vehicle_health_info and vehicle_health_values %}
+                Vac: {{ "%.2f"|format(vehicle_health_values.get('MVacuum')) if vehicle_health_values.get('MVacuum') is not none else 'N/A' }} inHg<br>
+                Leak: {{ "%.2f"|format(vehicle_health_values.get('MLeakdetectVoltage')) if vehicle_health_values.get('MLeakdetectVoltage') is not none else 'N/A' }} V
+              {% else %} N/A {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="summary-card-footer text-muted small">
+          {{ vehicle_health_info.time_ago_str if vehicle_health_info else 'N/A' }}
+        </div>
+      </div>
+      {% endif %}
       {% if "dissolved_oxygen" in (slocum_enabled_sensor_cards or []) %}
       <div class="summary-card" data-category="dissolved_oxygen">
         <div class="summary-card-main-content">
@@ -265,50 +349,65 @@
         </div>
       </div>
 
+      {% set _has_slocum_charts = (
+        "ctd" in (slocum_enabled_sensor_cards or ["ctd"])
+        or "power" in (slocum_enabled_sensor_cards or [])
+        or "flight" in (slocum_enabled_sensor_cards or [])
+        or "navigation" in (slocum_enabled_sensor_cards or [])
+        or "vehicle_health" in (slocum_enabled_sensor_cards or [])
+      ) %}
+      {% if _has_slocum_charts %}
+      <div class="card mb-3" id="slocumSharedChartToolbar" style="display: none;">
+        <div class="card-body py-2">
+          <div id="slocumChartControls" class="d-flex flex-wrap align-items-center gap-2">
+            <div class="input-group input-group-sm" style="width: 200px;">
+              <label class="input-group-text" for="start-date-slocum" title="Start date and time for data visualization.">From</label>
+              <input type="datetime-local" class="form-control date-range-input" id="start-date-slocum" data-report-type="slocum">
+            </div>
+            <div class="input-group input-group-sm" style="width: 200px;">
+              <label class="input-group-text" for="end-date-slocum" title="End date and time for data visualization.">To</label>
+              <input type="datetime-local" class="form-control date-range-input" id="end-date-slocum" data-report-type="slocum">
+            </div>
+            <button class="btn btn-outline-secondary btn-sm" id="clear-date-slocum" title="Clear date range and return to hours mode" style="display: none;">
+              <i class="fas fa-times"></i> Clear
+            </button>
+            <div class="input-group input-group-sm" style="width: 150px;">
+              <label class="input-group-text" for="slocumHoursBack" title="Set the time window for the chart data in hours.">Hours</label>
+              <input type="number" class="form-control hours-back-input" id="slocumHoursBack" value="24" min="1" max="8760" data-report-type="slocum">
+            </div>
+            <div class="input-group input-group-sm" style="width: 150px;">
+              <label class="input-group-text" for="slocumGranularity" title="Set the data resampling interval.">Resample</label>
+              <select id="slocumGranularity" class="form-select" data-report-type="overview">
+                <option value="0" selected>All (no resample)</option>
+                <option value="5">5 min</option>
+                <option value="15">15 min</option>
+                <option value="30">30 min</option>
+                <option value="60">60 min</option>
+              </select>
+            </div>
+            <div class="dropdown">
+              <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="fas fa-download me-1"></i> Download
+              </button>
+              <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" id="slocum-download-csv">Data as CSV</a></li>
+                <li><a class="dropdown-item" href="#" id="slocum-save-charts-png" data-high-res="false">Charts as PNG</a></li>
+                <li><a class="dropdown-item" href="#" id="slocum-save-charts-png-hires" data-high-res="true">Charts as PNG (High-Res)</a></li>
+              </ul>
+            </div>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="slocumRefreshCharts">Refresh charts</button>
+            <span id="slocumDataSourceBadge" class="badge text-bg-secondary ms-1" title="Where the displayed data was loaded from.">Source: —</span>
+          </div>
+          <p class="small text-muted mb-0 mt-2" id="slocumChartZoomHint">Ctrl+scroll to zoom · drag to pan · Reset zoom restores the full window.</p>
+        </div>
+      </div>
+      {% endif %}
+
       {% if "ctd" in (slocum_enabled_sensor_cards or ["ctd"]) %}
       <div class="category-detail-view card mb-4" id="detail-ctd" style="display: none;">
         <div class="card h-100">
           <div class="card-header d-flex justify-content-between align-items-center flex-wrap gap-2">
             <h2 class="mb-0">{{ dataset }} - CTD</h2>
-            <div id="slocumChartControls" class="d-flex flex-wrap align-items-center gap-2">
-              <div class="input-group input-group-sm" style="width: 200px;">
-                <label class="input-group-text" for="start-date-slocum" title="Start date and time for data visualization.">From</label>
-                <input type="datetime-local" class="form-control date-range-input" id="start-date-slocum" data-report-type="slocum">
-              </div>
-              <div class="input-group input-group-sm" style="width: 200px;">
-                <label class="input-group-text" for="end-date-slocum" title="End date and time for data visualization.">To</label>
-                <input type="datetime-local" class="form-control date-range-input" id="end-date-slocum" data-report-type="slocum">
-              </div>
-              <button class="btn btn-outline-secondary btn-sm" id="clear-date-slocum" title="Clear date range and return to hours mode" style="display: none;">
-                <i class="fas fa-times"></i> Clear
-              </button>
-              <div class="input-group input-group-sm" style="width: 150px;">
-                <label class="input-group-text" for="slocumHoursBack" title="Set the time window for the chart data in hours.">Hours</label>
-                <input type="number" class="form-control hours-back-input" id="slocumHoursBack" value="24" min="1" max="8760" data-report-type="slocum">
-              </div>
-              <div class="input-group input-group-sm" style="width: 150px;">
-                <label class="input-group-text" for="slocumGranularity" title="Set the data resampling interval.">Resample</label>
-                <select id="slocumGranularity" class="form-select" data-report-type="overview">
-                  <option value="0">All (no resample)</option>
-                  <option value="5">5 min</option>
-                  <option value="15" selected>15 min</option>
-                  <option value="30">30 min</option>
-                  <option value="60">60 min</option>
-                </select>
-              </div>
-              <div class="dropdown">
-                <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                  <i class="fas fa-download me-1"></i> Download
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end">
-                  <li><a class="dropdown-item" href="#" id="slocum-download-csv">Data as CSV</a></li>
-                  <li><a class="dropdown-item" href="#" id="slocum-save-charts-png" data-high-res="false">Charts as PNG</a></li>
-                  <li><a class="dropdown-item" href="#" id="slocum-save-charts-png-hires" data-high-res="true">Charts as PNG (High-Res)</a></li>
-                </ul>
-              </div>
-              <button type="button" class="btn btn-outline-primary btn-sm" id="slocumRefreshCharts">Refresh charts</button>
-              <span id="slocumDataSourceBadge" class="badge text-bg-secondary ms-1" title="Where the displayed data was loaded from.">Source: —</span>
-            </div>
           </div>
           <div class="card-body">
             <h5 class="mt-3">Sea Water Temperature (°C)</h5>
@@ -338,6 +437,182 @@
           <div class="card-footer text-muted small" id="slocumCtdLastDataFooter">
             {% if ctd_info and ctd_info.latest_timestamp_str and ctd_info.latest_timestamp_str != "N/A" %}
               Last data: {{ ctd_info.latest_timestamp_str }} ({{ ctd_info.time_ago_str }})
+            {% else %}
+              Last data: N/A
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% from "_chart_plot_controls.html" import chart_plot_controls %}
+      {% macro slocum_chart_controls(canvas_id, show_depth=true) -%}
+      {{ chart_plot_controls(canvas_id, show_depth=show_depth, show_reset_zoom=true) }}
+      {%- endmacro %}
+
+      {% if "power" in (slocum_enabled_sensor_cards or []) %}
+      <div class="category-detail-view card mb-4" id="detail-power" style="display: none;">
+        <div class="card h-100">
+          <div class="card-header">
+            <h2 class="mb-0">{{ dataset }} - Power</h2>
+          </div>
+          <div class="card-body">
+            <h5 class="mt-2">Battery Voltage (V)</h5>
+            {{ slocum_chart_controls('slocumPowerBatteryChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumPowerBatterySpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumPowerBatteryChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Coulomb AmpHr — Daily Consumption &amp; Total</h5>
+            {{ slocum_chart_controls('slocumPowerCoulombChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumPowerCoulombSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumPowerCoulombChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">BMS Currents (A)</h5>
+            {{ slocum_chart_controls('slocumPowerBmsChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumPowerBmsSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumPowerBmsChart"></canvas>
+            </div>
+          </div>
+          <div class="card-footer text-muted small" id="slocumPowerLastDataFooter">
+            {% if power_info and power_info.latest_timestamp_str and power_info.latest_timestamp_str != "N/A" %}
+              Last data: {{ power_info.latest_timestamp_str }} ({{ power_info.time_ago_str }})
+            {% else %}
+              Last data: N/A
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if "flight" in (slocum_enabled_sensor_cards or []) %}
+      <div class="category-detail-view card mb-4" id="detail-flight" style="display: none;">
+        <div class="card h-100">
+          <div class="card-header">
+            <h2 class="mb-0">{{ dataset }} - Flight</h2>
+          </div>
+          <div class="card-body">
+            <h5 class="mt-2">Pitch — Measured vs Commanded (°)</h5>
+            {{ slocum_chart_controls('slocumFlightPitchChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumFlightPitchSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumFlightPitchChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Roll — Measured vs Commanded (°)</h5>
+            {{ slocum_chart_controls('slocumFlightRollChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumFlightRollSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumFlightRollChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Fin — Measured vs Commanded (°)</h5>
+            {{ slocum_chart_controls('slocumFlightFinChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumFlightFinSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumFlightFinChart"></canvas>
+            </div>
+          </div>
+          <div class="card-footer text-muted small" id="slocumFlightLastDataFooter">
+            {% if flight_info and flight_info.latest_timestamp_str and flight_info.latest_timestamp_str != "N/A" %}
+              Last data: {{ flight_info.latest_timestamp_str }} ({{ flight_info.time_ago_str }})
+            {% else %}
+              Last data: N/A
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if "navigation" in (slocum_enabled_sensor_cards or []) %}
+      <div class="category-detail-view card mb-4" id="detail-navigation" style="display: none;">
+        <div class="card h-100">
+          <div class="card-header">
+            <h2 class="mb-0">{{ dataset }} - Navigation</h2>
+          </div>
+          <div class="card-body">
+            <h5 class="mt-2">Heading — Measured vs Commanded (°)</h5>
+            {{ slocum_chart_controls('slocumNavHeadingChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumNavHeadingSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumNavHeadingChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Depth Rate — Ascent / Descent (m/s)</h5>
+            {{ slocum_chart_controls('slocumNavDepthRateChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumNavDepthRateSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumNavDepthRateChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Depth &amp; Altimeter Water Depth (m)</h5>
+            {{ slocum_chart_controls('slocumNavDepthChart', show_depth=false) }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumNavDepthSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumNavDepthChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Speed Over Ground (m/s)</h5>
+            {{ slocum_chart_controls('slocumNavSpeedChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumNavSpeedSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumNavSpeedChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Depth-Averaged Currents (m/s)</h5>
+            {{ slocum_chart_controls('slocumNavCurrentChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumNavCurrentSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumNavCurrentChart"></canvas>
+            </div>
+          </div>
+          <div class="card-footer text-muted small" id="slocumNavigationLastDataFooter">
+            {% if navigation_info and navigation_info.latest_timestamp_str and navigation_info.latest_timestamp_str != "N/A" %}
+              Last data: {{ navigation_info.latest_timestamp_str }} ({{ navigation_info.time_ago_str }})
+            {% else %}
+              Last data: N/A
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if "vehicle_health" in (slocum_enabled_sensor_cards or []) %}
+      <div class="category-detail-view card mb-4" id="detail-vehicle_health" style="display: none;">
+        <div class="card h-100">
+          <div class="card-header">
+            <h2 class="mb-0">{{ dataset }} - Vehicle Health</h2>
+          </div>
+          <div class="card-body">
+            <h5 class="mt-2">Vacuum (inHg)</h5>
+            {{ slocum_chart_controls('slocumHealthVacuumChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumHealthVacuumSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumHealthVacuumChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Leak Detect Voltage (V)</h5>
+            {{ slocum_chart_controls('slocumHealthLeakChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumHealthLeakSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumHealthLeakChart"></canvas>
+            </div>
+            <hr class="my-4">
+            <h5 class="mt-2">Surface Call Length (Connection Duration)</h5>
+            <p class="text-muted small mb-2" id="slocumHealthSfmcNote" style="display: none;">SFMC connection durations are unavailable (not configured or not yet cached).</p>
+            {{ slocum_chart_controls('slocumHealthCallChart') }}
+            <div class="chart-container" style="position: relative; height: 280px; width: 100%;">
+              <div class="chart-spinner spinner-border text-light" id="slocumHealthCallSpinner" role="status"><span class="visually-hidden">Loading...</span></div>
+              <canvas id="slocumHealthCallChart"></canvas>
+            </div>
+          </div>
+          <div class="card-footer text-muted small" id="slocumVehicleHealthLastDataFooter">
+            {% if vehicle_health_info and vehicle_health_info.latest_timestamp_str and vehicle_health_info.latest_timestamp_str != "N/A" %}
+              Last data: {{ vehicle_health_info.latest_timestamp_str }} ({{ vehicle_health_info.time_ago_str }})
             {% else %}
               Last data: N/A
             {% endif %}
@@ -422,5 +697,6 @@
 {% endblock %}
 
 {% block body_extra_js %}
+  {% include "_chart_zoom_scripts.html" %}
   <script type="module" src="/static/js/slocum_dashboard.js"></script>
 {% endblock %}

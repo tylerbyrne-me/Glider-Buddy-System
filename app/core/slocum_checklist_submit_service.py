@@ -207,7 +207,11 @@ async def build_checklist_autofilled_schema(
             "endurance_ref_val": f"{references.get('endurance_amphr_total') or '—'} Ah",
         }
         for key, val in (sfmc_values or {}).items():
-            if val and key != "u_alt_min_depth_val":
+            if key == "connection_durations" or key == "u_alt_min_depth_val":
+                continue
+            if not isinstance(val, str):
+                continue
+            if val:
                 autofill[key] = val
 
     schema = apply_autofill_to_schema(schema, autofill)

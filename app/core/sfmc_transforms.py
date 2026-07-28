@@ -437,6 +437,8 @@ def merge_sfmc_checklist_values(*parts: dict[str, str]) -> dict[str, str]:
         for key, value in (part or {}).items():
             if key.startswith("_"):
                 continue
+            if key == "connection_durations":
+                continue
             if value is None:
                 continue
             text = str(value).strip()
@@ -444,4 +446,81 @@ def merge_sfmc_checklist_values(*parts: dict[str, str]) -> dict[str, str]:
                 merged[key] = text
     # Never autofill pilot altitude min depth from SFMC
     merged.pop("u_alt_min_depth_val", None)
+    return merged
+
+
+def extract_connection_durations(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """
+    Extract surface-call connection durations from SFMC ``connectionsMap``.
+
+    Returns list of ``{start, end, duration_seconds}`` (ISO UTC start/end).
+    Incomplete connections (no end) are omitted.
+    """
+    if not isinstance(payload, dict):
+        return []
+    connections = payload.get("connectionsMap") or {}
+    if not isinstance(connections, dict):
+        return []
+
+    out: list[dict[str, Any]] = []
+    for conn in connections.values():
+        if not isinstance(conn, dict):
+            continue
+        start_dt = _parse_sfmc_dt(conn.get("startDateTime"))
+        end_dt = _parse_sfmc_dt(conn.get("endDateTime"))
+        if start_dt is None or end_dt is None:
+            continue
+        if end_dt < start_dt:
+            continue
+        duration_seconds = (end_dt - start_dt).total_seconds()
+        out.append(
+            {
+                "start": start_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "end": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "duration_seconds": round(duration_seconds, 1),
+            }
+        )
+    out.sort(key=lambda row: row["start"])
+    return out
+
+
+def merge_connection_durations(
+    existing: Any,
+    incoming: Any,
+    *,
+    max_days: int = 90,
+    now: Optional[datetime] = None,
+) -> list[dict[str, Any]]:
+    """
+    Merge connection-duration lists keyed by ``start``, retaining ~``max_days``.
+    """
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=max(1, int(max_days)))
+
+    by_start: dict[str, dict[str, Any]] = {}
+    for source in (existing, incoming):
+        if not isinstance(source, list):
+            continue
+        for row in source:
+            if not isinstance(row, dict):
+                continue
+            start = str(row.get("start") or "").strip()
+            if not start:
+                continue
+            start_dt = _parse_sfmc_dt(start)
+            if start_dt is not None and start_dt < cutoff:
+                continue
+            duration = row.get("duration_seconds")
+            try:
+                duration_f = float(duration) if duration is not None else None
+            except (TypeError, ValueError):
+                duration_f = None
+            end = str(row.get("end") or "").strip() or None
+            by_start[start] = {
+                "start": start if start.endswith("Z") else f"{start}Z" if "T" in start and "+" not in start else start,
+                "end": end,
+                "duration_seconds": duration_f,
+            }
+
+    merged = sorted(by_start.values(), key=lambda row: str(row.get("start") or ""))
     return merged

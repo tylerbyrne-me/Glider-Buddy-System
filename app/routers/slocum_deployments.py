@@ -56,7 +56,14 @@ router = APIRouter(
 
 # Canonical metadata owner for Slocum briefing features.
 SLOCUM_METADATA_OWNER = "SlocumDeployment"
-SLOCUM_VALID_SENSOR_CARDS: Set[str] = {"ctd", "dissolved_oxygen"}
+SLOCUM_VALID_SENSOR_CARDS: Set[str] = {
+    "ctd",
+    "dissolved_oxygen",
+    "power",
+    "flight",
+    "navigation",
+    "vehicle_health",
+}
 SLOCUM_DEFAULT_SENSOR_CARDS = ["ctd"]
 
 

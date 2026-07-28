@@ -3,12 +3,22 @@
  * @description Main dashboard with sensor data visualization
  */
 
-import { checkAuth, logout, getUserProfile } from '/static/js/auth.js';
+import { checkAuth, getUserProfile } from '/static/js/auth.js';
 import { apiRequest, fetchWithAuth, showToast } from '/static/js/api.js';
 import { renderPicHandoffDetails } from '/static/js/pic_handoff_details.js';
 import { initializeWgVm4OffloadSection } from '/static/js/wg_vm4.js';
 import { formatUtcDateTime, datetimeLocalToUtcIso, findNearestTimeIndexUtc } from '/static/js/datetime_utils.js';
 import { initializeMiniCharts } from '/static/js/mini_charts.js';
+import {
+    applyTimeAxisZoom,
+    bindResetZoomButton,
+    CHART_ZOOM_HINT,
+    isChartZoomPluginAvailable,
+} from '/static/js/chart_zoom_utils.js';
+import {
+    applyPlotStyleToDatasets,
+    bindPlotStyleControls,
+} from '/static/js/chart_plot_style_utils.js';
 
 document.addEventListener('DOMContentLoaded', async function() {
     // --- Authentication Check ---
@@ -17,7 +27,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
     const currentUser = await getUserProfile();
     const missionId = document.body.dataset.missionId;
-    // console.log("Dashboard.js: missionId from body.dataset:", missionId); // DEBUG
     const missionSelector = document.getElementById('missionSelector'); // Keep this
     const isHistorical = document.body.dataset.isHistorical === 'true';
     const isRealtimeMission = !isHistorical && document.body.dataset.isRealtime === 'true';
@@ -955,6 +964,82 @@ document.addEventListener('DOMContentLoaded', async function() {
     let navigationCurrentChartInstance = null; // Instance for Ocean Current chart
     let navigationHeadingDiffChartInstance = null; // Instance for Heading Difference chart
 
+    const WG_PLOT_STYLE_PREFIX = 'wgPlotStyle:';
+    const chartInstancesByCanvasId = {};
+    const CANVAS_TO_REPORT_TYPE = {
+        powerChart: 'power',
+        solarPanelChart: 'power',
+        ctdChart: 'ctd',
+        ctdProfileChart: 'ctd',
+        weatherSensorChart: 'weather',
+        waveChart: 'waves',
+        waveHeightDirectionChart: 'waves',
+        vr2cChart: 'vr2c',
+        fluorometerChart: 'fluorometer',
+        wgVm4Chart: 'wg_vm4',
+        telemetryChart: 'telemetry',
+        telemetryCurrentChart: 'telemetry',
+        telemetryHeadingDiffChart: 'telemetry',
+    };
+
+    /**
+     * Create a WG time-series Chart with shared plot-style + zoom applied.
+     * Spectrum / doughnut charts should keep using bare `new Chart(...)`.
+     */
+    function createWgTimeSeriesChart(canvasId, ctx, config) {
+        const prev = chartInstancesByCanvasId[canvasId];
+        if (prev) {
+            try { prev.destroy(); } catch (_) { /* ignore */ }
+        }
+        if (!config.data) config.data = {};
+        if (!Array.isArray(config.data.datasets)) config.data.datasets = [];
+        applyPlotStyleToDatasets(config.data.datasets, WG_PLOT_STYLE_PREFIX, canvasId);
+        if (!config.options || typeof config.options !== 'object') config.options = {};
+        applyTimeAxisZoom(config.options);
+        const instance = new Chart(ctx, config);
+        chartInstancesByCanvasId[canvasId] = instance;
+        return instance;
+    }
+
+    function clearWgChartInstance(canvasId) {
+        const prev = chartInstancesByCanvasId[canvasId];
+        if (prev) {
+            try { prev.destroy(); } catch (_) { /* ignore */ }
+            delete chartInstancesByCanvasId[canvasId];
+        }
+    }
+
+    function findWgChartByCanvasId(canvasId) {
+        return chartInstancesByCanvasId[canvasId] || null;
+    }
+
+    function initWgChartControls() {
+        bindPlotStyleControls({
+            selectSelector: '.chart-plot-style',
+            storagePrefix: WG_PLOT_STYLE_PREFIX,
+            onChange(canvasId) {
+                const reportType = CANVAS_TO_REPORT_TYPE[canvasId];
+                if (!reportType) return;
+                const loader = getSensorLoader(reportType);
+                if (loader) loader();
+            },
+        });
+        const zoomAvailable = isChartZoomPluginAvailable();
+        document.querySelectorAll('.chart-reset-zoom').forEach((button) => {
+            const canvasId = button.dataset.canvasId;
+            if (!canvasId) return;
+            if (!zoomAvailable) {
+                button.disabled = true;
+                button.title = 'Chart zoom plugin not loaded';
+                return;
+            }
+            bindResetZoomButton(button, () => findWgChartByCanvasId(canvasId));
+        });
+        document.querySelectorAll('.chart-zoom-hint').forEach((el) => {
+            el.textContent = CHART_ZOOM_HINT;
+        });
+    }
+
     // --- Chart Color Variables ---
     // We use 'let' so we can update them when the theme changes.
     let chartTextColor, chartGridColor, miniChartLineColor;
@@ -1448,7 +1533,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const granularitySelect = document.querySelector(`.granularity-select[data-report-type="${reportType}"]`);
 
         const hours = hoursInput ? hoursInput.value : 72; // Default to 72 if no input found
-        const granularity = granularitySelect ? granularitySelect.value : 15; // Default to 15 min if no select found
+        const granularity = granularitySelect ? granularitySelect.value : 0; // Default: all points (no resample)
 
         try {
             // Check if date range is enabled for this report type
@@ -1516,20 +1601,18 @@ document.addEventListener('DOMContentLoaded', async function() {
      * @param {Array<Object>|null} chartData - The data array fetched from the API.
      */
     function renderPowerChart(chartData) {
-        // console.log('Attempting to render Power Chart. Data received:', chartData);
         const ctx = document.getElementById('powerChart').getContext('2d');
         const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
         hideChartSpinner(spinner); // Hide spinner before rendering or showing "no data"
 
 
         if (!chartData || chartData.length === 0) {
-            // console.log('No data or empty data array for Power Chart.');
             // Display a message on the canvas if no data
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No power trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (powerChartInstance) { powerChartInstance.destroy(); powerChartInstance = null; }
+            if (powerChartInstance) { clearWgChartInstance('powerChart'); powerChartInstance = null; }
             return;
         }
 
@@ -1555,20 +1638,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         if (datasets.length === 0) {
-            // console.warn('Power Chart: No valid datasets could be formed from the provided chartData.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No plottable power data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (powerChartInstance) { powerChartInstance.destroy(); powerChartInstance = null; }
+            if (powerChartInstance) { clearWgChartInstance('powerChart'); powerChartInstance = null; }
             return;
         }
 
         if (powerChartInstance) {
-            powerChartInstance.destroy(); // Clear previous chart if any
+            clearWgChartInstance('powerChart');
+            powerChartInstance = null;
         }
 
-        powerChartInstance = new Chart(ctx, {
+        powerChartInstance = createWgTimeSeriesChart('powerChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -1600,18 +1683,16 @@ document.addEventListener('DOMContentLoaded', async function() {
      * @param {Array<Object>|null} chartData - The data array fetched from the API.
      */
     function renderCtdChart(chartData) { // This function was missing in the previous diff
-        // console.log('Attempting to render CTD Chart. Data received:', chartData);
         const ctx = document.getElementById('ctdChart').getContext('2d');
         const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
         hideChartSpinner(spinner);
 
         if (!chartData || chartData.length === 0) {
-            // console.log('No data or empty data array for CTD Chart.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No CTD trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (ctdChartInstance) { ctdChartInstance.destroy(); ctdChartInstance = null; }
+            if (ctdChartInstance) { clearWgChartInstance('ctdChart'); ctdChartInstance = null; }
             return;
         }
 
@@ -1637,20 +1718,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         // Add other CTD metrics (Conductivity, DissolvedOxygen, Pressure) similarly, potentially on new axes or separate charts
 
         if (datasets.length === 0) {
-            // console.warn('CTD Chart: No valid datasets could be formed from the provided chartData.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No plottable CTD data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (ctdChartInstance) { ctdChartInstance.destroy(); ctdChartInstance = null; }
+            if (ctdChartInstance) { clearWgChartInstance('ctdChart'); ctdChartInstance = null; }
             return;
         }
 
         if (ctdChartInstance) {
-            ctdChartInstance.destroy();
+            clearWgChartInstance('ctdChart');
+            ctdChartInstance = null;
         }
 
-        ctdChartInstance = new Chart(ctx, {
+        ctdChartInstance = createWgTimeSeriesChart('ctdChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -1730,10 +1811,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         hideChartSpinner(spinner);
 
         if (!chartData || chartData.length === 0) {
-            // console.log('No data or empty data array for CTD Profile Chart.');
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No CTD profile data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (ctdProfileChartInstance) { ctdProfileChartInstance.destroy(); ctdProfileChartInstance = null; }
+            if (ctdProfileChartInstance) { clearWgChartInstance('ctdProfileChart'); ctdProfileChartInstance = null; }
             return;
         }
 
@@ -1771,16 +1851,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         if (datasets.length === 0) {
-            // console.warn('CTD Profile Chart: No valid datasets could be formed.');
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No plottable CTD profile data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (ctdProfileChartInstance) { ctdProfileChartInstance.destroy(); ctdProfileChartInstance = null; }
+            if (ctdProfileChartInstance) { clearWgChartInstance('ctdProfileChart'); ctdProfileChartInstance = null; }
             return;
         }
 
         if (ctdProfileChartInstance) { ctdProfileChartInstance.destroy(); }
 
-        ctdProfileChartInstance = new Chart(ctx, {
+        ctdProfileChartInstance = createWgTimeSeriesChart('ctdProfileChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -1797,18 +1876,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     function renderWeatherSensorChart(chartData) { // This function was missing in the previous diff
-        // console.log('Attempting to render Weather Chart. Data received:', chartData);
         const ctx = document.getElementById('weatherSensorChart').getContext('2d');
         const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
         hideChartSpinner(spinner);
 
         if (!chartData || chartData.length === 0) {
-            // console.log('No data or empty data array for Weather Chart.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No weather sensor trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (weatherSensorChartInstance) { weatherSensorChartInstance.destroy(); weatherSensorChartInstance = null; }
+            if (weatherSensorChartInstance) { clearWgChartInstance('weatherSensorChart'); weatherSensorChartInstance = null; }
             return;
         }
 
@@ -1843,20 +1920,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         if (datasets.length === 0) {
-            // console.warn('Weather Chart: No valid datasets could be formed from the provided chartData.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No plottable weather data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (weatherSensorChartInstance) { weatherSensorChartInstance.destroy(); weatherSensorChartInstance = null; }
+            if (weatherSensorChartInstance) { clearWgChartInstance('weatherSensorChart'); weatherSensorChartInstance = null; }
             return;
         }
 
         if (weatherSensorChartInstance) {
-            weatherSensorChartInstance.destroy();
+            clearWgChartInstance('weatherSensorChart');
+            weatherSensorChartInstance = null;
         }
 
-        weatherSensorChartInstance = new Chart(ctx, {
+        weatherSensorChartInstance = createWgTimeSeriesChart('weatherSensorChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -2152,18 +2229,16 @@ document.addEventListener('DOMContentLoaded', async function() {
      * @param {Array<Object>|null} chartData - The data array fetched from the API.
      */
     function renderWaveChart(chartData) { 
-        // console.log('Attempting to render Wave Chart. Data received:', chartData);
         const ctx = document.getElementById('waveChart').getContext('2d');
         const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
         hideChartSpinner(spinner);
 
                 if (!chartData || chartData.length === 0) {
-            // console.log('No data or empty data array for Wave Chart.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No wave trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (waveChartInstance) { waveChartInstance.destroy(); waveChartInstance = null; }
+            if (waveChartInstance) { clearWgChartInstance('waveChart'); waveChartInstance = null; }
             return;
         }
 
@@ -2188,20 +2263,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         if (datasets.length === 0) {
-            // console.warn('Wave Chart: No valid datasets could be formed from the provided chartData.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No plottable wave data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (waveChartInstance) { waveChartInstance.destroy(); waveChartInstance = null; }
+            if (waveChartInstance) { clearWgChartInstance('waveChart'); waveChartInstance = null; }
             return;
         }
 
         if (waveChartInstance) {
-            waveChartInstance.destroy();
+            clearWgChartInstance('waveChart');
+            waveChartInstance = null;
         }
 
-        waveChartInstance = new Chart(ctx, {
+        waveChartInstance = createWgTimeSeriesChart('waveChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -2375,18 +2450,16 @@ document.addEventListener('DOMContentLoaded', async function() {
      * @param {Array<Object>|null} chartData - The data array fetched from the API.
      */
     function renderVr2cChart(chartData) {
-        // console.log('Attempting to render VR2C Chart. Data received:', chartData);
         const ctx = document.getElementById('vr2cChart').getContext('2d');
         const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
         hideChartSpinner(spinner);
 
         if (!chartData || chartData.length === 0) {
-            // console.log('No data or empty data array for VR2C Chart.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No VR2C trend data available to display.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (vr2cChartInstance) { vr2cChartInstance.destroy(); vr2cChartInstance = null; }
+            if (vr2cChartInstance) { clearWgChartInstance('vr2cChart'); vr2cChartInstance = null; }
             return;
         }
 
@@ -2412,20 +2485,20 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         if (datasets.length === 0) {
-            // console.warn('VR2C Chart: No valid datasets could be formed from the provided chartData.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No plottable VR2C data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (vr2cChartInstance) { vr2cChartInstance.destroy(); vr2cChartInstance = null; }
+            if (vr2cChartInstance) { clearWgChartInstance('vr2cChart'); vr2cChartInstance = null; }
             return;
         }
 
         if (vr2cChartInstance) {
-            vr2cChartInstance.destroy();
+            clearWgChartInstance('vr2cChart');
+            vr2cChartInstance = null;
         }
 
-        vr2cChartInstance = new Chart(ctx, {
+        vr2cChartInstance = createWgTimeSeriesChart('vr2cChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -2454,7 +2527,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!chartData || chartData.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No wave Ht/Dir data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (waveHeightDirectionChartInstance) { waveHeightDirectionChartInstance.destroy(); waveHeightDirectionChartInstance = null; }
+            if (waveHeightDirectionChartInstance) { clearWgChartInstance('waveHeightDirectionChart'); waveHeightDirectionChartInstance = null; }
             return;
         }
 
@@ -2484,12 +2557,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (datasets.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No plottable wave Ht/Dir data.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (waveHeightDirectionChartInstance) { waveHeightDirectionChartInstance.destroy(); waveHeightDirectionChartInstance = null; }
+            if (waveHeightDirectionChartInstance) { clearWgChartInstance('waveHeightDirectionChart'); waveHeightDirectionChartInstance = null; }
             return;
         }
 
         if (waveHeightDirectionChartInstance) { waveHeightDirectionChartInstance.destroy(); }
-        waveHeightDirectionChartInstance = new Chart(ctx, {
+        waveHeightDirectionChartInstance = createWgTimeSeriesChart('waveHeightDirectionChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -2616,7 +2689,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!chartData || chartData.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No fluorometer data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (fluorometerChartInstance) { fluorometerChartInstance.destroy(); fluorometerChartInstance = null; }
+            if (fluorometerChartInstance) { clearWgChartInstance('fluorometerChart'); fluorometerChartInstance = null; }
             return;
         }
 
@@ -2661,12 +2734,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (datasets.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No plottable fluorometer data.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (fluorometerChartInstance) { fluorometerChartInstance.destroy(); fluorometerChartInstance = null; }
+            if (fluorometerChartInstance) { clearWgChartInstance('fluorometerChart'); fluorometerChartInstance = null; }
             return;
         }
 
         if (fluorometerChartInstance) { fluorometerChartInstance.destroy(); }
-        fluorometerChartInstance = new Chart(ctx, {
+        fluorometerChartInstance = createWgTimeSeriesChart('fluorometerChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -2688,18 +2761,16 @@ document.addEventListener('DOMContentLoaded', async function() {
      * @param {Array<Object>|null} powerData - The data array for the main power report, used for total solar input.
      */
     function renderSolarPanelChart(chartData, powerData) {
-        // console.log('Attempting to render Solar Panel Chart. Data received:', chartData);
         const ctx = document.getElementById('solarPanelChart')?.getContext('2d');
         const spinner = ctx.canvas.parentElement.querySelector('.chart-spinner');
         hideChartSpinner(spinner);
 
         if (!chartData || chartData.length === 0) {
-            // console.log('No data or empty data array for Solar Panel Chart.');
             ctx.font = "16px Arial";
             ctx.fillStyle = "grey";
             ctx.textAlign = "center";
             ctx.fillText("No solar panel trend data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (solarPanelChartInstance) { solarPanelChartInstance.destroy(); solarPanelChartInstance = null; }
+            if (solarPanelChartInstance) { clearWgChartInstance('solarPanelChart'); solarPanelChartInstance = null; }
             return;
         }
 
@@ -2744,16 +2815,15 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
 
         if (datasets.length === 0) {
-            // console.warn('Solar Panel Chart: No valid datasets could be formed.');
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No plottable solar panel data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (solarPanelChartInstance) { solarPanelChartInstance.destroy(); solarPanelChartInstance = null; }
+            if (solarPanelChartInstance) { clearWgChartInstance('solarPanelChart'); solarPanelChartInstance = null; }
             return;
         }
 
         if (solarPanelChartInstance) { solarPanelChartInstance.destroy(); }
 
-        solarPanelChartInstance = new Chart(ctx, {
+        solarPanelChartInstance = createWgTimeSeriesChart('solarPanelChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -2794,7 +2864,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!chartData || chartData.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No navigation trend data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (telemetryChartInstance) { telemetryChartInstance.destroy(); telemetryChartInstance = null; } // Updated instance variable
+            if (telemetryChartInstance) { clearWgChartInstance('telemetryChart'); telemetryChartInstance = null; } // Updated instance variable
             return;
         }
 
@@ -2831,12 +2901,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (datasets.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No plottable navigation data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (telemetryChartInstance) { telemetryChartInstance.destroy(); telemetryChartInstance = null; } // Updated instance variable
+            if (telemetryChartInstance) { clearWgChartInstance('telemetryChart'); telemetryChartInstance = null; } // Updated instance variable
             return;
         }
 
         if (telemetryChartInstance) { telemetryChartInstance.destroy(); } // Updated instance variable
-        telemetryChartInstance = new Chart(ctx, { // Updated instance variable
+        telemetryChartInstance = createWgTimeSeriesChart('telemetryChart', ctx, { // Updated instance variable
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -2865,7 +2935,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!chartData || chartData.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No ocean current data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (navigationCurrentChartInstance) { navigationCurrentChartInstance.destroy(); navigationCurrentChartInstance = null; }
+            if (navigationCurrentChartInstance) { clearWgChartInstance('telemetryCurrentChart'); navigationCurrentChartInstance = null; }
             return;
         }
 
@@ -2902,12 +2972,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (datasets.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No plottable ocean current data.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (navigationCurrentChartInstance) { navigationCurrentChartInstance.destroy(); navigationCurrentChartInstance = null; }
+            if (navigationCurrentChartInstance) { clearWgChartInstance('telemetryCurrentChart'); navigationCurrentChartInstance = null; }
             return;
         }
 
         if (navigationCurrentChartInstance) { navigationCurrentChartInstance.destroy(); }
-        navigationCurrentChartInstance = new Chart(ctx, {
+        navigationCurrentChartInstance = createWgTimeSeriesChart('telemetryCurrentChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -2936,7 +3006,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!chartData || chartData.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No heading difference data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (navigationHeadingDiffChartInstance) { navigationHeadingDiffChartInstance.destroy(); navigationHeadingDiffChartInstance = null; }
+            if (navigationHeadingDiffChartInstance) { clearWgChartInstance('telemetryHeadingDiffChart'); navigationHeadingDiffChartInstance = null; }
             return;
         }
 
@@ -2977,12 +3047,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (datasets.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No plottable heading diff data.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (navigationHeadingDiffChartInstance) { navigationHeadingDiffChartInstance.destroy(); navigationHeadingDiffChartInstance = null; }
+            if (navigationHeadingDiffChartInstance) { clearWgChartInstance('telemetryHeadingDiffChart'); navigationHeadingDiffChartInstance = null; }
             return;
         }
 
         if (navigationHeadingDiffChartInstance) { navigationHeadingDiffChartInstance.destroy(); }
-        navigationHeadingDiffChartInstance = new Chart(ctx, {
+        navigationHeadingDiffChartInstance = createWgTimeSeriesChart('telemetryHeadingDiffChart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -3014,7 +3084,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!chartData || chartData.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No WG-VM4 trend data available.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (wgVm4ChartInstance) { wgVm4ChartInstance.destroy(); wgVm4ChartInstance = null; }
+            if (wgVm4ChartInstance) { clearWgChartInstance('wgVm4Chart'); wgVm4ChartInstance = null; }
             return;
         }
 
@@ -3043,12 +3113,12 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (datasets.length === 0) {
             ctx.font = "16px Arial"; ctx.fillStyle = "grey"; ctx.textAlign = "center";
             ctx.fillText("No plottable WG-VM4 data found.", ctx.canvas.width / 2, ctx.canvas.height / 2);
-            if (wgVm4ChartInstance) { wgVm4ChartInstance.destroy(); wgVm4ChartInstance = null; }
+            if (wgVm4ChartInstance) { clearWgChartInstance('wgVm4Chart'); wgVm4ChartInstance = null; }
             return;
         }
 
         if (wgVm4ChartInstance) { wgVm4ChartInstance.destroy(); }
-        wgVm4ChartInstance = new Chart(ctx, {
+        wgVm4ChartInstance = createWgTimeSeriesChart('wgVm4Chart', ctx, {
             type: 'line',
             data: { datasets: datasets },
             options: {
@@ -3072,7 +3142,6 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
     }
     // Reminder: Revisit threshold highlighting values
-    // console.log("Reminder: Revisit and fine-tune threshold highlighting values in index.html for summaries.");
 
     // --- Error Category Chart Rendering ---
     function renderErrorCategoryChart() {
@@ -3279,16 +3348,6 @@ document.addEventListener('DOMContentLoaded', async function() {
             });
         });
     }
-    
-    function initializeRefreshButtons() {
-        document.querySelectorAll('.refresh-chart-button').forEach(button => {
-            button.addEventListener('click', (event) => {
-                const reportType = event.target.dataset.reportType;
-                const loader = getSensorLoader(reportType);
-                if (loader) loader();
-            });
-        });
-    }
 
     // --- Theme Change Handler ---
     function updateAllChartInstances() {
@@ -3349,7 +3408,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         const granularitySelect = document.querySelector(`.granularity-select[data-report-type="${reportType}"]`);
 
         const hours = hoursInput ? hoursInput.value : 72;
-        const granularity = granularitySelect ? granularitySelect.value : 15;
+        const granularity = granularitySelect ? granularitySelect.value : 0;
 
         // Use the new unified CSV download endpoint
         let apiUrl = `/api/sensor_csv/${reportType}?mission=${mission}&hours_back=${hours}&granularity_minutes=${granularity}`;
@@ -3444,14 +3503,32 @@ document.addEventListener('DOMContentLoaded', async function() {
             return;
         }
 
-        const chartInstanceMap = { 'powerChart': powerChartInstance, 'solarPanelChart': solarPanelChartInstance, 'ctdChart': ctdChartInstance, 'ctdProfileChart': ctdProfileChartInstance, 'weatherSensorChart': weatherSensorChartInstance, 'waveChart': waveChartInstance, 'waveHeightDirectionChart': waveHeightDirectionChartInstance, 'waveSpectrumChart': waveSpectrumChartInstance, 'vr2cChart': vr2cChartInstance, 'fluorometerChart': fluorometerChartInstance, 'wgVm4Chart': wgVm4ChartInstance, 'telemetryChart': telemetryChartInstance, 'telemetryCurrentChart': navigationCurrentChartInstance, 'telemetryHeadingDiffChart': navigationHeadingDiffChartInstance };
+        const chartInstanceMap = {
+            powerChart: powerChartInstance,
+            solarPanelChart: solarPanelChartInstance,
+            ctdChart: ctdChartInstance,
+            ctdProfileChart: ctdProfileChartInstance,
+            weatherSensorChart: weatherSensorChartInstance,
+            waveChart: waveChartInstance,
+            waveHeightDirectionChart: waveHeightDirectionChartInstance,
+            waveSpectrumChart: waveSpectrumChartInstance,
+            vr2cChart: vr2cChartInstance,
+            fluorometerChart: fluorometerChartInstance,
+            wgVm4Chart: wgVm4ChartInstance,
+            telemetryChart: telemetryChartInstance,
+            telemetryCurrentChart: navigationCurrentChartInstance,
+            telemetryHeadingDiffChart: navigationHeadingDiffChartInstance,
+        };
+
+        // Prefer live registry (time-series) when present
+        const resolveChartInstance = (chartId) => chartInstancesByCanvasId[chartId] || chartInstanceMap[chartId] || null;
 
         // Store original chart states for restoration
         const originalStates = {};
 
         canvases.forEach(canvas => {
             const chartId = canvas.id;
-            const chartInstance = chartInstanceMap[chartId];
+            const chartInstance = resolveChartInstance(chartId);
 
             if (chartInstance) {
                 // Enhance chart for high-resolution if needed
@@ -3514,7 +3591,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (highResolution) {
             canvases.forEach(canvas => {
                 const chartId = canvas.id;
-                const chartInstance = chartInstanceMap[chartId];
+                const chartInstance = resolveChartInstance(chartId);
                 if (chartInstance && originalStates[chartId]) {
                     restoreChartFromHighRes(chartInstance, originalStates[chartId]);
                 }
@@ -3542,27 +3619,12 @@ document.addEventListener('DOMContentLoaded', async function() {
     handleLeftPanelClicks();
     initializeInteractiveControls();
     initializeDownloadButtons();
+    initWgChartControls();
     initializeDateRangeInputs();
     initializeClearButtons();
     
     // Ensure all date range inputs are properly initialized
     initializeAllDateRangeStates();
-    
-    // Add a global function to force refresh date range states (for debugging)
-    window.refreshDateRangeStates = initializeAllDateRangeStates;
-    
-    // Add a global function to clear all date ranges (for debugging)
-    window.clearAllDateRanges = function() {
-        const reportTypes = new Set();
-        document.querySelectorAll('.date-range-input').forEach(input => {
-            if (input.dataset.reportType) {
-                reportTypes.add(input.dataset.reportType);
-            }
-        });
-        reportTypes.forEach(reportType => {
-            clearDateRange(reportType);
-        });
-    };
 
     // Initial data load for the default active view (Navigation)
     const defaultActiveCategory = document.querySelector('#left-nav-panel .summary-card.active-card')?.dataset.category;
