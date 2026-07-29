@@ -24,10 +24,17 @@ import {
     bindOverlayToggleControls,
     buildBackgroundOverlayDataset,
     buildHiddenOverlayScale,
-    buildOverlayAwareTooltipOptions,
     filterOverlayFromLegend,
+    formatOverlayMeters,
     getOverlayEnabledForCanvas,
+    nearestOverlayValue,
+    registerNearestXByDatasetInteractionMode,
 } from '/static/js/chart_overlay_utils.js';
+import {
+    applyProfileScatterHoverDefaults,
+    applyTimeSeriesHoverDefaults,
+    ensureDatasetHitRadius,
+} from '/static/js/chart_hover_defaults.js';
 import {
     recordsToPoints as recordsToPointsShared,
     drawNoDataOnCanvas,
@@ -35,6 +42,7 @@ import {
 } from '/static/js/chart_time_series_utils.js';
 
 registerForceUtcTimeDisplayPlugin();
+registerNearestXByDatasetInteractionMode();
 
 const DEFAULT_HOURS = 24;
 const DEFAULT_GRANULARITY = 0;
@@ -49,6 +57,7 @@ let currentOverviewInfo = null;
 let lastMissionNotesForEdit = [];
 let activeChartCategory = null;
 let ctdProfilesLoaded = false;
+let ctdProfilePayloadCache = null;
 const ctdChartInstances = {};
 const timeSeriesLoaded = new Set();
 const timeSeriesChartInstances = {};
@@ -87,7 +96,10 @@ function buildSlocumTimeScaleX() {
     });
 }
 
-/** Declarative time-series card configs (Power / Flight / Navigation / Vehicle Health). */
+/** Declarative time-series card configs (Power / Flight / Navigation / Vehicle Health / DO).
+ * Hover defaults (time-aligned tooltips, crosshair, hit radius) come from
+ * applyTimeSeriesHoverDefaults in renderTimeSeriesChart — new sensors inherit them.
+ */
 const TIME_SERIES_CARD_CONFIGS = {
     power: {
         variables: [
@@ -243,6 +255,27 @@ const TIME_SERIES_CARD_CONFIGS = {
             spinnerId: 'slocumHealthCallSpinner',
             noteId: 'slocumHealthSfmcNote',
         },
+    },
+    dissolved_oxygen: {
+        placeholder: true,
+        variables: [],
+        footerId: 'slocumDoLastDataFooter',
+        charts: [
+            {
+                canvasId: 'slocumDoConcentrationChart',
+                spinnerId: 'slocumDoConcentrationSpinner',
+                yLabel: 'Concentration',
+                series: [],
+                noDataMessage: 'Dissolved oxygen concentration coming soon',
+            },
+            {
+                canvasId: 'slocumDoSaturationChart',
+                spinnerId: 'slocumDoSaturationSpinner',
+                yLabel: 'Saturation',
+                series: [],
+                noDataMessage: 'Dissolved oxygen saturation coming soon',
+            },
+        ],
     },
 };
 
@@ -477,6 +510,16 @@ function buildProfileDataset(points, variable, range, stops) {
     return { data, colors };
 }
 
+function buildCtdDepthOverlayPoints(records) {
+    return recordsToPoints(records || []);
+}
+
+function reRenderCtdProfilesFromCache() {
+    if (!ctdProfilePayloadCache) return;
+    updateChartColorVariables();
+    CTD_PROFILE_CHARTS.forEach((cfg) => renderOneProfileChart(cfg, ctdProfilePayloadCache));
+}
+
 function renderOneProfileChart(config, payload) {
     if (typeof Chart === 'undefined') {
         console.error('Chart.js is not loaded');
@@ -500,64 +543,99 @@ function renderOneProfileChart(config, payload) {
         return;
     }
 
+    const showDepth = getOverlayEnabledForCanvas(DEPTH_OVERLAY_STORAGE_PREFIX, config.canvasId);
+    const depthPoints = showDepth ? buildCtdDepthOverlayPoints(payload?.depth_overlay) : [];
+    const datasets = [];
+    if (depthPoints.length) {
+        // Same Y axis as CTD sample depth so vehicle depth aligns in meters.
+        datasets.push(buildBackgroundOverlayDataset({
+            points: depthPoints,
+            label: DEPTH_OVERLAY_LABEL,
+            color: DEPTH_OVERLAY_COLOR,
+            yAxisID: 'y',
+        }));
+    }
+    datasets.push({
+        label: config.label,
+        data,
+        backgroundColor: colors,
+        borderColor: colors,
+        pointRadius: 2.5,
+        pointHoverRadius: 4,
+        pointBorderWidth: 0,
+    });
+    ensureDatasetHitRadius(datasets);
+
+    const chartOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        layout: {
+            padding: { right: 72 },
+        },
+        scales: {
+            x: buildSlocumTimeScaleX(),
+            y: {
+                type: 'linear',
+                reverse: true,
+                title: { display: true, text: 'Depth (m)', color: chartTextColor },
+                ticks: { color: chartTextColor },
+                grid: { color: chartGridColor },
+            },
+        },
+        plugins: {
+            legend: {
+                display: false,
+                labels: { filter: filterOverlayFromLegend },
+            },
+            slocumColorbar: {
+                stops,
+                min: range.min,
+                max: range.max,
+                unit,
+            },
+        },
+    };
+    const { options: profileOptions, plugins: profilePlugins } = applyProfileScatterHoverDefaults(
+        chartOptions,
+        {
+            tooltip: {
+                filter(tooltipItem) {
+                    const ds = tooltipItem?.dataset;
+                    return !(ds?.isBackgroundOverlay || ds?.isDepthOverlay);
+                },
+                callbacks: {
+                    title(items) {
+                        const raw = items?.[0]?.raw;
+                        if (!raw?.x) return '';
+                        return formatUtcDateTime(raw.x);
+                    },
+                    label(item) {
+                        const raw = item.raw || {};
+                        const depth = Number.isFinite(raw.y) ? raw.y.toFixed(1) : '-';
+                        const value = Number.isFinite(raw.v) ? raw.v.toFixed(3) : '-';
+                        return [`CTD depth: ${depth} m`, `${config.label}: ${value}${unit ? ` ${unit}` : ''}`];
+                    },
+                    afterBody(tooltipItems) {
+                        if (!showDepth || !tooltipItems?.length) return [];
+                        const chart = tooltipItems[0].chart;
+                        const xMs = tooltipItems[0].parsed?.x;
+                        const formatted = formatOverlayMeters(nearestOverlayValue(chart, xMs));
+                        if (!formatted) return [];
+                        return [`Vehicle depth: ${formatted}`];
+                    },
+                },
+            },
+            extraPlugins: [slocumColorbarPlugin],
+        },
+    );
+    applyTimeAxisZoom(profileOptions);
+
     const ctx = canvas.getContext('2d');
     ctdChartInstances[config.canvasId] = new Chart(ctx, {
         type: 'scatter',
-        data: {
-            datasets: [{
-                label: config.label,
-                data,
-                backgroundColor: colors,
-                borderColor: colors,
-                pointRadius: 2.5,
-                pointHoverRadius: 4,
-                pointBorderWidth: 0,
-            }],
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            layout: {
-                padding: { right: 72 },
-            },
-            scales: {
-                x: buildSlocumTimeScaleX(),
-                y: {
-                    type: 'linear',
-                    reverse: true,
-                    title: { display: true, text: 'Depth (m)', color: chartTextColor },
-                    ticks: { color: chartTextColor },
-                    grid: { color: chartGridColor },
-                },
-            },
-            plugins: {
-                legend: { display: false },
-                tooltip: {
-                    mode: 'nearest',
-                    intersect: true,
-                    callbacks: {
-                        title(items) {
-                            const raw = items?.[0]?.raw;
-                            if (!raw?.x) return '';
-                            return formatUtcDateTime(raw.x);
-                        },
-                        label(item) {
-                            const raw = item.raw || {};
-                            const depth = Number.isFinite(raw.y) ? raw.y.toFixed(1) : '-';
-                            const value = Number.isFinite(raw.v) ? raw.v.toFixed(3) : '-';
-                            return [`Depth: ${depth} m`, `${config.label}: ${value}${unit ? ` ${unit}` : ''}`];
-                        },
-                    },
-                },
-                slocumColorbar: {
-                    stops,
-                    min: range.min,
-                    max: range.max,
-                    unit,
-                },
-            },
-        },
-        plugins: [slocumColorbarPlugin],
+        data: { datasets },
+        options: profileOptions,
+        plugins: profilePlugins,
     });
 }
 
@@ -581,16 +659,20 @@ function applyThemeToCtdCharts() {
     });
 }
 
-function watchThemeForProfileCharts() {
+function updateAllChartInstances() {
+    updateChartColorVariables();
+    if (ctdProfilesLoaded) applyThemeToCtdCharts();
+    timeSeriesLoaded.forEach((category) => reRenderCategoryFromCache(category));
+    initializeMiniCharts();
+}
+
+function watchThemeForCharts() {
     const observer = new MutationObserver((mutations) => {
         const themeChanged = mutations.some(
             (m) => m.type === 'attributes' && (m.attributeName === 'data-bs-theme' || m.attributeName === 'data-theme')
         );
         if (!themeChanged) return;
-        setTimeout(() => {
-            initializeMiniCharts();
-            if (ctdProfilesLoaded) applyThemeToCtdCharts();
-        }, 50);
+        setTimeout(() => updateAllChartInstances(), 50);
     });
     observer.observe(document.documentElement, {
         attributes: true,
@@ -671,6 +753,7 @@ async function refreshCtdProfileCharts() {
     }
     try {
         const payload = await apiRequest(url, 'GET');
+        ctdProfilePayloadCache = payload || null;
         updateChartColorVariables();
         CTD_PROFILE_CHARTS.forEach((cfg) => renderOneProfileChart(cfg, payload));
         setSlocumDataSourceBadge(payload?.cache_metadata || {});
@@ -678,6 +761,7 @@ async function refreshCtdProfileCharts() {
     } catch (err) {
         console.error('Failed to load CTD profile data:', err);
         showToast(`CTD profile load failed: ${err.message || err}`, 'danger');
+        ctdProfilePayloadCache = null;
         destroyCtdCharts();
         CTD_PROFILE_CHARTS.forEach((cfg) => drawNoDataOnCanvas(cfg.canvasId, 'Failed to load profile data'));
         setSlocumDataSourceBadge({});
@@ -763,6 +847,7 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
             yAxisID: spec.yAxisID || 'y',
             pointRadius: styleProps.pointRadius,
             pointHoverRadius: styleProps.pointRadius ? styleProps.pointRadius + 1.5 : 3,
+            pointHitRadius: styleProps.pointHitRadius,
             showLine: styleProps.showLine,
             borderWidth: 1.5,
             tension: 0.15,
@@ -786,6 +871,7 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
         drawNoDataOnCanvas(chartCfg.canvasId, 'No data for selected window');
         return;
     }
+    ensureDatasetHitRadius(datasets);
 
     const hasBar = datasets.some((ds) => ds.type === 'bar');
     const scales = {
@@ -813,7 +899,6 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
     const chartOptions = {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: 'nearest', intersect: false },
         plugins: {
             legend: {
                 display: datasets.length > 1,
@@ -822,16 +907,19 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
                     filter: filterOverlayFromLegend,
                 },
             },
-            tooltip: buildOverlayAwareTooltipOptions({ overlayLabel: 'Depth' }),
         },
         scales,
     };
-    applyTimeAxisZoom(chartOptions);
+    const { options: tsOptions, plugins: tsPlugins } = applyTimeSeriesHoverDefaults(chartOptions, {
+        overlayTooltip: { overlayLabel: 'Depth' },
+    });
+    applyTimeAxisZoom(tsOptions);
 
     timeSeriesChartInstances[instanceKey] = new Chart(canvas.getContext('2d'), {
         type: hasBar ? 'bar' : 'line',
         data: { datasets },
-        options: chartOptions,
+        options: tsOptions,
+        plugins: tsPlugins,
     });
 }
 
@@ -864,6 +952,7 @@ function renderSfmcCallChartFromCache(categoryCfg) {
             yAxisID: 'y',
             pointRadius,
             pointHoverRadius: pointRadius + 1.5,
+            pointHitRadius: callStyle.pointHitRadius,
             showLine: callStyle.showLine,
             borderWidth: 1.5,
             tension: 0.1,
@@ -886,6 +975,7 @@ function renderSfmcCallChartFromCache(categoryCfg) {
         drawNoDataOnCanvas(callCfg.canvasId, 'No cached SFMC connection durations');
         return;
     }
+    ensureDatasetHitRadius(datasets);
 
     const scales = {
         x: buildSlocumTimeScaleX(),
@@ -911,16 +1001,19 @@ function renderSfmcCallChartFromCache(categoryCfg) {
                     filter: filterOverlayFromLegend,
                 },
             },
-            tooltip: buildOverlayAwareTooltipOptions({ overlayLabel: 'Depth' }),
         },
         scales,
     };
-    applyTimeAxisZoom(chartOptions);
+    const { options: tsOptions, plugins: tsPlugins } = applyTimeSeriesHoverDefaults(chartOptions, {
+        overlayTooltip: { overlayLabel: 'Depth' },
+    });
+    applyTimeAxisZoom(tsOptions);
 
     timeSeriesChartInstances[instanceKey] = new Chart(canvas.getContext('2d'), {
         type: 'line',
         data: { datasets },
-        options: chartOptions,
+        options: tsOptions,
+        plugins: tsPlugins,
     });
 }
 
@@ -967,8 +1060,19 @@ async function refreshSfmcCallLengthChart(categoryCfg) {
 
 function reRenderCategoryFromCache(category) {
     const cfg = TIME_SERIES_CARD_CONFIGS[category];
+    if (!cfg) return;
+    if (cfg.placeholder) {
+        updateChartColorVariables();
+        cfg.charts.forEach((chartCfg) => {
+            drawNoDataOnCanvas(
+                chartCfg.canvasId,
+                chartCfg.noDataMessage || 'Chart coming soon',
+            );
+        });
+        return;
+    }
     const series = timeSeriesSeriesCache[category];
-    if (!cfg || !series) return;
+    if (!series) return;
     updateChartColorVariables();
     cfg.charts.forEach((chartCfg) => renderTimeSeriesChart(category, chartCfg, series));
     if (category === 'vehicle_health' && Array.isArray(sfmcCallPointsCache)) {
@@ -979,6 +1083,22 @@ function reRenderCategoryFromCache(category) {
 async function refreshTimeSeriesCategory(category) {
     const cfg = TIME_SERIES_CARD_CONFIGS[category];
     if (!cfg) return;
+
+    if (cfg.placeholder) {
+        updateChartColorVariables();
+        destroyTimeSeriesCharts(category);
+        timeSeriesSeriesCache[category] = {};
+        cfg.charts.forEach((chartCfg) => {
+            drawNoDataOnCanvas(
+                chartCfg.canvasId,
+                chartCfg.noDataMessage || 'Chart coming soon',
+            );
+        });
+        setSlocumDataSourceBadge({});
+        setCategoryLastDataFooter(cfg.footerId, null);
+        return;
+    }
+
     const url = buildBulkChartDataUrl(cfg.variables);
     if (!url) return;
 
@@ -1023,6 +1143,7 @@ function findCategoryForCanvas(canvasId) {
 
 function findTimeSeriesChartByCanvasId(canvasId) {
     if (!canvasId) return null;
+    if (ctdChartInstances[canvasId]) return ctdChartInstances[canvasId];
     return Object.values(timeSeriesChartInstances).find((inst) => inst?.canvas?.id === canvasId) || null;
 }
 
@@ -1039,6 +1160,10 @@ function initSlocumChartControls() {
         checkboxSelector: '.chart-depth-overlay',
         storagePrefix: DEPTH_OVERLAY_STORAGE_PREFIX,
         onChange(canvasId) {
+            if (CTD_PROFILE_CHARTS.some((c) => c.canvasId === canvasId)) {
+                reRenderCtdProfilesFromCache();
+                return;
+            }
             const category = findCategoryForCanvas(canvasId);
             if (category) reRenderCategoryFromCache(category);
         },
@@ -1065,7 +1190,7 @@ function loadTimeSeriesCategory(category) {
 
 function saveSlocumChartsAsPng(highResolution = false) {
     const category = activeChartCategory;
-    if (!category || category === 'overview' || category === 'dissolved_oxygen') {
+    if (!category || category === 'overview') {
         showToast('Open a sensor tab with charts first.', 'info');
         return;
     }
@@ -1159,6 +1284,7 @@ function handleLeftPanelClicks() {
             const isChartCategory = category === 'ctd' || TIME_SERIES_CATEGORIES.includes(category);
             setSharedChartToolbarVisible(isChartCategory);
             // CTD profiles must keep full resolution; time-mean resample would destroy structure.
+            // DO placeholder has no live series yet — keep resample enabled for consistency.
             setGranularityControlEnabled(!isOverview && category !== 'ctd');
             activeChartCategory = isOverview ? null : category;
             if (category === 'ctd') loadCtdProfileCharts();
@@ -2044,7 +2170,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadSlocumReports();
     bindSlocumOverviewInteractions();
     bindSlocumChecklistTab();
-    watchThemeForProfileCharts();
+    watchThemeForCharts();
 
     const hoursSelect = document.getElementById('slocumHoursBack');
     function refreshAllLoadedCharts() {

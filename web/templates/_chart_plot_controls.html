@@ -1,12 +1,15 @@
 {# Shared per-chart plot controls: style, optional depth overlay, reset zoom.
+   Defaults treat zoom/reset + depth overlay as the standard chart toolkit.
    Usage:
-     {% from "_chart_plot_controls.html" import chart_plot_controls, time_series_chart_block %}
+     {% from "_chart_plot_controls.html" import chart_plot_controls, time_series_chart_block, profile_chart_block %}
      {{ chart_plot_controls('myCanvasId') }}
      {{ chart_plot_controls('myCanvasId', show_depth=false) }}
-     {{ time_series_chart_block('myCanvasId', show_depth=false) }}
+     {{ time_series_chart_block('myCanvasId') }}
+     {{ profile_chart_block('myCanvasId', spinner_id='mySpinner') }}
 #}
-{% macro chart_plot_controls(canvas_id, show_depth=true, show_reset_zoom=true) %}
+{% macro chart_plot_controls(canvas_id, show_depth=true, show_reset_zoom=true, show_style=true) %}
 <div class="d-flex flex-wrap align-items-center gap-2 mb-1 chart-plot-opts" data-canvas-id="{{ canvas_id }}">
+  {% if show_style %}
   <div class="input-group input-group-sm" style="width: 170px;">
     <label class="input-group-text" for="plotStyle-{{ canvas_id }}">Style</label>
     <select class="form-select chart-plot-style" id="plotStyle-{{ canvas_id }}" data-canvas-id="{{ canvas_id }}">
@@ -15,6 +18,7 @@
       <option value="scatter">Scatter</option>
     </select>
   </div>
+  {% endif %}
   {% if show_depth %}
   <div class="form-check form-check-inline mb-0">
     <input class="form-check-input chart-depth-overlay" type="checkbox" id="depthOverlay-{{ canvas_id }}" data-canvas-id="{{ canvas_id }}">
@@ -28,11 +32,23 @@
 {% endmacro %}
 
 {# Controls + standard spinner/canvas block for declarative time-series charts.
-   Optional spinner_id for Slocum (showProfileSpinner / hideProfileSpinner). #}
-{% macro time_series_chart_block(canvas_id, show_depth=false, height='300px', spinner_id=none) %}
-{{ chart_plot_controls(canvas_id, show_depth=show_depth, show_reset_zoom=true) }}
+   Depth overlay defaults on; pass show_depth=false when Y is already depth (or redundant). #}
+{% macro time_series_chart_block(canvas_id, show_depth=true, height='300px', spinner_id=none, show_style=true) %}
+{{ chart_plot_controls(canvas_id, show_depth=show_depth, show_reset_zoom=true, show_style=show_style) }}
 <div class="chart-container" style="position: relative; height: {{ height }}; width: 100%;">
-  <div class="chart-spinner spinner-border text-light" role="status" style="display: none;"{% if spinner_id %} id="{{ spinner_id }}"{% endif %}>
+  <div class="chart-spinner spinner-border text-secondary" role="status" style="display: none;"{% if spinner_id %} id="{{ spinner_id }}"{% endif %}>
+    <span class="visually-hidden">Loading...</span>
+  </div>
+  <canvas id="{{ canvas_id }}"></canvas>
+</div>
+{% endmacro %}
+
+{# Depth-vs-time / profile scatter charts: zoom/reset + vehicle-depth overlay
+   (style is fixed colormap scatter; Y is CTD sample depth). #}
+{% macro profile_chart_block(canvas_id, height='300px', spinner_id=none, show_depth=true) %}
+{{ chart_plot_controls(canvas_id, show_depth=show_depth, show_reset_zoom=true, show_style=false) }}
+<div class="chart-container" style="position: relative; height: {{ height }}; width: 100%;">
+  <div class="chart-spinner spinner-border text-secondary" role="status" style="display: none;"{% if spinner_id %} id="{{ spinner_id }}"{% endif %}>
     <span class="visually-hidden">Loading...</span>
   </div>
   <canvas id="{{ canvas_id }}"></canvas>

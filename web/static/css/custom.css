@@ -966,3 +966,27 @@ footer .text-muted {
         padding: 0.65rem;
     }
 }
+
+.wind-legend-bar-fallback {
+    background: linear-gradient(to right, var(--card-border), var(--secondary-color));
+}
+
+/* Leaflet popups follow app theme */
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+    background: var(--dropdown-bg);
+    color: var(--text-color);
+    box-shadow: 0 3px 14px var(--app-shadow-medium);
+}
+.leaflet-popup-content-wrapper .leaflet-popup-content {
+    color: var(--text-color);
+}
+.leaflet-popup-content a {
+    color: var(--bs-link-color, var(--app-primary));
+}
+.leaflet-container a.leaflet-popup-close-button {
+    color: var(--secondary-color);
+}
+.leaflet-container a.leaflet-popup-close-button:hover {
+    color: var(--text-color);
+}

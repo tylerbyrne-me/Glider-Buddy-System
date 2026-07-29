@@ -66,6 +66,17 @@ let slocumTracks = [];
 /** Slocum track color palette (teal/green for visual distinction from Wave Glider blue/red) */
 const SLOCUM_COLORS = ['#008b8b', '#20b2aa', '#2e8b57', '#3cb371', '#48d1cc', '#5f9ea0', '#66cdaa', '#7fffd4'];
 
+/** Theme-aware marker chrome that stays visible on light OSM tiles. */
+function mapMarkerThemeColors() {
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
+        || document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    return {
+        positionRing: isDark ? '#f8f9fa' : '#ffffff',
+        waypointFill: isDark ? '#ced4da' : '#f8f9fa',
+        waypointBorder: isDark ? '#f8f9fa' : '#1a1a1a',
+    };
+}
+
 /**
  * Marker at the latest GPS sample on a track (current glider position).
  * @param {Array<{lat:number, lon:number, timestamp?: string}>} trackPoints
@@ -78,9 +89,10 @@ function createCurrentPositionMarker(trackPoints, color, label, dashboardUrl = n
     if (!missionMap || !trackPoints || trackPoints.length === 0) return null;
     const last = trackPoints[trackPoints.length - 1];
     if (!Number.isFinite(last.lat) || !Number.isFinite(last.lon)) return null;
+    const theme = mapMarkerThemeColors();
     const marker = L.circleMarker([last.lat, last.lon], {
         radius: 8,
-        color: '#ffffff',
+        color: theme.positionRing,
         weight: 3,
         fillColor: color,
         fillOpacity: 1,
@@ -471,11 +483,12 @@ async function loadSlocumTrack(datasetId, timeRangeOrHours = 72, colorIndex = 0)
         let waypointLayer = null;
         const wpt = data.current_waypoint;
         if (wpt && Number.isFinite(wpt.lat) && Number.isFinite(wpt.lon)) {
+            const wpTheme = mapMarkerThemeColors();
             waypointLayer = L.circleMarker([wpt.lat, wpt.lon], {
                 radius: 7,
-                color: '#1a1a1a',
+                color: wpTheme.waypointBorder,
                 weight: 2,
-                fillColor: '#f8f9fa',
+                fillColor: wpTheme.waypointFill,
                 fillOpacity: 0.95
             }).addTo(missionMap);
             waypointLayer.bindPopup(

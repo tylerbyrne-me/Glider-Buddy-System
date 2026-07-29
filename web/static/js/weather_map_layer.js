@@ -156,7 +156,10 @@ function updateWindLegend() {
     if (!isWindEnabled) {
         container.classList.add('opacity-50');
         titleEl.textContent = 'Legend:';
-        bar.style.background = 'linear-gradient(to right, #ccc, #999)';
+        const styles = getComputedStyle(document.documentElement);
+        const muted = styles.getPropertyValue('--secondary-color').trim() || '#6c757d';
+        const border = styles.getPropertyValue('--card-border').trim() || '#adb5bd';
+        bar.style.background = `linear-gradient(to right, ${border}, ${muted})`;
         minEl.textContent = '—';
         maxEl.textContent = '—';
         return;

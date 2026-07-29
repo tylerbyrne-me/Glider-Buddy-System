@@ -5,22 +5,25 @@
 
 export const PLOT_STYLES = Object.freeze(['line', 'line_scatter', 'scatter']);
 
+/** Invisible hit pad around markers / line samples for easier hover targeting. */
+export const DEFAULT_POINT_HIT_RADIUS = 12;
+
 /**
  * @param {string} style
  * @param {boolean} [isBar]
- * @returns {{ showLine: boolean, pointRadius: number }}
+ * @returns {{ showLine: boolean, pointRadius: number, pointHitRadius: number }}
  */
 export function plotStyleDatasetProps(style, isBar = false) {
     if (isBar) {
-        return { showLine: true, pointRadius: 0 };
+        return { showLine: true, pointRadius: 0, pointHitRadius: DEFAULT_POINT_HIT_RADIUS };
     }
     if (style === 'scatter') {
-        return { showLine: false, pointRadius: 2.5 };
+        return { showLine: false, pointRadius: 2.5, pointHitRadius: DEFAULT_POINT_HIT_RADIUS };
     }
     if (style === 'line_scatter') {
-        return { showLine: true, pointRadius: 2.5 };
+        return { showLine: true, pointRadius: 2.5, pointHitRadius: DEFAULT_POINT_HIT_RADIUS };
     }
-    return { showLine: true, pointRadius: 0 };
+    return { showLine: true, pointRadius: 0, pointHitRadius: DEFAULT_POINT_HIT_RADIUS };
 }
 
 /**
@@ -65,6 +68,7 @@ export function applyPlotStyleToDatasets(datasets, storagePrefix, canvasId) {
         const props = plotStyleDatasetProps(style, isBar);
         ds.showLine = props.showLine;
         ds.pointRadius = props.pointRadius;
+        ds.pointHitRadius = props.pointHitRadius;
         if (ds.pointHoverRadius == null && props.pointRadius) {
             ds.pointHoverRadius = props.pointRadius + 1.5;
         } else if (ds.pointHoverRadius == null) {

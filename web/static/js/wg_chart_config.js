@@ -2,6 +2,8 @@
  * @file wg_chart_config.js
  * @description Serializable Wave Glider time-series card configs and chart colors.
  * Configs are plain data (no closures) so they can later move server-side for ERDDAP.
+ * Hover defaults (time-aligned tooltips, crosshair, hit radius) are applied by
+ * createWgTimeSeriesChart in dashboard.js — new cards inherit them automatically.
  */
 
 export const CHART_COLORS = {

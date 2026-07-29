@@ -355,6 +355,7 @@
         or "flight" in (slocum_enabled_sensor_cards or [])
         or "navigation" in (slocum_enabled_sensor_cards or [])
         or "vehicle_health" in (slocum_enabled_sensor_cards or [])
+        or "dissolved_oxygen" in (slocum_enabled_sensor_cards or [])
       ) %}
       {% if _has_slocum_charts %}
       <div class="card mb-3" id="slocumSharedChartToolbar" style="display: none;">
@@ -397,6 +398,8 @@
       </div>
       {% endif %}
 
+      {% from "_chart_plot_controls.html" import time_series_chart_block, profile_chart_block %}
+
       {% if "ctd" in (slocum_enabled_sensor_cards or ["ctd"]) %}
       <div class="category-detail-view card mb-4" id="detail-ctd" style="display: none;">
         <div class="card h-100">
@@ -405,28 +408,13 @@
           </div>
           <div class="card-body">
             <h5 class="mt-3">Sea Water Temperature (°C)</h5>
-            <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumCtdTempSpinner" role="status">
-                <span class="visually-hidden">Loading...</span>
-              </div>
-              <canvas id="slocumCtdTempChart"></canvas>
-            </div>
+            {{ profile_chart_block('slocumCtdTempChart', height='300px', spinner_id='slocumCtdTempSpinner') }}
             <hr class="my-4">
             <h5 class="mt-3">Conductivity (S m-1)</h5>
-            <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumCtdConductivitySpinner" role="status">
-                <span class="visually-hidden">Loading...</span>
-              </div>
-              <canvas id="slocumCtdConductivityChart"></canvas>
-            </div>
+            {{ profile_chart_block('slocumCtdConductivityChart', height='300px', spinner_id='slocumCtdConductivitySpinner') }}
             <hr class="my-4">
             <h5 class="mt-3">Sea Water Density (kg m-3)</h5>
-            <div class="chart-container" style="position: relative; height: 300px; width: 100%;">
-              <div class="chart-spinner spinner-border text-light" id="slocumCtdDensitySpinner" role="status">
-                <span class="visually-hidden">Loading...</span>
-              </div>
-              <canvas id="slocumCtdDensityChart"></canvas>
-            </div>
+            {{ profile_chart_block('slocumCtdDensityChart', height='300px', spinner_id='slocumCtdDensitySpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumCtdLastDataFooter">
             {% if ctd_info and ctd_info.latest_timestamp_str and ctd_info.latest_timestamp_str != "N/A" %}
@@ -438,8 +426,6 @@
         </div>
       </div>
       {% endif %}
-
-      {% from "_chart_plot_controls.html" import time_series_chart_block %}
 
       {% if "power" in (slocum_enabled_sensor_cards or []) %}
       <div class="category-detail-view card mb-4" id="detail-power" style="display: none;">
@@ -562,10 +548,16 @@
           <div class="card-header d-flex justify-content-between align-items-center">
             <h2 class="mb-0">{{ dataset }} - Dissolved Oxygen</h2>
           </div>
-          <div class="card-body text-center text-muted py-5">
-            <i class="fas fa-flask fa-2x mb-3"></i>
-            <h5 class="mb-2">Dissolved Oxygen</h5>
-            <p class="mb-0">Dissolved oxygen visualization coming soon.</p>
+          <div class="card-body">
+            <p class="text-muted small mb-3">Dissolved oxygen data wiring coming soon.</p>
+            <h5 class="mt-2">Dissolved Oxygen Concentration</h5>
+            {{ time_series_chart_block('slocumDoConcentrationChart', height='280px', spinner_id='slocumDoConcentrationSpinner') }}
+            <hr class="my-4">
+            <h5 class="mt-2">Dissolved Oxygen Saturation</h5>
+            {{ time_series_chart_block('slocumDoSaturationChart', height='280px', spinner_id='slocumDoSaturationSpinner') }}
+          </div>
+          <div class="card-footer text-muted small" id="slocumDoLastDataFooter">
+            Last data: N/A
           </div>
         </div>
       </div>

@@ -198,7 +198,7 @@ function getCategoryBadge(category) {
         procedures: 'bg-primary',
         power_management: 'bg-danger',
         navigation: 'bg-success',
-        data: 'bg-dark',
+        data: 'bg-secondary',
         general: 'bg-secondary'
     };
     

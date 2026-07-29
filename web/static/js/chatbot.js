@@ -263,7 +263,7 @@ function initializeChatbot() {
         resourcesDiv.className = 'mb-3 text-start';
         
         const headerText = isPrimaryResult ? 'Matching Resources:' : 'Related Resources:';
-        const bgClass = isPrimaryResult ? 'bg-white border-primary' : 'bg-light';
+        const bgClass = isPrimaryResult ? 'bg-body border-primary' : 'bg-body-secondary';
         
         let resourcesHtml = `<div class="${bgClass} p-3 rounded border"><strong><i class="fas fa-link"></i> ${headerText}</strong><ul class="mb-0 mt-2">`;
         

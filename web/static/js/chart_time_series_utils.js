@@ -95,7 +95,10 @@ export function drawNoDataOnCanvas(canvasId, message = 'No data available') {
     canvas.width = width;
     canvas.height = height;
     ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = '#6c757d';
+    const styles = getComputedStyle(document.documentElement);
+    ctx.fillStyle = styles.getPropertyValue('--secondary-color').trim()
+        || styles.getPropertyValue('--text-color').trim()
+        || '#6c757d';
     ctx.font = '16px Arial';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

@@ -7,6 +7,11 @@ export const DEFAULT_OVERLAY_COLOR = 'rgba(108, 117, 125, 0.85)';
 export const DEFAULT_DEPTH_OVERLAY_LABEL = 'Depth (m)';
 export const DEFAULT_OVERLAY_AXIS_ID = 'yDepth';
 
+/** Chart.js interaction mode: nearest-in-x per visible non-overlay dataset. */
+export const NEAREST_X_BY_DATASET_MODE = 'nearestXByDataset';
+
+let nearestXByDatasetRegistered = false;
+
 /**
  * @param {unknown} value
  * @returns {string | null}
@@ -41,6 +46,94 @@ export function nearestOverlayValue(chart, xMs) {
         }
     });
     return best;
+}
+
+/**
+ * @param {Record<string, unknown> | null | undefined} dataset
+ * @returns {boolean}
+ */
+function isOverlayDataset(dataset) {
+    return !!(dataset?.isBackgroundOverlay || dataset?.isDepthOverlay);
+}
+
+/**
+ * Register Chart.js interaction mode that pairs series by time (pixel X), not array index.
+ * Idempotent — safe to call from multiple page modules.
+ */
+export function registerNearestXByDatasetInteractionMode() {
+    if (nearestXByDatasetRegistered) return;
+    if (typeof Chart === 'undefined' || !Chart.Interaction?.modes) return;
+    if (typeof Chart.Interaction.modes[NEAREST_X_BY_DATASET_MODE] === 'function') {
+        nearestXByDatasetRegistered = true;
+        return;
+    }
+
+    const getRelativePosition = Chart.helpers?.getRelativePosition;
+    if (typeof getRelativePosition !== 'function') return;
+
+    Chart.Interaction.modes[NEAREST_X_BY_DATASET_MODE] = function nearestXByDataset(
+        chart,
+        e,
+        _options,
+        useFinalPosition,
+    ) {
+        const position = getRelativePosition(e, chart);
+        if (!position || !Number.isFinite(position.x)) return [];
+
+        const area = chart.chartArea;
+        if (!area) return [];
+        const items = [];
+
+        chart.data.datasets.forEach((dataset, datasetIndex) => {
+            if (!dataset || isOverlayDataset(dataset)) return;
+            if (!chart.isDatasetVisible(datasetIndex)) return;
+            const meta = chart.getDatasetMeta(datasetIndex);
+            if (!meta || meta.hidden) return;
+
+            let bestIndex = -1;
+            let bestDist = Infinity;
+            const elements = meta.data || [];
+            for (let index = 0; index < elements.length; index += 1) {
+                const el = elements[index];
+                if (!el || el.skip) continue;
+                const px = useFinalPosition && typeof el.getProps === 'function'
+                    ? el.getProps(['x'], true).x
+                    : el.x;
+                if (!Number.isFinite(px)) continue;
+                // Only consider points inside the visible chart area (critical when zoomed).
+                if (px < area.left || px > area.right) continue;
+                const dist = Math.abs(px - position.x);
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestIndex = index;
+                }
+            }
+            if (bestIndex >= 0) {
+                items.push({
+                    datasetIndex,
+                    index: bestIndex,
+                    element: elements[bestIndex],
+                });
+            }
+        });
+
+        return items;
+    };
+
+    nearestXByDatasetRegistered = true;
+}
+
+/**
+ * Shared interaction options for time-series charts (keep in sync with tooltip mode).
+ * @returns {Record<string, unknown>}
+ */
+export function buildTimeSeriesInteractionOptions() {
+    registerNearestXByDatasetInteractionMode();
+    return {
+        mode: NEAREST_X_BY_DATASET_MODE,
+        intersect: false,
+        axis: 'x',
+    };
 }
 
 /**
@@ -94,18 +187,21 @@ export function buildHiddenOverlayScale(_yAxisID = DEFAULT_OVERLAY_AXIS_ID, opts
 }
 
 /**
- * Tooltip: hide overlay series rows; append "Label: X.Xm" from nearest overlay point.
+ * Tooltip: time-align series (not index); hide overlay rows; append nearest Depth.
  * @param {{ overlayLabel?: string }} [opts]
  * @returns {Record<string, unknown>}
  */
 export function buildOverlayAwareTooltipOptions(opts = {}) {
     const overlayLabel = opts.overlayLabel || 'Depth';
+    registerNearestXByDatasetInteractionMode();
     return {
-        mode: 'index',
+        mode: NEAREST_X_BY_DATASET_MODE,
         intersect: false,
+        axis: 'x',
+        position: 'nearest',
         filter(tooltipItem) {
             const ds = tooltipItem?.dataset;
-            return !(ds?.isBackgroundOverlay || ds?.isDepthOverlay);
+            return !isOverlayDataset(ds);
         },
         callbacks: {
             afterBody(tooltipItems) {
@@ -129,7 +225,7 @@ export function buildOverlayAwareTooltipOptions(opts = {}) {
  */
 export function filterOverlayFromLegend(item, chartData) {
     const ds = chartData?.datasets?.[item.datasetIndex];
-    return !(ds?.isBackgroundOverlay || ds?.isDepthOverlay);
+    return !isOverlayDataset(ds);
 }
 
 /**

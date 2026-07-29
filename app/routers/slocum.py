@@ -882,6 +882,27 @@ def _build_profile_payload(sliced: pd.DataFrame) -> dict[str, Any]:
     }
 
 
+def _build_depth_overlay_records(dashboard_df: pd.DataFrame) -> list[dict[str, Any]]:
+    """Dashboard ``MDepth`` track for CTD background overlay (same shape as chart series)."""
+    if dashboard_df is None or dashboard_df.empty:
+        return []
+    if "Timestamp" not in dashboard_df.columns or "MDepth" not in dashboard_df.columns:
+        return []
+    working = dashboard_df[["Timestamp", "MDepth"]].dropna(subset=["Timestamp"]).copy()
+    if working.empty:
+        return []
+    working["MDepth"] = pd.to_numeric(working["MDepth"], errors="coerce")
+    working = working.dropna(subset=["MDepth"]).sort_values("Timestamp")
+    if working.empty:
+        return []
+    if len(working) > _PROFILE_MAX_POINTS:
+        stride = int(np.ceil(len(working) / _PROFILE_MAX_POINTS))
+        working = working.iloc[::stride].copy()
+    working["Timestamp"] = _utc_iso_z(pd.to_datetime(working["Timestamp"], utc=True))
+    working = working.rename(columns={"MDepth": "Value"}).replace({np.nan: None})
+    return working[["Timestamp", "Value"]].to_dict(orient="records")
+
+
 @router.get("/profile-data/{dataset_id}")
 async def get_slocum_profile_data(
     dataset_id: str,
@@ -894,6 +915,7 @@ async def get_slocum_profile_data(
     """
     CTD depth-vs-time profile points for Chart.js scatter charts.
     Returns temperature, conductivity, and density with cmocean colormap stops.
+    Also includes dashboard ``m_depth`` as ``depth_overlay`` for the background layer.
     Time-mean resampling is not applied (it would destroy profile structure);
     large windows are stride-decimated instead.
     """
@@ -901,13 +923,24 @@ async def get_slocum_profile_data(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
 
     try:
-        ctd_result = await _load_bundle_result(
-            dataset_id,
-            "ctd",
-            hours_back=hours_back,
-            is_historical=is_historical,
-            start_date=start_date,
-            end_date=end_date,
+        ctd_result, dashboard_result = await asyncio.gather(
+            _load_bundle_result(
+                dataset_id,
+                "ctd",
+                hours_back=hours_back,
+                is_historical=is_historical,
+                start_date=start_date,
+                end_date=end_date,
+            ),
+            _load_bundle_result(
+                dataset_id,
+                "dashboard",
+                hours_back=hours_back,
+                is_historical=is_historical,
+                start_date=start_date,
+                end_date=end_date,
+            ),
+            return_exceptions=True,
         )
     except HTTPException:
         raise
@@ -915,14 +948,36 @@ async def get_slocum_profile_data(
         logger.exception("Slocum profile data fetch failed for %s", dataset_id)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Data fetch failed: {str(e)}") from e
 
+    if isinstance(ctd_result, HTTPException):
+        raise ctd_result
+    if isinstance(ctd_result, Exception):
+        logger.exception("Slocum profile CTD fetch failed for %s", dataset_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Data fetch failed: {str(ctd_result)}",
+        ) from ctd_result
+
+    depth_overlay: list[dict[str, Any]] = []
+    if isinstance(dashboard_result, Exception):
+        logger.warning(
+            "Slocum profile depth overlay load failed for %s: %s",
+            dataset_id,
+            dashboard_result,
+        )
+    else:
+        dash_df = dashboard_result.df if dashboard_result.df is not None else pd.DataFrame()
+        depth_overlay = _build_depth_overlay_records(dash_df)
+
     sliced = ctd_result.df if ctd_result.df is not None else pd.DataFrame()
     if sliced.empty:
         payload = _build_profile_payload(pd.DataFrame())
+        payload["depth_overlay"] = depth_overlay
         payload["cache_metadata"] = _merge_overage_metadata(_cache_metadata(), ctd_result.metadata)
         return payload
 
     last_dt = _last_dt_from_processed(sliced)
     payload = _build_profile_payload(sliced)
+    payload["depth_overlay"] = depth_overlay
     payload["cache_metadata"] = _merge_overage_metadata(
         _cache_metadata(last_dt.isoformat() if last_dt else None),
         ctd_result.metadata,

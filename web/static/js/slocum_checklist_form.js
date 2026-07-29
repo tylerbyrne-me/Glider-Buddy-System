@@ -52,6 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let plotModal = null;
     let plotChart = null;
     let activePlotItemId = null;
+    let lastPlotRenderArgs = null;
 
     const modalEl = document.getElementById('unverifiedConfirmModal');
     if (modalEl && window.bootstrap) {
@@ -64,6 +65,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         plotModalEl.addEventListener('hidden.bs.modal', () => {
             applyPlotReviewToForm();
             destroyPlotChart();
+            lastPlotRenderArgs = null;
             setPlotStatus('');
             activePlotItemId = null;
             const commentEl = document.getElementById('checklistPlotComment');
@@ -77,6 +79,29 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         window.addEventListener('resize', () => {
             if (plotChart && plotModalEl.classList.contains('show')) plotChart.resize();
+        });
+        const themeObserver = new MutationObserver((mutations) => {
+            const themeChanged = mutations.some(
+                (m) => m.type === 'attributes'
+                    && (m.attributeName === 'data-bs-theme' || m.attributeName === 'data-theme')
+            );
+            if (!themeChanged || !lastPlotRenderArgs || !plotModalEl.classList.contains('show')) return;
+            setTimeout(() => {
+                const args = lastPlotRenderArgs;
+                if (!args) return;
+                renderPlotChart(
+                    args.label,
+                    args.unit,
+                    args.depthPts,
+                    args.valuePts,
+                    args.chartTitleLines,
+                    args.extras,
+                );
+            }, 50);
+        });
+        themeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-bs-theme', 'data-theme'],
         });
     }
 
@@ -106,19 +131,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function chartThemeColors() {
-        // Plot modal is always dark; prefer readable light labels over page CSS vars
-        // which can resolve too dark for legend/axis text on bg-dark.
         const styles = getComputedStyle(document.documentElement);
-        const pageText = styles.getPropertyValue('--text-color').trim();
-        const pageBorder = styles.getPropertyValue('--card-border').trim();
+        const pageText = styles.getPropertyValue('--text-color').trim() || '#212529';
+        const pageBorder = styles.getPropertyValue('--card-border').trim() || '#dee2e6';
+        const pageMuted = styles.getPropertyValue('--secondary-color').trim() || '#6c757d';
+        const dropdownBg = styles.getPropertyValue('--dropdown-bg').trim() || '#212529';
         return {
-            text: '#e9ecef',
-            muted: '#adb5bd',
-            border: pageBorder || 'rgba(255, 255, 255, 0.15)',
+            text: pageText,
+            muted: pageMuted,
+            border: pageBorder,
             depth: '#4dabf7',
-            value: '#ffc078',
-            commanded: '#69db7c',
-            pageText: pageText || '#e9ecef',
+            value: '#fd7e14',
+            commanded: '#2f9e44',
+            tooltipBg: dropdownBg,
         };
     }
 
@@ -340,6 +365,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     function renderPlotChart(label, unit, depthPts, valuePts, chartTitleLines = null, extras = {}) {
+        lastPlotRenderArgs = { label, unit, depthPts, valuePts, chartTitleLines, extras };
         destroyPlotChart();
         const canvas = document.getElementById('checklistPlotCanvas');
         if (!canvas) return;
@@ -446,7 +472,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     },
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(33, 37, 41, 0.95)',
+                    backgroundColor: colors.tooltipBg,
                     titleColor: colors.text,
                     bodyColor: colors.text,
                     borderColor: colors.border,

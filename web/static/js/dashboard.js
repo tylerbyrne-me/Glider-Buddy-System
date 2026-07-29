@@ -24,6 +24,11 @@ import {
     bindPlotStyleControls,
 } from '/static/js/chart_plot_style_utils.js';
 import {
+    applyTimeSeriesHoverDefaults,
+    ensureDatasetHitRadius,
+} from '/static/js/chart_hover_defaults.js';
+import { registerNearestXByDatasetInteractionMode } from '/static/js/chart_overlay_utils.js';
+import {
     rowsToSeries,
     recordsToPoints,
     seriesHasPlottableData,
@@ -40,9 +45,11 @@ import {
 } from '/static/js/wg_chart_config.js';
 
 registerForceUtcTimeDisplayPlugin();
+registerNearestXByDatasetInteractionMode();
 
 document.addEventListener('DOMContentLoaded', async function() {
     registerForceUtcTimeDisplayPlugin();
+    registerNearestXByDatasetInteractionMode();
     // --- Authentication Check ---
     if (!await checkAuth()) {
         return; // Stop further execution if not authenticated and redirection is handled by checkAuth
@@ -921,7 +928,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     const wgSeriesCache = {};
 
     /**
-     * Create a WG time-series Chart with shared plot-style + zoom applied.
+     * Create a WG time-series Chart with shared plot-style, zoom, and hover defaults.
+     * New declarative cards in WG_TIME_SERIES_CARD_CONFIGS inherit these automatically.
      * Spectrum / doughnut charts should keep using bare `new Chart(...)`.
      */
     function createWgTimeSeriesChart(canvasId, ctx, config) {
@@ -932,8 +940,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         if (!config.data) config.data = {};
         if (!Array.isArray(config.data.datasets)) config.data.datasets = [];
         applyPlotStyleToDatasets(config.data.datasets, WG_PLOT_STYLE_PREFIX, canvasId);
+        ensureDatasetHitRadius(config.data.datasets);
         if (!config.options || typeof config.options !== 'object') config.options = {};
+        const { options, plugins } = applyTimeSeriesHoverDefaults(config.options);
+        config.options = options;
         applyTimeAxisZoom(config.options);
+        const existingPlugins = Array.isArray(config.plugins) ? config.plugins : [];
+        config.plugins = [...existingPlugins, ...plugins];
         const instance = new Chart(ctx, config);
         chartInstancesByCanvasId[canvasId] = instance;
         return instance;
@@ -1068,7 +1081,6 @@ document.addEventListener('DOMContentLoaded', async function() {
                 maintainAspectRatio: false,
                 scales,
                 plugins: {
-                    tooltip: { mode: 'index', intersect: false },
                     legend: { position: 'top', labels: { color: chartTextColor } },
                 },
             },
@@ -2232,7 +2244,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                     data: data,
                     backgroundColor: colors.slice(0, labels.length),
                     borderWidth: 2,
-                    borderColor: '#fff'
+                    borderColor: (getComputedStyle(document.documentElement).getPropertyValue('--bs-body-bg').trim() || '#fff')
                 }]
             },
             options: {

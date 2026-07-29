@@ -33,6 +33,15 @@
   --app-active-card-accent: rgb(18, 52, 102);
   --app-active-card-text: #0d1b2a;
 
+  /* Surfaces, borders, shadows */
+  --app-border-subtle: #dee2e6;
+  --app-surface-muted: #e9ecef;
+  --app-info-soft-bg: rgba(13, 202, 240, 0.12);
+  --app-info-soft-bg-hover: rgba(13, 202, 240, 0.22);
+  --app-shadow-soft: rgba(0, 0, 0, 0.08);
+  --app-shadow-medium: rgba(0, 0, 0, 0.15);
+  --app-shadow-inset: rgba(0, 0, 0, 0.075);
+
   /* Legacy aliases used throughout custom.css */
   --text: var(--app-text);
   --background: var(--app-bg);
@@ -122,6 +131,15 @@
   --app-active-card-border: #1b3a57;
   --app-active-card-accent: rgb(18, 52, 102);
   --app-active-card-text: #e9f2ff;
+
+  /* Surfaces, borders, shadows */
+  --app-border-subtle: #3a4046;
+  --app-surface-muted: #1a1f24;
+  --app-info-soft-bg: rgba(13, 202, 240, 0.15);
+  --app-info-soft-bg-hover: rgba(13, 202, 240, 0.28);
+  --app-shadow-soft: rgba(0, 0, 0, 0.35);
+  --app-shadow-medium: rgba(0, 0, 0, 0.5);
+  --app-shadow-inset: rgba(0, 0, 0, 0.35);
 
   /* Legacy aliases used throughout custom.css */
   --text: var(--app-text);

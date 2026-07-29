@@ -625,7 +625,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     p.remote_health_report_date ? `Date ${p.remote_health_report_date}` : null,
                 ].filter(Boolean).join(', ');
                 html += `
-                    <div class="card mb-2 border-${border} bg-dark text-light">
+                    <div class="card mb-2 border-${border}">
                         <div class="card-body py-2">
                             <div class="d-flex justify-content-between flex-wrap gap-2">
                                 <strong><i class="fas fa-download me-1"></i>Offload log #${p.id}</strong>
@@ -652,7 +652,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             } else if (ev.event_type === 'hardware_change') {
                 const h = ev.payload;
                 html += `
-                    <div class="card mb-2 border-info bg-dark text-light">
+                    <div class="card mb-2 border-info">
                         <div class="card-body py-2">
                             <strong><i class="fas fa-microchip me-1"></i>Hardware change</strong>
                             <div class="small text-muted mt-1">${escapeHtml(ev.sort_ts || '')}</div>
@@ -663,7 +663,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             } else if (ev.event_type === 'season_snapshot') {
                 const sy = ev.field_season_year;
                 html += `
-                    <div class="card mb-2 border-warning bg-dark text-light">
+                    <div class="card mb-2 border-warning">
                         <div class="card-body py-2">
                             <strong><i class="fas fa-camera me-1"></i>Season snapshot</strong>
                             <div class="small mt-1">Field season <strong>${sy}</strong> · created ${escapeHtml(ev.sort_ts || '')}</div>
@@ -675,7 +675,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 const border = isFlagged ? 'warning' : 'secondary';
                 const action = isFlagged ? 'Flag set' : 'Flag cleared';
                 html += `
-                    <div class="card mb-2 border-${border} bg-dark text-light">
+                    <div class="card mb-2 border-${border}">
                         <div class="card-body py-2">
                             <div class="d-flex justify-content-between flex-wrap gap-2">
                                 <strong><i class="fas fa-flag me-1"></i>${action}</strong>
@@ -702,7 +702,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         html += `<div class="mb-2"><strong>Logs by season</strong><ul class="small">${Object.entries(lbs).map(([y, c]) => `<li>${y}: ${c}</li>`).join('')}</ul></div>`;
         const sums = data.station_summaries || [];
         if (sums.length) {
-            html += `<div class="table-responsive mb-3"><table class="table table-sm table-dark"><thead><tr><th>Station</th><th>Status</th><th>Logs</th><th>Serial</th></tr></thead><tbody>`;
+            html += `<div class="table-responsive mb-3"><table class="table table-sm"><thead><tr><th>Station</th><th>Status</th><th>Logs</th><th>Serial</th></tr></thead><tbody>`;
             for (const s of sums) {
                 html += `<tr><td>${escapeHtml(s.station_id)}</td><td>${escapeHtml(s.status_text)}</td><td>${s.log_count}</td><td>${escapeHtml(s.serial_number || '—')}</td></tr>`;
             }
@@ -1347,7 +1347,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     resultHtml += '<div class="mt-3"><h6><i class="fas fa-exclamation-triangle me-2"></i>Warnings (Duplicates Detected):</h6><ul class="list-group">';
                     resultData.warnings.forEach(warning => {
                         const warningClass = warning.type.includes('in_csv') ? 'list-group-item-warning' : 'list-group-item-info';
-                        resultHtml += `<li class="list-group-item ${warningClass} bg-dark text-light">`;
+                        resultHtml += `<li class="list-group-item ${warningClass}">`;
                         resultHtml += `<strong>${warning.message}</strong>`;
                         if (warning.duplicates && warning.duplicates.length > 0) {
                             resultHtml += `<br><small>Values: ${warning.duplicates.join(', ')}</small>`;
@@ -1361,7 +1361,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 if (resultData.errors && resultData.errors.length > 0) {
                     resultHtml += '<div class="mt-3"><h6><i class="fas fa-times-circle me-2"></i>Errors:</h6><ul class="list-group">';
                     resultData.errors.forEach(err => {
-                        resultHtml += `<li class="list-group-item list-group-item-danger bg-dark text-light">${err}</li>`;
+                        resultHtml += `<li class="list-group-item list-group-item-danger">${err}</li>`;
                     });
                     resultHtml += '</ul></div>';
                 }
@@ -1491,7 +1491,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             renderArrayQuickSelectOptions();
             body.innerHTML = '';
             const table = document.createElement('table');
-            table.className = 'table table-sm table-dark table-bordered mb-0';
+            table.className = 'table table-sm table-bordered mb-0';
             const thead = document.createElement('thead');
             thead.innerHTML = '<tr><th style="width:10rem">Group</th><th>Notes (shared across seasons)</th><th style="width:6rem"></th></tr>';
             table.appendChild(thead);
@@ -1643,10 +1643,10 @@ document.addEventListener('DOMContentLoaded', async function () {
                 </div>
                 <div class="row mt-3">
                     <div class="col-lg-6 mb-3">
-                        <div class="card bg-dark border-secondary h-100">
+                        <div class="card border-secondary h-100">
                             <div class="card-header py-2"><strong>By array prefix</strong></div>
                             <div class="card-body p-0 table-responsive">
-                                <table class="table table-sm table-dark mb-0">
+                                <table class="table table-sm mb-0">
                                     <thead>
                                         <tr>
                                             <th>Prefix</th>
@@ -1669,9 +1669,9 @@ document.addEventListener('DOMContentLoaded', async function () {
                         </div>
                     </div>
                     <div class="col-lg-6 mb-3">
-                        <div class="card bg-dark border-secondary h-100">
-                            <div class="card-header py-2 text-light"><strong>Parser append tracking</strong></div>
-                            <div class="card-body text-light">
+                        <div class="card border-secondary h-100">
+                            <div class="card-header py-2"><strong>Parser append tracking</strong></div>
+                            <div class="card-body">
                                 <div class="small mb-1"><strong>Logs touched by parser:</strong> ${parserAppend.logs_touched_by_parser ?? 0}</div>
                                 <div class="small mb-1"><strong>VRL file appended:</strong> ${parserAppend.vrl_appended_logs ?? 0}</div>
                                 <div class="small mb-1"><strong>Remote health appended:</strong> ${parserAppend.remote_health_appended_logs ?? 0}</div>
@@ -1682,18 +1682,18 @@ document.addEventListener('DOMContentLoaded', async function () {
                 </div>
                 <div class="row">
                     <div class="col-lg-12 mb-3">
-                        <div class="card bg-dark border-secondary">
-                            <div class="card-header py-2 text-light"><strong>Multiple offload events by station</strong></div>
+                        <div class="card border-secondary">
+                            <div class="card-header py-2"><strong>Multiple offload events by station</strong></div>
                             <div class="card-body p-0 table-responsive">
-                                <table class="table table-sm table-dark mb-0"><thead><tr><th>Station</th><th>Logs</th></tr></thead><tbody>${activeRows || '<tr><td colspan="2" class="text-muted">—</td></tr>'}</tbody></table>
+                                <table class="table table-sm mb-0"><thead><tr><th>Station</th><th>Logs</th></tr></thead><tbody>${activeRows || '<tr><td colspan="2" class="text-muted">—</td></tr>'}</tbody></table>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="card bg-dark border-secondary">
+                <div class="card border-secondary">
                     <div class="card-header py-2"><strong>Stations offloaded (48h)</strong></div>
                     <div class="card-body p-0 table-responsive">
-                        <table class="table table-sm table-dark table-striped mb-0">
+                        <table class="table table-sm table-striped mb-0">
                             <thead><tr><th>Station</th><th>UTC</th><th>VRL</th><th>By</th><th>Src</th></tr></thead>
                             <tbody>${recentRows || '<tr><td colspan="5" class="text-muted">No successful offloads in last 48h.</td></tr>'}</tbody>
                         </table>
@@ -1722,9 +1722,9 @@ document.addEventListener('DOMContentLoaded', async function () {
                 const sid = escapeHtml(it.station_id);
                 const notes = escapeHtml(it.parser_notes || '');
                 return `
-<div class="border border-warning rounded p-3 mb-3 bg-dark text-light" data-conflict-log-id="${it.offload_log_id}">
+<div class="border border-warning rounded p-3 mb-3" data-conflict-log-id="${it.offload_log_id}">
   <div class="small text-muted">Log #${it.offload_log_id} · ${sid} · ${escapeHtml(String(it.updated_at_utc || it.log_timestamp_utc || ''))}</div>
-  <pre class="small text-wrap bg-black p-2 rounded mt-2 mb-2" style="white-space:pre-wrap;max-height:180px;overflow:auto">${notes}</pre>
+  <pre class="small text-wrap bg-body-secondary p-2 rounded mt-2 mb-2" style="white-space:pre-wrap;max-height:180px;overflow:auto">${notes}</pre>
   <div class="mb-2">
     <label class="form-label small mb-0">Manual merge — user notes</label>
     <input type="text" class="form-control form-control-sm conf-merge-notes" placeholder="Optional resolution text" data-id="${it.offload_log_id}">
@@ -3135,7 +3135,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 if (result.stats) {
                     resultHtml += '<div class="mt-3"><h6>Processing Statistics:</h6><ul class="list-group">';
                     Object.entries(result.stats).forEach(([key, value]) => {
-                        resultHtml += `<li class="list-group-item bg-dark text-light"><strong>${key}:</strong> ${value}</li>`;
+                        resultHtml += `<li class="list-group-item"><strong>${key}:</strong> ${value}</li>`;
                     });
                     resultHtml += '</ul></div>';
                 }
