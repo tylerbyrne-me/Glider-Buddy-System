@@ -1,0 +1,6 @@
+---
+description: Points agent to project-wide context and doc-maintenance workflow
+alwaysApply: true
+---
+See AGENTS.md at repo root — read it before starting work and follow its
+"before making changes" / "when you finish a change" checklist.

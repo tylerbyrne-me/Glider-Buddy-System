@@ -1,0 +1,25 @@
+---
+description: Require WorkPython conda env for all project CLI work
+alwaysApply: true
+---
+# Environment Requirements
+
+All terminal commands that need this project’s dependencies must use the **WorkPython** conda environment.
+
+Before running any terminal command that invokes Python, pytest, pip, or similar:
+
+```powershell
+conda activate WorkPython
+```
+
+On Windows without activating the shell, prefer the interpreter path:
+
+```powershell
+& "$env:USERPROFILE\.conda\envs\WorkPython\python.exe" path\to\script.py
+```
+
+Never suggest or run `pip install`, `python`, `pytest`, or other CLI tools against this repo without ensuring WorkPython is active. If writing a sequence of shell commands, activate WorkPython first (or use the interpreter path above).
+
+**Windows:** `conda run -n WorkPython python -c "..."` does not support multiline `-c` strings; use a small `.py` file or the interpreter path above.
+
+See also `AGENTS.md` (Python environment section).

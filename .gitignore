@@ -44,6 +44,8 @@ __pycache__/
 !.env.template
 *.md
 !README.md
+!AGENTS.md
+!docs/**/*.md
 
 # OS generated files #
 ######################
@@ -84,16 +86,23 @@ secrets/
 
 # test scripts and markdowns
 **/scripts/
-**/docs/
-*.md
+
 *.db
 **/data_store/
 **/test_data/
 **/tests/
 *.csv
 
-.cursor
+# Cursor: ignore local IDE noise; keep project rules tracked
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+
 .vscode
 
+# data archives (not docs/archive)
 **/archive/
+!docs/archive/
+!docs/archive/**
+
 **/output/m*/

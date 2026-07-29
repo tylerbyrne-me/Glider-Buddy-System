@@ -1,0 +1,45 @@
+# Architecture
+
+_Last updated: 2026-07-29_
+
+## One-paragraph summary
+
+Wave Glider Buddy System is a FastAPI web app that supports Wave Glider (and optionally Slocum) missions: home hub for active missions, real-time dashboards (power, CTD, weather, waves, AIS, errors), station metadata and WG-VM4 offload tracking, mission forms (PIC handoff, offload logs), knowledge base / LLM features, and admin tools. Telemetry is synced from remote or local sources into on-disk caches under `data_store/` and `data/`; a background scheduler refreshes active mission caches. Production typically runs under gunicorn with two Uvicorn workers; only the leader worker runs sync and APScheduler (fcntl lock).
+
+## Components
+
+- **App entry / lifespan** — FastAPI app, middleware, startup leader lock, router mounts (`app/app.py`)
+- **Core** — business logic, data loading, auth, models, infra (logging, feature toggles, caching helpers) (`app/core/`)
+- **Routers** — HTTP endpoints only; depend on core/services, never the reverse (`app/routers/`)
+- **Services** — higher-level orchestration (knowledge base, reporting, sensor tracker, etc.) (`app/services/`)
+- **Web assets** — Jinja templates in `web/templates/` and static files in `web/static/` (wired in `app/core/templates.py` / `app/app.py`); Python form helpers in `app/forms/`
+- **CLI** — admin/ops scripts such as station CSV import (`app/cli/`)
+- **Data on disk** — mission CSVs under `data/`; weather/bathy/iridium/slocum caches under `data_store/`
+- **Scheduler** — APScheduler jobs for cache refresh, weekly reports, weather/bathy/iridium/slocum cleanup (leader only; see [ADR 0001](../decisions/0001-gunicorn-leader-lock.md))
+
+## Data flow
+
+```
+Remote/local sources → sync (leader) → data/ + data_store caches
+                                      ↓
+Client → FastAPI routers → core/services → cached telemetry / SQLite → HTML/JSON
+```
+
+Typical dashboard path: select mission → load/summarize telemetry from cache (warm on demand if needed) → charts and status widgets. Map overlays (weather, Iridium) use feature toggles and disk caches with TTL/cleanup jobs.
+
+## Key files / entry points
+
+| File | Purpose |
+|------|---------|
+| `app/app.py` | App factory, lifespan, router includes, startup sync/cache |
+| `app/config.py` | Settings / env-backed configuration |
+| `app/core/infra/logging_config.py` | Root logging, request IDs |
+| `app/core/data/` | Data service / telemetry loading |
+| `AGENTS.md` | Ops runbook (gunicorn, logging, cache inventory) |
+
+## Things that look wrong but aren't
+
+- **No gunicorn `--preload`** — torch, ChromaDB, SQLite, and APScheduler do not play well with preload; see [ADR 0002](../decisions/0002-no-gunicorn-preload.md) and `AGENTS.md`.
+- **Only one worker runs sync/scheduler** — leader lock on `data_store/.app_leader.lock`; the other worker serves HTTP only; see [ADR 0001](../decisions/0001-gunicorn-leader-lock.md).
+- **`os.replace` failures on NFS/SELinux** — copy fallback is intentional; stranded `*.tmp` are cleaned by scheduled jobs.
+- **Admin scheduler status empty on non-leader** — scheduler lives on the leader worker only.
