@@ -5,6 +5,7 @@
  */
 import { apiRequest, showToast, escapeHTML, fetchWithAuth } from '/static/js/api.js';
 import { datetimeLocalToUtcIso, formatUtcDateTime, toUtcDate } from '/static/js/datetime_utils.js';
+import { openSlocumChecklistCompare } from '/static/js/slocum_checklist_compare.js';
 import {
     registerForceUtcTimeDisplayPlugin,
 } from '/static/js/chart_utc_utils.js';
@@ -61,6 +62,8 @@ let ctdProfilePayloadCache = null;
 const ctdChartInstances = {};
 const timeSeriesLoaded = new Set();
 const timeSeriesChartInstances = {};
+/** Cached checklist submissions for the Compare modal (newest first). */
+let lastSlocumChecklists = [];
 
 let chartTextColor = '#212529';
 let chartGridColor = '#dee2e6';
@@ -2070,6 +2073,9 @@ function renderSlocumChecklists(forms) {
     const emptyEl = document.getElementById('slocumChecklistsEmpty');
     if (!latestEl || !tableBody) return;
 
+    lastSlocumChecklists = Array.isArray(forms) ? forms : [];
+    const canCompare = lastSlocumChecklists.length >= 2;
+
     const hasForms = Array.isArray(forms) && forms.length > 0;
     if (!hasForms) {
         latestEl.innerHTML = '<div class="text-muted small">No daily checklist submissions exist for this dataset.</div>';
@@ -2081,6 +2087,9 @@ function renderSlocumChecklists(forms) {
 
     const latest = forms[0];
     const datasetId = getDatasetId();
+    const compareDisabledAttr = canCompare
+        ? ''
+        : ' disabled title="Need at least two checklist submissions to compare"';
     latestEl.innerHTML = `
         <div class="d-flex justify-content-between align-items-start flex-wrap gap-2">
             <div>
@@ -2089,8 +2098,9 @@ function renderSlocumChecklists(forms) {
                     ${escapeHtml(formatTimestamp(latest.submission_timestamp))} • ${escapeHtml(latest.submitted_by_username || 'Unknown')}
                 </div>
             </div>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 flex-wrap">
                 <button type="button" class="btn btn-sm btn-info" id="slocumChecklistsViewLatestBtn">View Details</button>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="slocumChecklistsCompareLatestBtn"${compareDisabledAttr}>Compare</button>
                 ${(USER_ROLE === 'admin' || (USERNAME && latest.submitted_by_username === USERNAME))
                     ? `<a class="btn btn-sm btn-outline-secondary" href="/slocum/dataset/${encodeURIComponent(datasetId)}/checklist.html?edit=${latest.id}" target="_blank" rel="noopener noreferrer">Edit</a>`
                     : ''}
@@ -2100,6 +2110,15 @@ function renderSlocumChecklists(forms) {
     const viewLatestBtn = document.getElementById('slocumChecklistsViewLatestBtn');
     if (viewLatestBtn) {
         viewLatestBtn.addEventListener('click', () => displaySlocumChecklistDetails(latest));
+    }
+    const compareLatestBtn = document.getElementById('slocumChecklistsCompareLatestBtn');
+    if (compareLatestBtn && canCompare) {
+        compareLatestBtn.addEventListener('click', () => {
+            openSlocumChecklistCompare({
+                forms: lastSlocumChecklists,
+                referenceId: latest.id,
+            });
+        });
     }
 
     tableBody.innerHTML = '';
@@ -2115,6 +2134,22 @@ function renderSlocumChecklists(forms) {
         viewBtn.textContent = 'View';
         viewBtn.addEventListener('click', () => displaySlocumChecklistDetails(form));
         actionsCell.appendChild(viewBtn);
+        const compareBtn = document.createElement('button');
+        compareBtn.type = 'button';
+        compareBtn.className = 'btn btn-sm btn-outline-primary me-1';
+        compareBtn.textContent = 'Compare';
+        if (!canCompare) {
+            compareBtn.disabled = true;
+            compareBtn.title = 'Need at least two checklist submissions to compare';
+        } else {
+            compareBtn.addEventListener('click', () => {
+                openSlocumChecklistCompare({
+                    forms: lastSlocumChecklists,
+                    referenceId: form.id,
+                });
+            });
+        }
+        actionsCell.appendChild(compareBtn);
         if (USER_ROLE === 'admin' || (USERNAME && form.submitted_by_username === USERNAME)) {
             const editLink = document.createElement('a');
             editLink.className = 'btn btn-sm btn-outline-secondary';

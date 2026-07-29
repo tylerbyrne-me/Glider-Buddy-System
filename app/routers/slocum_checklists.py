@@ -30,6 +30,7 @@ from ..core.slocum_checklist_autofill import (
     get_plottable_spec,
     parse_checklist_reference_values,
 )
+from ..core.slocum_checklist_compare import build_compare_result
 from ..core.slocum_checklist_submit_service import (
     build_checklist_autofilled_schema,
     persist_checklist_submission,
@@ -235,6 +236,46 @@ async def get_checklist_series(
             status_code=404,
             detail=f"Checklist item '{item_id}' is not plottable",
         ) from err
+
+
+@router.get(
+    "/api/slocum/checklists/compare",
+    dependencies=[_slocum_access],
+)
+def compare_checklists(
+    reference_id: int = Query(..., description="Locked reference submission id"),
+    other_id: int = Query(..., description="Compare-pane submission id"),
+    include_notes: bool = Query(False, description="Include item/section notes in diff"),
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """Compare two Slocum daily checklist submissions (form-to-form)."""
+    _require_slocum_platform()
+    reference = session.get(models.SubmittedForm, reference_id)
+    other = session.get(models.SubmittedForm, other_id)
+    if (
+        not reference
+        or not other
+        or reference.form_type != CHECKLIST_FORM_TYPE
+        or other.form_type != CHECKLIST_FORM_TYPE
+    ):
+        raise HTTPException(status_code=404, detail="Checklist submission not found")
+    if reference.mission_id != other.mission_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Checklists must belong to the same mission",
+        )
+    diff = build_compare_result(
+        reference.sections_data,
+        other.sections_data,
+        include_notes=include_notes,
+    )
+    return {
+        "reference": reference,
+        "other": other,
+        "changed_item_ids": diff["changed_item_ids"],
+        "difference_count": diff["difference_count"],
+    }
 
 
 @router.get(

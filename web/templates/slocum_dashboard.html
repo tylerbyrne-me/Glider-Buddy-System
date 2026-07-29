@@ -621,6 +621,80 @@
 
   {% set id_prefix = "slocumChecklists" %}
   {% include "_form_details_modal.html" %}
+
+  <div class="modal fade" id="slocumChecklistCompareModal" tabindex="-1"
+       aria-labelledby="slocumChecklistCompareModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen">
+      <div class="modal-content slocum-checklist-compare-modal-content">
+        <div class="modal-header flex-wrap gap-2 align-items-start">
+          <div class="flex-grow-1">
+            <h5 class="modal-title mb-1" id="slocumChecklistCompareModalLabel">Compare Daily Checklists</h5>
+            <div class="d-flex flex-wrap align-items-center gap-3 small">
+              <span id="slocumChecklistCompareDiffCount" class="fw-semibold">—</span>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" role="switch"
+                       id="slocumChecklistCompareChangedOnly" checked>
+                <label class="form-check-label" for="slocumChecklistCompareChangedOnly">Show changed only</label>
+              </div>
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" role="switch"
+                       id="slocumChecklistCompareIncludeNotes">
+                <label class="form-check-label" for="slocumChecklistCompareIncludeNotes">Include notes</label>
+              </div>
+            </div>
+            <div id="slocumChecklistCompareStatus" class="small text-muted mt-1" role="status"></div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-0 slocum-checklist-compare-body">
+          <div class="slocum-checklist-compare-panes">
+            {# Past (navigable) on the left; locked reference (present) on the right #}
+            <div class="slocum-checklist-compare-pane" id="slocumChecklistCompareOtherPane">
+              <div class="slocum-checklist-compare-pane-header">
+                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                  <div>
+                    <div class="fw-semibold" id="slocumChecklistCompareOtherTitle">Compare</div>
+                    <div class="small text-muted" id="slocumChecklistCompareOtherMeta"></div>
+                  </div>
+                  <div class="d-flex align-items-center gap-1 flex-wrap">
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="slocumChecklistComparePrevBtn"
+                            title="Older submission">&#9664;</button>
+                    <select class="form-select form-select-sm slocum-checklist-compare-select"
+                            id="slocumChecklistCompareSelect" aria-label="Select checklist to compare"></select>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="slocumChecklistCompareNextBtn"
+                            title="Newer submission">&#9654;</button>
+                  </div>
+                </div>
+              </div>
+              <div class="slocum-checklist-compare-pane-scroll" id="slocumChecklistCompareOtherScroll">
+                <div id="slocumChecklistCompareOtherBody"></div>
+              </div>
+            </div>
+            <div class="slocum-checklist-compare-pane" id="slocumChecklistCompareRefPane">
+              <div class="slocum-checklist-compare-pane-header">
+                <div class="d-flex justify-content-between align-items-start gap-2 flex-wrap">
+                  <div>
+                    <div class="fw-semibold" id="slocumChecklistCompareRefTitle">Reference</div>
+                    <div class="small text-muted" id="slocumChecklistCompareRefMeta"></div>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline-secondary" id="slocumChecklistCompareSwapBtn"
+                          title="Swap reference and compare">
+                    Swap
+                  </button>
+                </div>
+              </div>
+              <div class="slocum-checklist-compare-pane-scroll" id="slocumChecklistCompareRefScroll">
+                <div id="slocumChecklistCompareRefBody"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
 {% endblock %}
 
 {% block body_extra_js %}

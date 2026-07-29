@@ -990,3 +990,109 @@ footer .text-muted {
 .leaflet-container a.leaflet-popup-close-button:hover {
     color: var(--text-color);
 }
+
+/* Slocum checklist side-by-side compare */
+.slocum-checklist-compare-modal-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.slocum-checklist-compare-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+.slocum-checklist-compare-panes {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+  min-height: 0;
+}
+.slocum-checklist-compare-pane {
+  flex: 1 1 50%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--card-border, var(--bs-border-color));
+}
+.slocum-checklist-compare-pane:last-child {
+  border-right: none;
+}
+.slocum-checklist-compare-pane-header {
+  flex: 0 0 auto;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 0.75rem 1rem;
+  background-color: var(--card-hover-bg, var(--bs-tertiary-bg));
+  border-bottom: 1px solid var(--card-border, var(--bs-border-color));
+}
+.slocum-checklist-compare-pane-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.75rem 1rem 1.5rem;
+}
+.slocum-checklist-compare-select {
+  min-width: 12rem;
+  max-width: 18rem;
+}
+.slocum-checklist-compare-section {
+  margin-bottom: 1.25rem;
+}
+.slocum-checklist-compare-section-title {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  margin: 0 0 0.5rem;
+  padding: 0.35rem 0.5rem;
+  background-color: var(--bs-body-bg, #fff);
+  border-left: 3px solid var(--bs-primary);
+  font-weight: 600;
+}
+.slocum-checklist-compare-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 34%) 1fr;
+  gap: 0.5rem 0.75rem;
+  padding: 0.4rem 0.5rem;
+  margin-bottom: 0.15rem;
+  border-radius: 0.25rem;
+  border-left: 3px solid transparent;
+}
+.slocum-checklist-item-changed {
+  border-left-color: var(--bs-warning);
+  background-color: color-mix(in srgb, var(--bs-warning) 12%, transparent);
+}
+.slocum-checklist-compare-label {
+  font-weight: 500;
+  font-size: 0.875rem;
+  word-break: break-word;
+}
+.slocum-checklist-compare-value-wrap {
+  font-size: 0.875rem;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.slocum-checklist-compare-note {
+  margin-top: 0.25rem;
+  padding-left: 0.25rem;
+  border-left: 2px solid transparent;
+}
+.slocum-checklist-compare-note.slocum-checklist-item-changed {
+  border-left-color: var(--bs-warning);
+}
+
+@media (max-width: 991.98px) {
+  .slocum-checklist-compare-panes {
+    flex-direction: column;
+  }
+  .slocum-checklist-compare-pane {
+    flex: 1 1 auto;
+    max-height: 50%;
+    border-right: none;
+    border-bottom: 1px solid var(--card-border, var(--bs-border-color));
+  }
+  .slocum-checklist-compare-pane:last-child {
+    border-bottom: none;
+  }
+}
