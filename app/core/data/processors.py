@@ -674,9 +674,13 @@ _SLOCUM_DASHBOARD_RENAME = {
     "c_heading": "CHeading",
     "c_heading (degrees)": "CHeading",
     "c_heading (deg)": "CHeading",
+    "c_heading (rad)": "CHeading",
+    "c_heading (radians)": "CHeading",
     "m_heading": "MHeading",
     "m_heading (degrees)": "MHeading",
     "m_heading (deg)": "MHeading",
+    "m_heading (rad)": "MHeading",
+    "m_heading (radians)": "MHeading",
     "c_fin": "CFin",
     "c_fin (radians)": "CFin",
     "c_fin (rad)": "CFin",
@@ -690,6 +694,9 @@ _SLOCUM_DASHBOARD_RENAME = {
     "m_coulomb_amphr_total (A.hr)": "MCoulombAmphrTotal",
     "m_coulomb_amphr_total (A*hr)": "MCoulombAmphrTotal",
     "m_coulomb_amphr_total (ah)": "MCoulombAmphrTotal",
+    "m_coulomb_amphr_total (amp hrs)": "MCoulombAmphrTotal",
+    "m_coulomb_amphr_total (amp-hrs)": "MCoulombAmphrTotal",
+    "m_coulomb_amphr_total (Ah)": "MCoulombAmphrTotal",
     "m_coulomb_current": "MCoulombCurrent",
     "m_coulomb_current (A)": "MCoulombCurrent",
     "m_coulomb_current (amps)": "MCoulombCurrent",
@@ -771,11 +778,12 @@ _SLOCUM_CHECKLIST_RENAME = {
 }
 
 # Stem (before unit suffix) -> standard column. Used when ERDDAP unit text varies.
-_SLOCUM_CHECKLIST_STEMS: dict[str, str] = {
+_SLOCUM_DASHBOARD_STEMS: dict[str, str] = {
     "latitude": "Latitude",
     "longitude": "Longitude",
     "m_depth": "MDepth",
     "m_altitude": "MAltitude",
+    "m_raw_altitude": "MRawAltitude",
     "m_water_depth": "MWaterDepth",
     "c_pitch": "CPitch",
     "m_pitch": "MPitch",
@@ -788,23 +796,27 @@ _SLOCUM_CHECKLIST_STEMS: dict[str, str] = {
     "m_battery": "MBattery",
     "m_coulomb_amphr_total": "MCoulombAmphrTotal",
     "m_coulomb_current": "MCoulombCurrent",
+    "m_bms_pitch_current": "MBmsPitchCurrent",
+    "m_bms_aft_current": "MBmsAftCurrent",
+    "m_bms_ebay_current": "MBmsEbayCurrent",
+    "m_speed": "MSpeed",
+    "m_depth_rate_avg_final": "MDepthRateAvgFinal",
+    "m_final_water_vx": "MFinalWaterVx",
+    "m_final_water_vy": "MFinalWaterVy",
     "m_vacuum": "MVacuum",
     "m_leakdetect_voltage": "MLeakdetectVoltage",
     "m_leakdetect_voltage_forward": "MLeakdetectVoltageForward",
     "m_leakdetect_voltage_science": "MLeakdetectVoltageScience",
+}
+
+_SLOCUM_CHECKLIST_STEMS: dict[str, str] = {
+    **_SLOCUM_DASHBOARD_STEMS,
     "c_de_oil_vol": "CDeOilVol",
     "m_de_oil_vol": "MDeOilVol",
     "c_ballast_pumped": "CBallastPumped",
     "m_ballast_pumped": "MBallastPumped",
     "c_battpos": "CBattpos",
     "m_battpos": "MBattpos",
-    "m_depth_rate_avg_final": "MDepthRateAvgFinal",
-    "m_bms_pitch_current": "MBmsPitchCurrent",
-    "m_bms_aft_current": "MBmsAftCurrent",
-    "m_bms_ebay_current": "MBmsEbayCurrent",
-    "m_speed": "MSpeed",
-    "m_final_water_vx": "MFinalWaterVx",
-    "m_final_water_vy": "MFinalWaterVy",
     "m_gps_lat": "MGpsLat",
     "m_gps_lon": "MGpsLon",
     "c_wpt_lat": "CWptLat",
@@ -850,12 +862,16 @@ def _column_stem(name: str) -> str:
     return text.strip().lower()
 
 
-def _build_checklist_rename_map(columns: list) -> dict[str, str]:
+def _build_slocum_rename_map(
+    columns: list,
+    exact_map: dict[str, str],
+    stems: dict[str, str],
+) -> dict[str, str]:
     """Exact rename first, then stem match so unit text variants still map."""
     rename_map: dict[str, str] = {}
     assigned: set[str] = set()
 
-    for raw_name, mapped in _SLOCUM_CHECKLIST_RENAME.items():
+    for raw_name, mapped in exact_map.items():
         if mapped in assigned:
             continue
         if raw_name in columns:
@@ -863,7 +879,7 @@ def _build_checklist_rename_map(columns: list) -> dict[str, str]:
             assigned.add(mapped)
 
     lower_to_actual = {str(c).lower(): c for c in columns}
-    for raw_name, mapped in _SLOCUM_CHECKLIST_RENAME.items():
+    for raw_name, mapped in exact_map.items():
         if mapped in assigned:
             continue
         actual = lower_to_actual.get(raw_name.lower())
@@ -875,12 +891,22 @@ def _build_checklist_rename_map(columns: list) -> dict[str, str]:
         if col in rename_map:
             continue
         stem = _column_stem(col)
-        mapped = _SLOCUM_CHECKLIST_STEMS.get(stem)
+        mapped = stems.get(stem)
         if mapped and mapped not in assigned:
             rename_map[col] = mapped
             assigned.add(mapped)
 
     return rename_map
+
+
+def _build_checklist_rename_map(columns: list) -> dict[str, str]:
+    """Exact rename first, then stem match so unit text variants still map."""
+    return _build_slocum_rename_map(columns, _SLOCUM_CHECKLIST_RENAME, _SLOCUM_CHECKLIST_STEMS)
+
+
+def _build_dashboard_rename_map(columns: list) -> dict[str, str]:
+    """Exact rename first, then stem match so unit text variants still map."""
+    return _build_slocum_rename_map(columns, _SLOCUM_DASHBOARD_RENAME, _SLOCUM_DASHBOARD_STEMS)
 
 
 def _nan_slocum_sentinels(series: pd.Series) -> pd.Series:
@@ -988,12 +1014,7 @@ def preprocess_slocum_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
         return df_processed
 
     # One raw column per standard name (ERDDAP may use "m_depth" or "m_depth (m)")
-    rename_map = {}
-    for std_name in std_cols:
-        for raw_name, s in _SLOCUM_DASHBOARD_RENAME.items():
-            if s == std_name and raw_name in df_processed.columns:
-                rename_map[raw_name] = std_name
-                break
+    rename_map = _build_dashboard_rename_map(list(df_processed.columns))
 
     df_processed = df_processed.rename(columns=rename_map)
     for std_name in std_cols:

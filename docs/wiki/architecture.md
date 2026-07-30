@@ -29,7 +29,7 @@ Typical dashboard path: select mission → load/summarize telemetry from cache (
 
 ### Slocum resolution
 
-Slocum mirror and overage fetches store **full ERDDAP resolution** by default (active and historical). Time thinning for charts/CSV is pilot-controlled via the dashboard **Resample** control (`granularity_minutes`). `slocum_erddap_decimation_minutes` defaults to `0` (ops escape hatch only). CTD/checklist bundles never use ERDDAP time decimation.
+Slocum mirror and overage fetches store **full ERDDAP resolution** by default (active and historical). Time thinning for charts/CSV is pilot-controlled via the dashboard **Resample** control (`granularity_minutes`). `slocum_erddap_decimation_minutes` defaults to `0` (ops escape hatch only). CTD/checklist bundles never use ERDDAP time decimation. Dashboard/checklist preprocess use exact+stem column rename so ERDDAP unit suffixes (e.g. `c_heading (rad)`, `m_coulomb_amphr_total (amp hrs)`) map to chart columns; bump `BUNDLE_SCHEMA_VERSION` when rename/preprocess semantics change so mirrors rebuild.
 
 ## Key files / entry points
 
