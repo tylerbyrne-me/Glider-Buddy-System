@@ -1,6 +1,6 @@
 # Architecture
 
-_Last updated: 2026-07-29_
+_Last updated: 2026-07-30_
 
 ## One-paragraph summary
 
@@ -27,6 +27,10 @@ Client → FastAPI routers → core/services → cached telemetry / SQLite → H
 
 Typical dashboard path: select mission → load/summarize telemetry from cache (warm on demand if needed) → charts and status widgets. Map overlays (weather, Iridium) use feature toggles and disk caches with TTL/cleanup jobs.
 
+### Slocum resolution
+
+Slocum mirror and overage fetches store **full ERDDAP resolution** by default (active and historical). Time thinning for charts/CSV is pilot-controlled via the dashboard **Resample** control (`granularity_minutes`). `slocum_erddap_decimation_minutes` defaults to `0` (ops escape hatch only). CTD/checklist bundles never use ERDDAP time decimation.
+
 ## Key files / entry points
 
 | File | Purpose |
@@ -43,3 +47,4 @@ Typical dashboard path: select mission → load/summarize telemetry from cache (
 - **Only one worker runs sync/scheduler** — leader lock on `data_store/.app_leader.lock`; the other worker serves HTTP only; see [ADR 0001](../decisions/0001-gunicorn-leader-lock.md).
 - **`os.replace` failures on NFS/SELinux** — copy fallback is intentional; stranded `*.tmp` are cleaned by scheduled jobs.
 - **Admin scheduler status empty on non-leader** — scheduler lives on the leader worker only.
+- **Slocum long windows look dense** — overage/mirror are full-res; sparse charts mean the sensor or UI Resample, not automatic >48h ERDDAP decimation.

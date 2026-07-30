@@ -26,7 +26,6 @@ import pandas as pd
 from ..config import settings
 from ..core.slocum_bundle_registry import get_bundle_spec
 from ..core.slocum_mirror_service import (
-    _decimation_minutes_for_window,
     _fetch_raw_bundle,
     _last_timestamp,
     _merge_mirror_frames,
@@ -271,11 +270,14 @@ def _slice_df(df: pd.DataFrame, start_utc: datetime, end_utc: datetime) -> pd.Da
 
 
 def _decimation_for_request(bundle: str, start: datetime, end: datetime) -> Optional[int]:
-    spec = get_bundle_spec(bundle)
-    if not spec.allow_decimation:
-        return None
-    hours = max(0.0, (_ensure_utc(end) - _ensure_utc(start)).total_seconds() / 3600.0)
-    return _decimation_minutes_for_window(hours, is_historical=hours > 48)
+    """
+    ERDDAP orderByClosest minutes for overage fetches.
+
+    Always full resolution: pilots thin charts only via the Resample UI
+    (granularity_minutes). ``start``/``end`` retained for call-site compatibility.
+    """
+    _ = (bundle, start, end)
+    return None
 
 
 async def _fetch_overage_window(

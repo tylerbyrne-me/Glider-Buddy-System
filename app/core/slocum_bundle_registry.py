@@ -21,7 +21,7 @@ from ..core.slocum_erddap_client import (
 )
 
 # Bump when parquet schema / preprocess semantics change so overage keys invalidate.
-BUNDLE_SCHEMA_VERSION = "7"
+BUNDLE_SCHEMA_VERSION = "8"
 
 
 @dataclass(frozen=True)

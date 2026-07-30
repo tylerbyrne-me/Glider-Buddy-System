@@ -213,18 +213,19 @@ def _round_time_end(now: Optional[datetime] = None) -> datetime:
 
 def _decimation_minutes_for_window(hours: float, *, is_historical: bool) -> Optional[int]:
     """
-    ERDDAP orderByClosest minutes for dashboard fetches.
+    ERDDAP orderByClosest minutes for dashboard mirror fetches.
 
-    Active (non-historical) mirrors stay full resolution so sensor charts can
-    show ~1-min samples. Historical datasets keep configured decimation for
-    large pulls.
+    Default is full resolution (``slocum_erddap_decimation_minutes`` = 0) for
+    both active and historical datasets. A positive config value is an ops
+    escape hatch only; pilots thin charts via the Resample UI
+    (``granularity_minutes``). ``hours`` / ``is_historical`` are retained for
+    call-site compatibility.
     """
-    configured = getattr(settings, "slocum_erddap_decimation_minutes", 15)
+    _ = (hours, is_historical)
+    configured = getattr(settings, "slocum_erddap_decimation_minutes", 0)
     if configured <= 0:
         return None
-    if is_historical:
-        return configured
-    return None
+    return configured
 
 
 def clear_mirror_bundle(dataset_id: str, bundle: BundleName) -> bool:

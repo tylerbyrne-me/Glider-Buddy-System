@@ -96,9 +96,10 @@ class Settings(BaseSettings):
     slocum_warm_hours: int = 24
     # Overlap when merging incremental ERDDAP pulls into the mirror.
     slocum_sync_overlap_hours: int = 2
-    # Server-side decimation for long/historical ERDDAP *dashboard* fetches (minutes).
-    # CTD mirrors never use this — dive/climb science profiles must stay full-resolution. 0 = raw rows.
-    slocum_erddap_decimation_minutes: int = 15
+    # Ops escape hatch only: ERDDAP orderByClosest minutes for dashboard mirror pulls.
+    # Default 0 = full resolution (active and historical). Pilots thin via UI Resample.
+    # CTD/checklist never use this (allow_decimation=False).
+    slocum_erddap_decimation_minutes: int = 0
     # Regex filter for allDatasets metadata queries (Ocean Track Slocum IDs).
     slocum_erddap_dataset_id_filter: str = r".*(_realtime|_delayed)$"
     # Temporary on-demand overage cache for windows outside the rolling mirror.
