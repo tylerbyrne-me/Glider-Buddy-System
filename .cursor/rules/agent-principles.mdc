@@ -13,3 +13,5 @@ alwaysApply: true
 4. Flag uncertainty explicitly. If you're unsure about something, see point 1. If it makes sense, conduct a small, localised, low-risk experiment and bring the hypothesis and results to discuss. Confidence without certainty causes more damage than admitting a gap.
 
 5. Be open to better approaches — prefer suggestions with lasting impact over purely tactical changes when they fit the request.
+
+6. Never create git commits unless the user explicitly asks to commit (see `no-inferred-git-commits.mdc`). Soft phrases like "clean up" or "looks good" are not commit requests.

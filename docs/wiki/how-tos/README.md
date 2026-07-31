@@ -11,5 +11,5 @@ Operational procedures, sensor guides, and admin quick starts.
 - [Station offload season rollover](./station_offload_season_rollover.md)
 - [Knowledge base quick start](./KNOWLEDGE_BASE_QUICK_START.md)
 - [LLM chatbot troubleshooting example](./LLM_CHATBOT_TROUBLESHOOTING_EXAMPLE.md)
-- [Slocum notes](./slocum.md)
+- [Slocum integration (dashboard, ERDDAP, mirrors)](./slocum.md)
 - [RAG document template](./DOCUMENT_TEMPLATE.md)

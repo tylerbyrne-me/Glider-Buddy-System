@@ -1,6 +1,6 @@
 # Architecture
 
-_Last updated: 2026-07-30_
+_Last updated: 2026-07-31_
 
 ## One-paragraph summary
 
@@ -29,7 +29,7 @@ Typical dashboard path: select mission → load/summarize telemetry from cache (
 
 ### Slocum resolution
 
-Slocum mirror and overage fetches store **full ERDDAP resolution** by default (active and historical). Time thinning for charts/CSV is pilot-controlled via the dashboard **Resample** control (`granularity_minutes`). `slocum_erddap_decimation_minutes` defaults to `0` (ops escape hatch only). CTD/checklist bundles never use ERDDAP time decimation. Dashboard/checklist preprocess use exact+stem column rename so ERDDAP unit suffixes (e.g. `c_heading (rad)`, `m_coulomb_amphr_total (amp hrs)`) map to chart columns; bump `BUNDLE_SCHEMA_VERSION` when rename/preprocess semantics change so mirrors rebuild.
+Slocum mirror and overage fetches store **full ERDDAP resolution** by default (active and historical). Time thinning for charts/CSV is pilot-controlled via the dashboard **Resample** control (`granularity_minutes`). `slocum_erddap_decimation_minutes` defaults to `0` (ops escape hatch only). CTD/checklist bundles never use ERDDAP time decimation. Dashboard/checklist preprocess use exact+stem column rename so ERDDAP unit suffixes (e.g. `c_heading (rad)`, `m_coulomb_amphr_total (amp hrs)`, digifin/thruster unit variants) map to chart columns; bump `BUNDLE_SCHEMA_VERSION` when rename/preprocess semantics change so mirrors rebuild (currently **11** for digifin + thruster dashboard/checklist columns). Shared chart toolkit (style, depth overlay, zoom/pan/reset) lives in `web/static/js/chart_*_utils.js` and `_chart_plot_controls.html`. Daily checklist Plot-it and side-by-side compare are documented in [Slocum how-to](./how-tos/slocum.md#daily-pilot-checklist).
 
 ## Key files / entry points
 
@@ -48,3 +48,4 @@ Slocum mirror and overage fetches store **full ERDDAP resolution** by default (a
 - **`os.replace` failures on NFS/SELinux** — copy fallback is intentional; stranded `*.tmp` are cleaned by scheduled jobs.
 - **Admin scheduler status empty on non-leader** — scheduler lives on the leader worker only.
 - **Slocum long windows look dense** — overage/mirror are full-res; sparse charts mean the sensor or UI Resample, not automatic >48h ERDDAP decimation.
+- **New Slocum series empty after deploy** — mirror schema bump requires leader sync (or admin force rebuild) before digifin/thruster (etc.) appear in parquet.

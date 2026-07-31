@@ -20,7 +20,7 @@ This project uses `docs/` for persistent tracking. For **non-trivial** work (mul
 
 ### Conventions
 
-Don't guess at style — [`docs/wiki/conventions.md`](docs/wiki/conventions.md) is the short source of truth (it links to `docs/wiki/standards/` for depth). Always-apply Cursor rules live under [`.cursor/rules/`](.cursor/rules/) as `.mdc` files.
+Don't guess at style — [`docs/wiki/conventions.md`](docs/wiki/conventions.md) is the short source of truth (it links to `docs/wiki/standards/` for depth). Always-apply Cursor rules live under [`.cursor/rules/`](.cursor/rules/) as `.mdc` files (including [no inferred git commits](.cursor/rules/no-inferred-git-commits.mdc)).
 
 ## Python environment
 

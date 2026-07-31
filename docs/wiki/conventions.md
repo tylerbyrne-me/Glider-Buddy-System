@@ -34,8 +34,10 @@ Core → Routers → App
 
 ## Commit / PR conventions
 
-- Only commit when asked; follow the repo’s existing commit message style.
+- **Never commit unless explicitly asked** (e.g. "commit", "create a commit"). Soft phrases like "clean up", "wrap up", or "looks good" are **not** commit requests — ask if unclear. Project rule: [`.cursor/rules/no-inferred-git-commits.mdc`](../../.cursor/rules/no-inferred-git-commits.mdc).
+- When committing is requested, follow the repo’s existing commit message style.
 - Do not commit secrets (`.env`, credentials).
+- Always-apply Cursor rules live under [`.cursor/rules/`](../../.cursor/rules/) as `.mdc` files.
 
 ## Patterns to follow
 

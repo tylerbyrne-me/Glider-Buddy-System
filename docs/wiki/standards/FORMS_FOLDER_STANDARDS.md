@@ -10,17 +10,19 @@ The `app/forms/` folder contains **form schema definitions** - the static struct
 
 The forms folder **IS still needed** and serves an important purpose:
 - Contains form schema definitions (templates)
-- Currently defines 2 form types:
+- Wave Glider form types in `form_definitions.py`:
   - `pre_deployment_checklist` - Pre-deployment checklist
   - `pic_handoff_checklist` - PIC handoff checklist
-- Provides `get_static_form_schema()` function used by routers
+- Slocum daily checklist schema in `slocum_checklist_definitions.py` (`slocum_daily_checklist`)
+- Provides `get_static_form_schema()` / checklist schema helpers used by routers
 
 ### Folder Structure
 
 ```
 app/forms/
-├── __init__.py              # Package marker (may export key functions)
-└── form_definitions.py      # Form schema definitions
+├── __init__.py
+├── form_definitions.py                 # WG mission form schemas
+└── slocum_checklist_definitions.py     # Slocum daily pilot checklist schema
 ```
 
 ## What Belongs in `app/forms/`

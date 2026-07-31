@@ -22,7 +22,7 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 ## Low priority / someday
 
-- [ ] Slocum checklist history vs Excel pan-scan (matrix / form-diff / sparklines) — brainstorm only so far; [Checklist history ideas](378f5e79-578b-4f7a-99cd-ca202e222768)
+- [ ] Slocum checklist history follow-ups (multi-day matrix / sparklines); side-by-side compare shipped 2026-07-29 — [Checklist history ideas](378f5e79-578b-4f7a-99cd-ca202e222768)
 - [ ] Dockerize app for a more stable host — [Docker migration options](3357a043-5fd2-46e6-bfb5-fd14329e8c7e)
 - [ ] Rebrand to “Glider Buddy System” (repo + product); Phase 3 ops called out as separate — [Glider Buddy rebrand](048fab21-2379-425a-935a-b58c0cb17690)
 - [ ] Optionally standardize complex error handling in `app/routers/forms.py` and `app/routers/live_kml_router.py` (acceptable as-is; see `docs/archive/reviews/HIGH_PRIORITY_COMPLETION_SUMMARY.md`)

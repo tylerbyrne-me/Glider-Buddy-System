@@ -1,0 +1,26 @@
+---
+description: Never create git commits unless the user explicitly asks to commit
+alwaysApply: true
+---
+# Git commits — explicit request only
+
+Never create a git commit unless the user explicitly asks using clear commit language, such as:
+
+- "commit"
+- "create a commit"
+- "make a commit"
+- "commit these changes"
+
+Do **not** treat any of the following as a commit request:
+
+- "clean up"
+- "wrap up"
+- "ship it"
+- "looks good"
+- "we're done"
+- "finalize"
+- "push" (push ≠ commit; only push when explicitly asked)
+
+If commit intent is unclear, ask first and do **not** commit.
+
+When an explicit commit is requested, follow the repo's normal git safety protocol (no force push, no amend unless allowed, no secrets, etc.).
