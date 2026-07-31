@@ -435,13 +435,13 @@
           </div>
           <div class="card-body">
             <h5 class="mt-2">Battery Voltage (V)</h5>
-            {{ time_series_chart_block('slocumPowerBatteryChart', show_depth=true, height='280px', spinner_id='slocumPowerBatterySpinner') }}
+            {{ time_series_chart_block('slocumPowerBatteryChart', height='280px', spinner_id='slocumPowerBatterySpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Coulomb AmpHr — Daily Consumption &amp; Total</h5>
-            {{ time_series_chart_block('slocumPowerCoulombChart', show_depth=true, height='280px', spinner_id='slocumPowerCoulombSpinner') }}
+            {{ time_series_chart_block('slocumPowerCoulombChart', height='280px', spinner_id='slocumPowerCoulombSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">BMS Currents (A)</h5>
-            {{ time_series_chart_block('slocumPowerBmsChart', show_depth=true, height='280px', spinner_id='slocumPowerBmsSpinner') }}
+            {{ time_series_chart_block('slocumPowerBmsChart', height='280px', spinner_id='slocumPowerBmsSpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumPowerLastDataFooter">
             {% if power_info and power_info.latest_timestamp_str and power_info.latest_timestamp_str != "N/A" %}
@@ -462,13 +462,16 @@
           </div>
           <div class="card-body">
             <h5 class="mt-2">Pitch — Measured vs Commanded (°)</h5>
-            {{ time_series_chart_block('slocumFlightPitchChart', show_depth=true, height='280px', spinner_id='slocumFlightPitchSpinner') }}
+            {{ time_series_chart_block('slocumFlightPitchChart', height='280px', spinner_id='slocumFlightPitchSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Roll — Measured vs Commanded (°)</h5>
-            {{ time_series_chart_block('slocumFlightRollChart', show_depth=true, height='280px', spinner_id='slocumFlightRollSpinner') }}
+            {{ time_series_chart_block('slocumFlightRollChart', height='280px', spinner_id='slocumFlightRollSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Fin — Measured vs Commanded (°)</h5>
-            {{ time_series_chart_block('slocumFlightFinChart', show_depth=true, height='280px', spinner_id='slocumFlightFinSpinner') }}
+            {{ time_series_chart_block('slocumFlightFinChart', height='280px', spinner_id='slocumFlightFinSpinner') }}
+            <hr class="my-4">
+            <h5 class="mt-2">Thruster — Power &amp; Commanded On</h5>
+            {{ time_series_chart_block('slocumFlightThrusterChart', height='280px', spinner_id='slocumFlightThrusterSpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumFlightLastDataFooter">
             {% if flight_info and flight_info.latest_timestamp_str and flight_info.latest_timestamp_str != "N/A" %}
@@ -489,19 +492,19 @@
           </div>
           <div class="card-body">
             <h5 class="mt-2">Heading — Measured vs Commanded (°)</h5>
-            {{ time_series_chart_block('slocumNavHeadingChart', show_depth=true, height='280px', spinner_id='slocumNavHeadingSpinner') }}
+            {{ time_series_chart_block('slocumNavHeadingChart', height='280px', spinner_id='slocumNavHeadingSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Depth Rate — Ascent / Descent (m/s)</h5>
-            {{ time_series_chart_block('slocumNavDepthRateChart', show_depth=true, height='280px', spinner_id='slocumNavDepthRateSpinner') }}
+            {{ time_series_chart_block('slocumNavDepthRateChart', height='280px', spinner_id='slocumNavDepthRateSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Depth &amp; Altimeter Water Depth (m)</h5>
             {{ time_series_chart_block('slocumNavDepthChart', show_depth=false, height='280px', spinner_id='slocumNavDepthSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Speed Over Ground (m/s)</h5>
-            {{ time_series_chart_block('slocumNavSpeedChart', show_depth=true, height='280px', spinner_id='slocumNavSpeedSpinner') }}
+            {{ time_series_chart_block('slocumNavSpeedChart', height='280px', spinner_id='slocumNavSpeedSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Depth-Averaged Currents (m/s)</h5>
-            {{ time_series_chart_block('slocumNavCurrentChart', show_depth=true, height='280px', spinner_id='slocumNavCurrentSpinner') }}
+            {{ time_series_chart_block('slocumNavCurrentChart', height='280px', spinner_id='slocumNavCurrentSpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumNavigationLastDataFooter">
             {% if navigation_info and navigation_info.latest_timestamp_str and navigation_info.latest_timestamp_str != "N/A" %}
@@ -522,14 +525,14 @@
           </div>
           <div class="card-body">
             <h5 class="mt-2">Vacuum (inHg)</h5>
-            {{ time_series_chart_block('slocumHealthVacuumChart', show_depth=true, height='280px', spinner_id='slocumHealthVacuumSpinner') }}
+            {{ time_series_chart_block('slocumHealthVacuumChart', height='280px', spinner_id='slocumHealthVacuumSpinner') }}
             <hr class="my-4">
-            <h5 class="mt-2">Leak Detect Voltage (V)</h5>
-            {{ time_series_chart_block('slocumHealthLeakChart', show_depth=true, height='280px', spinner_id='slocumHealthLeakSpinner') }}
+            <h5 class="mt-2">Leak Detect Channels (V)</h5>
+            {{ time_series_chart_block('slocumHealthLeakChart', height='280px', spinner_id='slocumHealthLeakSpinner') }}
             <hr class="my-4">
             <h5 class="mt-2">Surface Call Length (Connection Duration)</h5>
             <p class="text-muted small mb-2" id="slocumHealthSfmcNote" style="display: none;">SFMC connection durations are unavailable (not configured or not yet cached).</p>
-            {{ time_series_chart_block('slocumHealthCallChart', show_depth=true, height='280px', spinner_id='slocumHealthCallSpinner') }}
+            {{ time_series_chart_block('slocumHealthCallChart', height='280px', spinner_id='slocumHealthCallSpinner') }}
           </div>
           <div class="card-footer text-muted small" id="slocumVehicleHealthLastDataFooter">
             {% if vehicle_health_info and vehicle_health_info.latest_timestamp_str and vehicle_health_info.latest_timestamp_str != "N/A" %}

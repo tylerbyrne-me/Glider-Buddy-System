@@ -78,6 +78,9 @@ SLOCUM_DASHBOARD_VARIABLES = [
     "m_leakdetect_voltage",
     "m_leakdetect_voltage_forward",
     "m_leakdetect_voltage_science",
+    "m_digifin_leakdetect_reading",
+    "m_thruster_power",
+    "c_thruster_on",
 ]
 
 # Variables for CTD sensor card (conductivity, temperature, pressure, salinity, density)
@@ -114,6 +117,7 @@ SLOCUM_CHECKLIST_VARIABLES = [
     "m_leakdetect_voltage",
     "m_leakdetect_voltage_forward",
     "m_leakdetect_voltage_science",
+    "m_digifin_leakdetect_reading",
     "c_de_oil_vol",
     "m_de_oil_vol",
     "c_ballast_pumped",
@@ -124,6 +128,8 @@ SLOCUM_CHECKLIST_VARIABLES = [
     "m_bms_pitch_current",
     "m_bms_aft_current",
     "m_bms_ebay_current",
+    "m_thruster_power",
+    "c_thruster_on",
     "m_speed",
     "m_final_water_vx",
     "m_final_water_vy",

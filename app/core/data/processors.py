@@ -732,6 +732,16 @@ _SLOCUM_DASHBOARD_RENAME = {
     "m_leakdetect_voltage_science": "MLeakdetectVoltageScience",
     "m_leakdetect_voltage_science (volts)": "MLeakdetectVoltageScience",
     "m_leakdetect_voltage_science (V)": "MLeakdetectVoltageScience",
+    "m_digifin_leakdetect_reading": "MDigifinLeakdetectReading",
+    "m_digifin_leakdetect_reading (volts)": "MDigifinLeakdetectReading",
+    "m_digifin_leakdetect_reading (V)": "MDigifinLeakdetectReading",
+    "m_thruster_power": "MThrusterPower",
+    "m_thruster_power (watt)": "MThrusterPower",
+    "m_thruster_power (W)": "MThrusterPower",
+    "m_thruster_power (watts)": "MThrusterPower",
+    "c_thruster_on": "CThrusterOn",
+    "c_thruster_on (percent)": "CThrusterOn",
+    "c_thruster_on (%)": "CThrusterOn",
     "latitude (degrees_north)": "Latitude",
     "longitude (degrees_east)": "Longitude",
     # ERDDAP also emits radians for attitude; preprocess converts to degrees.
@@ -807,6 +817,9 @@ _SLOCUM_DASHBOARD_STEMS: dict[str, str] = {
     "m_leakdetect_voltage": "MLeakdetectVoltage",
     "m_leakdetect_voltage_forward": "MLeakdetectVoltageForward",
     "m_leakdetect_voltage_science": "MLeakdetectVoltageScience",
+    "m_digifin_leakdetect_reading": "MDigifinLeakdetectReading",
+    "m_thruster_power": "MThrusterPower",
+    "c_thruster_on": "CThrusterOn",
 }
 
 _SLOCUM_CHECKLIST_STEMS: dict[str, str] = {
@@ -832,11 +845,13 @@ _SLOCUM_CHECKLIST_STD_COLS = [
     "MBattery", "MCoulombAmphrTotal", "MCoulombCurrent",
     "MVacuum",
     "MLeakdetectVoltage", "MLeakdetectVoltageForward", "MLeakdetectVoltageScience",
+    "MDigifinLeakdetectReading",
     "CDeOilVol", "MDeOilVol",
     "CBallastPumped", "MBallastPumped",
     "CBattpos", "MBattpos",
     "MDepthRateAvgFinal",
     "MBmsPitchCurrent", "MBmsAftCurrent", "MBmsEbayCurrent",
+    "MThrusterPower", "CThrusterOn",
     "MSpeed", "MFinalWaterVx", "MFinalWaterVy",
     "MGpsLat", "MGpsLon",
     "CWptLat", "CWptLon",
@@ -1006,6 +1021,8 @@ def preprocess_slocum_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
         "MFinalWaterVx", "MFinalWaterVy",
         "MVacuum",
         "MLeakdetectVoltage", "MLeakdetectVoltageForward", "MLeakdetectVoltageScience",
+        "MDigifinLeakdetectReading",
+        "MThrusterPower", "CThrusterOn",
     ]
     df_processed = _initial_dataframe_setup(df, "Timestamp")
     if df_processed.empty:

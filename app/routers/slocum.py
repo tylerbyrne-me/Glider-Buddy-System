@@ -246,6 +246,9 @@ _SLOCUM_VARIABLE_TO_COLUMN = {
     "m_leakdetect_voltage": "MLeakdetectVoltage",
     "m_leakdetect_voltage_forward": "MLeakdetectVoltageForward",
     "m_leakdetect_voltage_science": "MLeakdetectVoltageScience",
+    "m_digifin_leakdetect_reading": "MDigifinLeakdetectReading",
+    "m_thruster_power": "MThrusterPower",
+    "c_thruster_on": "CThrusterOn",
     "conductivity": "Conductivity",
     "temperature": "Temperature",
     "pressure": "Pressure",
@@ -310,6 +313,9 @@ _SLOCUM_CSV_COLUMN_RENAME = {
     "MLeakdetectVoltage": "m_leakdetect_voltage",
     "MLeakdetectVoltageForward": "m_leakdetect_voltage_forward",
     "MLeakdetectVoltageScience": "m_leakdetect_voltage_science",
+    "MDigifinLeakdetectReading": "m_digifin_leakdetect_reading",
+    "MThrusterPower": "m_thruster_power",
+    "CThrusterOn": "c_thruster_on",
 }
 
 _SLOCUM_CHART_VARIABLES = [
@@ -322,6 +328,8 @@ _SLOCUM_CHART_VARIABLES = [
     "m_final_water_vx", "m_final_water_vy",
     "m_vacuum",
     "m_leakdetect_voltage", "m_leakdetect_voltage_forward", "m_leakdetect_voltage_science",
+    "m_digifin_leakdetect_reading",
+    "m_thruster_power", "c_thruster_on",
     "coulomb_amphr_daily", "water_depth_altimeter", "water_current_speed",
     "conductivity", "temperature", "pressure", "salinity", "density",
 ]
@@ -586,7 +594,8 @@ _SLOCUM_CSV_EMPTY_HEADER = (
     "m_battery,m_coulomb_amphr_total,m_coulomb_current,"
     "m_bms_pitch_current,m_bms_aft_current,m_bms_ebay_current,"
     "m_speed,m_depth_rate_avg_final,m_final_water_vx,m_final_water_vy,"
-    "m_vacuum,m_leakdetect_voltage,m_leakdetect_voltage_forward,m_leakdetect_voltage_science\n"
+    "m_vacuum,m_leakdetect_voltage,m_leakdetect_voltage_forward,m_leakdetect_voltage_science,"
+    "m_digifin_leakdetect_reading,m_thruster_power,c_thruster_on\n"
 )
 
 

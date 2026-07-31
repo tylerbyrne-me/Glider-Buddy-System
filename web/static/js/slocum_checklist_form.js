@@ -26,7 +26,20 @@ const PLOTTABLE_ITEM_IDS = new Set([
     'fin_val',
     'battpos_val',
     'oil_vol_val',
+    'water_depth_val',
+    'bms_currents_val',
+    'leakdetect_val',
+    'thruster_val',
 ]);
+
+const MULTI_SERIES_COLORS = [
+    '#fd7e14',
+    '#2f9e44',
+    '#ae3ec9',
+    '#e03131',
+    '#1098ad',
+    '#f08c00',
+];
 
 document.addEventListener('DOMContentLoaded', async () => {
     registerForceUtcTimeDisplayPlugin();
@@ -284,19 +297,40 @@ document.addEventListener('DOMContentLoaded', async () => {
         return start === end ? start : `${start}–${end}`;
     }
 
-    function buildPlotHeading({ vehicleName, variableLabel, unit, windowLabel, commandedLabel }) {
-        const varBit = unit ? `${variableLabel} (${unit})` : variableLabel;
-        const cmdBit = commandedLabel
-            ? (unit ? ` / ${commandedLabel} (${unit})` : ` / ${commandedLabel}`)
-            : '';
+    function buildPlotHeading({ vehicleName, variableLabel, unit, windowLabel, commandedLabel, seriesLabels }) {
+        let varBit;
+        if (Array.isArray(seriesLabels) && seriesLabels.length) {
+            varBit = seriesLabels.join(' / ');
+        } else {
+            varBit = unit ? `${variableLabel} (${unit})` : variableLabel;
+            if (commandedLabel) {
+                varBit += unit
+                    ? ` / ${commandedLabel} (${unit})`
+                    : ` / ${commandedLabel}`;
+            }
+        }
         const dateBit = windowLabel ? ` · ${windowLabel}` : '';
         return {
-            modalTitle: `${vehicleName} · ${varBit}${cmdBit}${dateBit}`,
+            modalTitle: `${vehicleName} · ${varBit}${dateBit}`,
             chartTitle: [
-                `${vehicleName} · ${varBit}${cmdBit}`,
+                `${vehicleName} · ${varBit}`,
                 windowLabel ? `Data window (UTC): ${windowLabel}` : 'Data window (UTC): N/A',
             ],
         };
+    }
+
+    function mapSeriesPoints(rawPoints) {
+        return (rawPoints || [])
+            .map((p) => ({ x: toUtcDate(p.t), y: p.v }))
+            .filter((p) => p.x != null);
+    }
+
+    function seriesAxisTitle(seriesList, axisId) {
+        const matching = (seriesList || []).filter((s) => s.axis === axisId);
+        if (!matching.length) return null;
+        const parts = matching.map((s) => (s.unit ? `${s.label} (${s.unit})` : s.label));
+        // Deduplicate identical titles
+        return [...new Set(parts)].join(' / ');
     }
 
     async function openChecklistPlot(itemId) {
@@ -321,42 +355,62 @@ document.addEventListener('DOMContentLoaded', async () => {
             const label = payload.label || itemId;
             const unit = payload.unit || '';
             const commandedLabel = payload.commanded_label || null;
-            const depthPts = (payload.depth || [])
-                .map((p) => ({ x: toUtcDate(p.t), y: p.v }))
-                .filter((p) => p.x != null);
-            const valuePts = (payload.values || [])
-                .map((p) => ({ x: toUtcDate(p.t), y: p.v }))
-                .filter((p) => p.x != null);
-            const commandedPts = (payload.commanded || [])
-                .map((p) => ({ x: toUtcDate(p.t), y: p.v }))
-                .filter((p) => p.x != null);
-            const windowLabel = dataWindowYYYYMMDD(depthPts, valuePts, commandedPts);
+            const depthPts = mapSeriesPoints(payload.depth);
+            const valuePts = mapSeriesPoints(payload.values);
+            const commandedPts = mapSeriesPoints(payload.commanded);
+            const multiSeries = (payload.series || []).map((s, idx) => ({
+                id: s.id || s.column || `series_${idx}`,
+                label: s.label || s.id || `series_${idx}`,
+                unit: s.unit || '',
+                axis: s.axis === 'y3' ? 'y3' : 'y2',
+                points: mapSeriesPoints(s.points),
+            }));
+
+            const windowSeries = [depthPts, valuePts, commandedPts, ...multiSeries.map((s) => s.points)];
+            const windowLabel = dataWindowYYYYMMDD(...windowSeries);
+            const seriesLabels = multiSeries.length
+                ? multiSeries.map((s) => (s.unit ? `${s.label} (${s.unit})` : s.label))
+                : null;
             const heading = buildPlotHeading({
                 vehicleName,
                 variableLabel: label,
                 unit,
                 windowLabel,
                 commandedLabel,
+                seriesLabels,
             });
             if (titleEl) titleEl.textContent = heading.modalTitle;
 
             const depthValid = depthPts.filter((p) => p.y != null && !Number.isNaN(p.y)).length;
             const valueValid = valuePts.filter((p) => p.y != null && !Number.isNaN(p.y)).length;
             const commandedValid = commandedPts.filter((p) => p.y != null && !Number.isNaN(p.y)).length;
-            if (!depthValid && !valueValid && !commandedValid) {
+            const multiValidCounts = multiSeries.map((s) => ({
+                label: s.label,
+                n: s.points.filter((p) => p.y != null && !Number.isNaN(p.y)).length,
+            }));
+            const multiValidTotal = multiValidCounts.reduce((acc, s) => acc + s.n, 0);
+            if (!depthValid && !valueValid && !commandedValid && !multiValidTotal) {
                 setPlotStatus('No samples in the checklist window.', true);
                 return;
             }
-            const cmdStatus = commandedLabel
-                ? ` / ${commandedValid} commanded`
-                : '';
+
+            let statusDetail;
+            if (multiSeries.length) {
+                statusDetail = multiValidCounts
+                    .map((s) => `${s.n} ${s.label}`)
+                    .join(' / ');
+            } else {
+                const cmdStatus = commandedLabel ? ` / ${commandedValid} commanded` : '';
+                statusDetail = `${valueValid} measured${cmdStatus}`;
+            }
             setPlotStatus(
                 `${vehicleName} · ${windowLabel || 'no dates'} · `
-                + `${valueValid} measured${cmdStatus} / ${depthValid} depth sample(s) (full resolution)`,
+                + `${statusDetail} / ${depthValid} depth sample(s) (full resolution)`,
             );
             renderPlotChart(label, unit, depthPts, valuePts, heading.chartTitle, {
                 commandedPts,
                 commandedLabel,
+                multiSeries,
             });
         } catch (error) {
             setPlotStatus(`Failed to load plot: ${error.message}`, true);
@@ -372,17 +426,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         const colors = chartThemeColors();
         const commandedPts = extras.commandedPts || [];
         const commandedLabel = extras.commandedLabel || null;
+        const multiSeries = extras.multiSeries || [];
         const measuredAxisTitle = unit ? `${label} (${unit})` : label;
         const commandedAxisTitle = commandedLabel
             ? (unit ? `${commandedLabel} (${unit})` : commandedLabel)
             : null;
-        const valueAxisTitle = commandedAxisTitle
-            ? `${measuredAxisTitle} / ${commandedAxisTitle}`
-            : measuredAxisTitle;
         const depthAxisTitle = 'Depth (m)';
+        const y2Title = multiSeries.length
+            ? (seriesAxisTitle(multiSeries, 'y2') || 'Value')
+            : (commandedAxisTitle
+                ? `${measuredAxisTitle} / ${commandedAxisTitle}`
+                : measuredAxisTitle);
+        const y3Title = multiSeries.length ? seriesAxisTitle(multiSeries, 'y3') : null;
         const titleText = Array.isArray(chartTitleLines) && chartTitleLines.length
             ? chartTitleLines
-            : [`${valueAxisTitle}  ·  ${depthAxisTitle}`];
+            : [`${y2Title}${y3Title ? ` · ${y3Title}` : ''}  ·  ${depthAxisTitle}`];
 
         const datasets = [
             {
@@ -400,7 +458,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                 spanGaps: false,
                 order: 3,
             },
-            {
+        ];
+
+        if (multiSeries.length) {
+            multiSeries.forEach((s, idx) => {
+                if (!s.points.length) return;
+                const color = MULTI_SERIES_COLORS[idx % MULTI_SERIES_COLORS.length];
+                const seriesLabel = s.unit ? `${s.label} (${s.unit})` : s.label;
+                datasets.push({
+                    type: 'scatter',
+                    label: seriesLabel,
+                    data: s.points,
+                    borderColor: color,
+                    backgroundColor: color,
+                    pointBackgroundColor: color,
+                    pointBorderColor: color,
+                    yAxisID: s.axis === 'y3' ? 'y3' : 'y2',
+                    pointRadius: 3.5,
+                    pointHoverRadius: 6,
+                    pointStyle: s.axis === 'y3' ? 'rectRot' : 'circle',
+                    order: 1,
+                });
+            });
+        } else {
+            datasets.push({
                 type: 'scatter',
                 label: measuredAxisTitle,
                 data: valuePts,
@@ -412,30 +493,30 @@ document.addEventListener('DOMContentLoaded', async () => {
                 pointRadius: 3.5,
                 pointHoverRadius: 6,
                 order: 1,
-            },
-        ];
-        if (commandedAxisTitle && commandedPts.length) {
-            datasets.push({
-                type: 'scatter',
-                label: commandedAxisTitle,
-                data: commandedPts,
-                borderColor: colors.commanded,
-                backgroundColor: colors.commanded,
-                pointBackgroundColor: colors.commanded,
-                pointBorderColor: colors.commanded,
-                yAxisID: 'y2',
-                pointRadius: 3.5,
-                pointHoverRadius: 6,
-                pointStyle: 'triangle',
-                order: 2,
             });
+            if (commandedAxisTitle && commandedPts.length) {
+                datasets.push({
+                    type: 'scatter',
+                    label: commandedAxisTitle,
+                    data: commandedPts,
+                    borderColor: colors.commanded,
+                    backgroundColor: colors.commanded,
+                    pointBackgroundColor: colors.commanded,
+                    pointBorderColor: colors.commanded,
+                    yAxisID: 'y2',
+                    pointRadius: 3.5,
+                    pointHoverRadius: 6,
+                    pointStyle: 'triangle',
+                    order: 2,
+                });
+            }
         }
 
         const chartOptions = {
             responsive: true,
             maintainAspectRatio: false,
             layout: {
-                padding: { top: 8, right: 12, bottom: 4, left: 8 },
+                padding: { top: 8, right: y3Title ? 18 : 12, bottom: 4, left: 8 },
             },
             interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
             plugins: {
@@ -488,7 +569,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                             const name = ctx.dataset.label || 'Value';
                             if (v == null || Number.isNaN(v)) return `${name}: N/A`;
 
-                            if (ctx.dataset.type === 'scatter' || ctx.dataset.yAxisID === 'y2') {
+                            if (
+                                ctx.dataset.type === 'scatter'
+                                || ctx.dataset.yAxisID === 'y2'
+                                || ctx.dataset.yAxisID === 'y3'
+                            ) {
                                 const depthM = nearestWholeDepthMeters(
                                     depthPts,
                                     -1,
@@ -542,7 +627,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     position: 'right',
                     title: {
                         display: true,
-                        text: valueAxisTitle,
+                        text: y2Title,
                         color: colors.value,
                         font: { size: 13, weight: '600' },
                     },
@@ -551,6 +636,21 @@ document.addEventListener('DOMContentLoaded', async () => {
                 },
             },
         };
+        if (y3Title) {
+            chartOptions.scales.y3 = {
+                type: 'linear',
+                position: 'right',
+                offset: true,
+                title: {
+                    display: true,
+                    text: y3Title,
+                    color: MULTI_SERIES_COLORS[3],
+                    font: { size: 13, weight: '600' },
+                },
+                ticks: { color: MULTI_SERIES_COLORS[3] },
+                grid: { drawOnChartArea: false },
+            };
+        }
         applyTimeAxisZoom(chartOptions);
 
         plotChart = new Chart(canvas.getContext('2d'), {

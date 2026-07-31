@@ -808,12 +808,36 @@ def build_checklist_autofill_snapshot(
         if "MLeakdetectVoltageScience" in df.columns
         else pd.Series(dtype=float)
     )
-    any_spike = bool(leak_main["spike_flag"] or leak_fwd["spike_flag"] or leak_sci["spike_flag"])
+    leak_digifin = compute_leak_channel_stats(
+        df["MDigifinLeakdetectReading"]
+        if "MDigifinLeakdetectReading" in df.columns
+        else pd.Series(dtype=float)
+    )
+    any_spike = bool(
+        leak_main["spike_flag"]
+        or leak_fwd["spike_flag"]
+        or leak_sci["spike_flag"]
+        or leak_digifin["spike_flag"]
+    )
     leak_display = (
         f"main: {leak_main['display']} || forward: {leak_fwd['display']} || "
-        f"science: {leak_sci['display']}"
+        f"science: {leak_sci['display']} || digifin: {leak_digifin['display']}"
         + (" — REVIEW SPIKES" if any_spike else "")
     )
+
+    thruster_power = (
+        _latest_valid(df["MThrusterPower"]) if "MThrusterPower" in df.columns else None
+    )
+    thruster_on = (
+        _latest_valid(df["CThrusterOn"]) if "CThrusterOn" in df.columns else None
+    )
+    if thruster_power is None and thruster_on is None:
+        thruster_display = "N/A (no samples in window / not on dataset)"
+    else:
+        thruster_display = (
+            f"m_thruster_power={_fmt_num(thruster_power, 1)} W | "
+            f"c_thruster_on={_fmt_num(thruster_on, 1)} %"
+        )
 
     density_series = (
         df["Density"]
@@ -986,6 +1010,7 @@ def build_checklist_autofill_snapshot(
         "water_depth_val": water_depth_display,
         "approx_water_depth_val": approx_water_depth_display,
         "bms_currents_val": bms_display,
+        "thruster_val": thruster_display,
         "leakdetect_val": leak_display,
         "density_range_val": density["display"],
         "u_alt_min_depth_ref_val": format_reference_display(refs.get("u_alt_min_depth")),
@@ -996,9 +1021,10 @@ def build_checklist_autofill_snapshot(
 
 
 # Checklist form item id → raw series for Plot-it popups.
-# Optional commanded_column / commanded_label add a second scatter series.
+# Legacy: single ``column`` (+ optional ``commanded_*``) share axis y2 with depth on y.
+# Multi: ``series`` list of {column, label, unit, axis} (axis y2 or y3).
 # resolve_buoyancy=true picks oil vs ballast via resolve_buoyancy_columns(+ depth_class).
-CHECKLIST_PLOTTABLE_ITEMS: dict[str, dict[str, str]] = {
+CHECKLIST_PLOTTABLE_ITEMS: dict[str, Any] = {
     "depth_rate_val": {
         "column": "MDepthRateAvgFinal",
         "label": "m_depth_rate_avg_final",
@@ -1043,13 +1069,90 @@ CHECKLIST_PLOTTABLE_ITEMS: dict[str, dict[str, str]] = {
         "commanded_label": "c_de_oil_vol",
         "resolve_buoyancy": "true",
     },
+    "water_depth_val": {
+        "column": "MWaterDepth",
+        "label": "m_water_depth",
+        "unit": "m",
+    },
+    "bms_currents_val": {
+        "label": "m_bms_currents",
+        "unit": "A",
+        "series": [
+            {
+                "column": "MBmsPitchCurrent",
+                "label": "m_bms_pitch_current",
+                "unit": "A",
+                "axis": "y2",
+            },
+            {
+                "column": "MBmsAftCurrent",
+                "label": "m_bms_aft_current",
+                "unit": "A",
+                "axis": "y2",
+            },
+            {
+                "column": "MBmsEbayCurrent",
+                "label": "m_bms_ebay_current",
+                "unit": "A",
+                "axis": "y2",
+            },
+        ],
+    },
+    "leakdetect_val": {
+        "label": "leak detect channels",
+        "unit": "V",
+        "series": [
+            {
+                "column": "MLeakdetectVoltage",
+                "label": "m_leakdetect_voltage",
+                "unit": "V",
+                "axis": "y2",
+            },
+            {
+                "column": "MLeakdetectVoltageForward",
+                "label": "m_leakdetect_voltage_forward",
+                "unit": "V",
+                "axis": "y2",
+            },
+            {
+                "column": "MLeakdetectVoltageScience",
+                "label": "m_leakdetect_voltage_science",
+                "unit": "V",
+                "axis": "y2",
+            },
+            {
+                "column": "MDigifinLeakdetectReading",
+                "label": "m_digifin_leakdetect_reading",
+                "unit": "V",
+                "axis": "y3",
+            },
+        ],
+    },
+    "thruster_val": {
+        "label": "thruster",
+        "unit": "",
+        "series": [
+            {
+                "column": "MThrusterPower",
+                "label": "m_thruster_power",
+                "unit": "W",
+                "axis": "y2",
+            },
+            {
+                "column": "CThrusterOn",
+                "label": "c_thruster_on",
+                "unit": "%",
+                "axis": "y3",
+            },
+        ],
+    },
 }
 
 CHECKLIST_SERIES_MAX_HOURS_BACK = 168
 CHECKLIST_SERIES_DEPTH_COLUMN = "MDepth"
 
 
-def get_plottable_spec(item_id: str) -> Optional[dict[str, str]]:
+def get_plottable_spec(item_id: str) -> Optional[dict[str, Any]]:
     """Return plottable spec for a checklist item id, or None if not plottable."""
     if not item_id:
         return None
@@ -1103,7 +1206,10 @@ def build_checklist_series_payload(
     depth_class: Optional[str] = None,
 ) -> dict[str, Any]:
     """
-    Build Plot-it JSON: depth + measured value (+ optional commanded) over time.
+    Build Plot-it JSON: depth + measured value(s) over time.
+
+    Legacy specs use ``column`` (+ optional ``commanded_*``).
+    Multi-series specs use ``series`` list with per-series ``axis`` (y2/y3).
     Raises ``KeyError`` when ``item_id`` is not in the plottable registry.
     """
     spec = get_plottable_spec(item_id)
@@ -1111,12 +1217,53 @@ def build_checklist_series_payload(
         raise KeyError(item_id)
 
     df = checklist_df if checklist_df is not None else pd.DataFrame()
+    depth_points = _series_points_non_null(df, CHECKLIST_SERIES_DEPTH_COLUMN)
 
-    measured_col = spec["column"]
-    measured_label = spec["label"]
+    # Multi-series path (BMS, leak detect, thruster, …)
+    series_specs = spec.get("series")
+    if isinstance(series_specs, list) and series_specs:
+        series_out: list[dict[str, Any]] = []
+        for entry in series_specs:
+            if not isinstance(entry, dict):
+                continue
+            col = str(entry.get("column") or "").strip()
+            if not col:
+                continue
+            label = str(entry.get("label") or col)
+            unit = str(entry.get("unit") or "")
+            axis = str(entry.get("axis") or "y2")
+            if axis not in ("y2", "y3"):
+                axis = "y2"
+            series_out.append(
+                {
+                    "id": col,
+                    "label": label,
+                    "unit": unit,
+                    "axis": axis,
+                    "column": col,
+                    "points": _series_points_non_null(df, col),
+                }
+            )
+        primary = series_out[0] if series_out else {}
+        return {
+            "item_id": item_id,
+            "label": str(spec.get("label") or primary.get("label") or item_id),
+            "unit": str(spec.get("unit") or primary.get("unit") or ""),
+            "column": primary.get("column"),
+            "commanded_label": None,
+            "commanded_column": None,
+            "depth": depth_points,
+            "values": [],
+            "commanded": [],
+            "series": series_out,
+            "cache_metadata": cache_metadata or {},
+        }
+
+    measured_col = spec.get("column") or ""
+    measured_label = spec.get("label") or measured_col or item_id
     commanded_col = spec.get("commanded_column")
     commanded_label = spec.get("commanded_label")
-    unit = spec["unit"]
+    unit = spec.get("unit") or ""
 
     if spec.get("resolve_buoyancy") == "true":
         meas, cmd, buoy_label = resolve_buoyancy_columns(df, depth_class)
@@ -1145,12 +1292,13 @@ def build_checklist_series_payload(
         "item_id": item_id,
         "label": measured_label,
         "unit": unit,
-        "column": measured_col or spec["column"],
+        "column": measured_col or spec.get("column"),
         "commanded_label": commanded_label,
         "commanded_column": commanded_col,
-        "depth": _series_points_non_null(df, CHECKLIST_SERIES_DEPTH_COLUMN),
+        "depth": depth_points,
         "values": values,
         "commanded": commanded_points,
+        "series": [],
         "cache_metadata": cache_metadata or {},
     }
 

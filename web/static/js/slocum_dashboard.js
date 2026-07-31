@@ -141,7 +141,10 @@ const TIME_SERIES_CARD_CONFIGS = {
         ],
     },
     flight: {
-        variables: ['m_pitch', 'c_pitch', 'm_roll', 'c_roll', 'm_fin', 'c_fin', 'm_depth'],
+        variables: [
+            'm_pitch', 'c_pitch', 'm_roll', 'c_roll', 'm_fin', 'c_fin',
+            'm_thruster_power', 'c_thruster_on', 'm_depth',
+        ],
         footerId: 'slocumFlightLastDataFooter',
         charts: [
             {
@@ -169,6 +172,16 @@ const TIME_SERIES_CARD_CONFIGS = {
                 series: [
                     { key: 'm_fin', label: 'Measured' },
                     { key: 'c_fin', label: 'Commanded', dashed: true },
+                ],
+            },
+            {
+                canvasId: 'slocumFlightThrusterChart',
+                spinnerId: 'slocumFlightThrusterSpinner',
+                yLabel: 'Power (W)',
+                y2Label: 'Commanded on (%)',
+                series: [
+                    { key: 'm_thruster_power', label: 'Thruster power', yAxisID: 'y' },
+                    { key: 'c_thruster_on', label: 'Commanded on', yAxisID: 'y1', dashed: true },
                 ],
             },
         ],
@@ -232,6 +245,7 @@ const TIME_SERIES_CARD_CONFIGS = {
             'm_leakdetect_voltage',
             'm_leakdetect_voltage_forward',
             'm_leakdetect_voltage_science',
+            'm_digifin_leakdetect_reading',
             'm_depth',
         ],
         footerId: 'slocumVehicleHealthLastDataFooter',
@@ -245,11 +259,13 @@ const TIME_SERIES_CARD_CONFIGS = {
             {
                 canvasId: 'slocumHealthLeakChart',
                 spinnerId: 'slocumHealthLeakSpinner',
-                yLabel: 'Voltage (V)',
+                yLabel: 'Leak detect (V)',
+                y2Label: 'Digifin (V)',
                 series: [
                     { key: 'm_leakdetect_voltage', label: 'Leak detect' },
                     { key: 'm_leakdetect_voltage_forward', label: 'Forward' },
                     { key: 'm_leakdetect_voltage_science', label: 'Science' },
+                    { key: 'm_digifin_leakdetect_reading', label: 'Digifin', yAxisID: 'y1' },
                 ],
             },
         ],

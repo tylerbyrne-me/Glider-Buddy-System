@@ -217,8 +217,14 @@ def get_slocum_daily_checklist_schema() -> models.MissionFormSchema:
                         value="N/A",
                     ),
                     models.FormItem(
+                        id="thruster_val",
+                        label="m_thruster_power / c_thruster_on",
+                        item_type=models.FormItemTypeEnum.AUTOFILLED_VALUE,
+                        value="N/A",
+                    ),
+                    models.FormItem(
                         id="leakdetect_val",
-                        label="Leak detect channels (24h range / spikes)",
+                        label="Leak detect channels (main/forward/science/digifin; 24h range / spikes)",
                         item_type=models.FormItemTypeEnum.AUTOFILLED_VALUE,
                         value="N/A",
                     ),
