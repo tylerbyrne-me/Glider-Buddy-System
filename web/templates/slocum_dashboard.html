@@ -149,6 +149,26 @@
         </div>
       </div>
       {% endif %}
+      {% if "dmon" in (slocum_enabled_sensor_cards or []) %}
+      <div class="summary-card" data-category="dmon" data-mini-trend='{{ dmon_info.mini_trend | tojson | safe if dmon_info and "mini_trend" in dmon_info and dmon_info.mini_trend is not none else "[]" }}'{% if dmon_info and dmon_info.get('asc_gap_state') %} data-asc-gap-state="{{ dmon_info.asc_gap_state }}"{% endif %}>
+        <div class="summary-card-main-content">
+          <div class="mini-chart-container">
+            <canvas id="miniDmonChart"></canvas>
+          </div>
+          <div class="summary-card-text-content">
+            <h5>DMON {% if dmon_info and dmon_info.get('asc_gap_state') %}<span class="ess-indicator {% if dmon_info.asc_gap_state == 'gap' %}ess-extreme{% else %}ess-calm{% endif %}" id="dmonAscGapIndicator" title="{% if dmon_info.asc_gap_state == 'gap' %}ASC gap &gt;16h — review offload continuity{% else %}No ASC gap &gt;16h in last 48h{% endif %}" aria-label="ASC gap status: {{ dmon_info.asc_gap_state }}"></span>{% else %}<span class="ess-indicator" id="dmonAscGapIndicator" style="display: none;" aria-hidden="true"></span>{% endif %}</h5>
+            <div class="mini-summary">
+              {% if dmon_info and dmon_values %}
+                Bytes: {{ "%.0f"|format(dmon_values.get('SciDmonMsgByteCount')) if dmon_values.get('SciDmonMsgByteCount') is not none else 'N/A' }}
+              {% else %} N/A {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="summary-card-footer text-muted small">
+          {{ dmon_info.time_ago_str if dmon_info else 'N/A' }}
+        </div>
+      </div>
+      {% endif %}
     </div>
 
     <!-- Right Main Display Area -->
@@ -356,6 +376,7 @@
         or "navigation" in (slocum_enabled_sensor_cards or [])
         or "vehicle_health" in (slocum_enabled_sensor_cards or [])
         or "dissolved_oxygen" in (slocum_enabled_sensor_cards or [])
+        or "dmon" in (slocum_enabled_sensor_cards or [])
       ) %}
       {% if _has_slocum_charts %}
       <div class="card mb-3" id="slocumSharedChartToolbar" style="display: none;">
@@ -561,6 +582,46 @@
           </div>
           <div class="card-footer text-muted small" id="slocumDoLastDataFooter">
             Last data: N/A
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if "dmon" in (slocum_enabled_sensor_cards or []) %}
+      <div class="category-detail-view card mb-4" id="detail-dmon" style="display: none;">
+        <div class="card h-100">
+          <div class="card-header">
+            <h2 class="mb-0">{{ dataset }} - DMON</h2>
+          </div>
+          <div class="card-body">
+            <h5 class="mt-2">DMON Message Byte Count</h5>
+            {{ time_series_chart_block('slocumDmonByteCountChart', height='280px', spinner_id='slocumDmonByteCountSpinner') }}
+            <hr class="my-4">
+            <h5 class="mt-2">*.asc Files (last 48h, SFMC from-glider)</h5>
+            <p class="text-muted small mb-2" id="slocumDmonAscNote" style="display: none;">SFMC *.asc listing is unavailable (not configured or not yet cached).</p>
+            <div id="slocumDmonAscGapBanner" class="alert alert-warning py-2 px-3 small" style="display: none;" role="alert"></div>
+            <div class="table-responsive">
+              <table class="table table-sm table-striped align-middle mb-0" id="slocumDmonAscTable">
+                <thead>
+                  <tr>
+                    <th scope="col">File</th>
+                    <th scope="col">Modified (UTC)</th>
+                    <th scope="col">Size</th>
+                    <th scope="col">Gap after prev</th>
+                  </tr>
+                </thead>
+                <tbody id="slocumDmonAscTableBody">
+                  <tr><td colspan="4" class="text-muted small">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="card-footer text-muted small" id="slocumDmonLastDataFooter">
+            {% if dmon_info and dmon_info.latest_timestamp_str and dmon_info.latest_timestamp_str != "N/A" %}
+              Last data: {{ dmon_info.latest_timestamp_str }} ({{ dmon_info.time_ago_str }})
+            {% else %}
+              Last data: N/A
+            {% endif %}
           </div>
         </div>
       </div>

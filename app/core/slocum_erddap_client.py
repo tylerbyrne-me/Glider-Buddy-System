@@ -81,6 +81,7 @@ SLOCUM_DASHBOARD_VARIABLES = [
     "m_digifin_leakdetect_reading",
     "m_thruster_power",
     "c_thruster_on",
+    "sci_dmon_msg_byte_count",
 ]
 
 # Variables for CTD sensor card (conductivity, temperature, pressure, salinity, density)
@@ -138,6 +139,7 @@ SLOCUM_CHECKLIST_VARIABLES = [
     "c_wpt_lat",
     "c_wpt_lon",
     "density",
+    "sci_dmon_msg_byte_count",
 ]
 
 # Timeout in seconds for ERDDAP HTTP requests (avoids hanging on slow/unresponsive server)

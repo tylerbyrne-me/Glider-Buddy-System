@@ -103,12 +103,33 @@ def pick_typical_hours_since(hours_map: Any) -> Optional[float]:
 def _parse_sfmc_dt(value: Any) -> Optional[datetime]:
     if value is None:
         return None
+    if isinstance(value, (int, float)):
+        # Epoch seconds or milliseconds
+        ts = float(value)
+        if ts > 1e12:
+            ts = ts / 1000.0
+        try:
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return None
     text = str(value).strip()
     if not text:
         return None
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M:%SZ"):
+    if text.isdigit():
+        return _parse_sfmc_dt(int(text))
+    for fmt in (
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%dT%H:%M:%S",
+        "%Y-%m-%dT%H:%M:%SZ",
+        "%Y%m%d%H%M%S",
+        "%Y%m%d%H%M",
+        "%Y-%m-%d %H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S.%f",
+        "%Y-%m-%dT%H:%M:%S.%fZ",
+    ):
         try:
-            dt = datetime.strptime(text.replace("Z", ""), fmt.replace("Z", ""))
+            cleaned = text.replace("Z", "")
+            dt = datetime.strptime(cleaned[:26], fmt.replace("Z", ""))
             return dt.replace(tzinfo=timezone.utc)
         except ValueError:
             continue
@@ -437,7 +458,7 @@ def merge_sfmc_checklist_values(*parts: dict[str, str]) -> dict[str, str]:
         for key, value in (part or {}).items():
             if key.startswith("_"):
                 continue
-            if key == "connection_durations":
+            if key in ("connection_durations", "dmon_asc_files"):
                 continue
             if value is None:
                 continue
@@ -447,6 +468,134 @@ def merge_sfmc_checklist_values(*parts: dict[str, str]) -> dict[str, str]:
     # Never autofill pilot altitude min depth from SFMC
     merged.pop("u_alt_min_depth_val", None)
     return merged
+
+
+DMON_ASC_GAP_HOURS = 16.0
+DMON_ASC_WINDOW_HOURS = 48.0
+
+
+def normalize_dmon_asc_files(
+    entries: Any,
+    *,
+    now: Optional[datetime] = None,
+    window_hours: float = DMON_ASC_WINDOW_HOURS,
+    gap_hours: float = DMON_ASC_GAP_HOURS,
+) -> dict[str, Any]:
+    """
+    Normalize SFMC folder entries into a DMON ASC summary for dashboard/checklist.
+
+    Returns::
+        {
+          "files": [{fileName, dateTimeModified, fileSize, gap_after_prev_hours?}],
+          "hours_since_last": float | None,
+          "has_gap_over_16h": bool,
+          "file_count": int,
+          "summary": str,
+        }
+    """
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+
+    parsed: list[dict[str, Any]] = []
+    if isinstance(entries, list):
+        for item in entries:
+            if not isinstance(item, dict):
+                continue
+            name = (
+                item.get("fileName")
+                or item.get("filename")
+                or item.get("name")
+                or item.get("path")
+            )
+            if not name:
+                continue
+            name_s = str(name).strip()
+            if not name_s.lower().endswith(".asc"):
+                continue
+            modified_raw = (
+                item.get("dateTimeModified")
+                or item.get("lastModified")
+                or item.get("modified")
+                or item.get("mtime")
+            )
+            modified_dt = _parse_sfmc_dt(modified_raw)
+            if modified_dt is None:
+                continue
+            size = item.get("fileSize")
+            try:
+                size_n = int(size) if size is not None else None
+            except (TypeError, ValueError):
+                size_n = None
+            parsed.append(
+                {
+                    "fileName": name_s,
+                    "dateTimeModified": modified_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "fileSize": size_n,
+                    "_dt": modified_dt,
+                }
+            )
+
+    parsed.sort(key=lambda row: row["_dt"])
+
+    window_cutoff = now - timedelta(hours=max(0.0, float(window_hours)))
+    in_window = [row for row in parsed if row["_dt"] >= window_cutoff]
+    # If nothing in window but we have older files (fallback listing), keep newest only
+    # so hours_since_last still works.
+    using_fallback = not in_window and bool(parsed)
+    files_src = in_window if in_window else (parsed[-1:] if parsed else [])
+
+    files_out: list[dict[str, Any]] = []
+    has_inter_gap = False
+    prev_dt: Optional[datetime] = None
+    for row in files_src:
+        gap_after: Optional[float] = None
+        if prev_dt is not None:
+            gap_after = round((row["_dt"] - prev_dt).total_seconds() / 3600.0, 2)
+            if gap_after is not None and gap_after > gap_hours:
+                has_inter_gap = True
+        entry = {
+            "fileName": row["fileName"],
+            "dateTimeModified": row["dateTimeModified"],
+            "fileSize": row["fileSize"],
+        }
+        if gap_after is not None:
+            entry["gap_after_prev_hours"] = gap_after
+            entry["gap_over_threshold"] = gap_after > gap_hours
+        files_out.append(entry)
+        prev_dt = row["_dt"]
+
+    hours_since_last: Optional[float] = None
+    if parsed:
+        hours_since_last = round((now - parsed[-1]["_dt"]).total_seconds() / 3600.0, 2)
+
+    has_gap = bool(
+        (hours_since_last is not None and hours_since_last > gap_hours) or has_inter_gap
+    )
+
+    if not files_out:
+        summary = "No *.asc files found in SFMC from-glider."
+    else:
+        newest = files_out[-1]["fileName"]
+        age = f"{hours_since_last:.1f}h ago" if hours_since_last is not None else "unknown age"
+        gap_note = f" - GAP >{gap_hours:.0f}h" if has_gap else ""
+        if using_fallback:
+            summary = (
+                f"No *.asc in last {window_hours:.0f}h; newest overall: {newest}, {age}{gap_note}"
+            )
+        else:
+            summary = (
+                f"{len(files_out)} *.asc in last {window_hours:.0f}h "
+                f"(newest: {newest}, {age}){gap_note}"
+            )
+
+    return {
+        "files": files_out,
+        "hours_since_last": hours_since_last,
+        "has_gap_over_16h": has_gap,
+        "file_count": len(files_out),
+        "summary": summary,
+    }
 
 
 def extract_connection_durations(payload: dict[str, Any]) -> list[dict[str, Any]]:

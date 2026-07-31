@@ -82,7 +82,7 @@ python exploration/sfmc/probe_sfmc.py --v1-smoke --glider peggy --insecure
 |----------|---------------|
 | `/sfmc/api/v1/newest-mission-details/{glider}` | `mission_file_running_val` ← `data.missionName` |
 | `/sfmc/api/v1/scripts-for-glider/{glider}` | `script_running_val` ← assigned script when present |
-| `/sfmc/api/v1/glider-folder-file-listing/.../from-glider` | `offloaded_24h_val` ← any `results` in last 24h |
+| `/sfmc/api/v1/glider-folder-file-listing/.../from-glider` | `offloaded_24h_val` ← any `results` in last 24h; DMON `dmon_asc_files` ← `filter=*.asc` last 48h (timestamps kept) |
 | `/sfmc/api/v1/glider-folder-file-listing/.../archive` + download | `goto_state_val` ← newest `*_goto_*.ma` |
 | `/sfmc/api/v1/active-deployment/{glider}` | deployment context / aborts when present |
 

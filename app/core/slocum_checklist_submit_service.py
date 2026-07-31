@@ -17,8 +17,10 @@ from . import models, utils
 from .slocum_checklist_autofill import (
     CHECKLIST_FORM_TITLE,
     CHECKLIST_FORM_TYPE,
+    apply_dmon_science_checklist_items,
     load_checklist_autofill_values,
     parse_checklist_reference_values,
+    parse_enabled_sensor_cards,
 )
 from .slocum_deployment_service import resolve_deployment_for_dataset
 from .slocum_mirror_service import is_historical_dataset
@@ -207,7 +209,7 @@ async def build_checklist_autofilled_schema(
             "endurance_ref_val": f"{references.get('endurance_amphr_total') or '—'} Ah",
         }
         for key, val in (sfmc_values or {}).items():
-            if key == "connection_durations" or key == "u_alt_min_depth_val":
+            if key in ("connection_durations", "dmon_asc_files", "u_alt_min_depth_val"):
                 continue
             if not isinstance(val, str):
                 continue
@@ -215,6 +217,20 @@ async def build_checklist_autofilled_schema(
                 autofill[key] = val
 
     schema = apply_autofill_to_schema(schema, autofill)
+    enabled_cards = parse_enabled_sensor_cards(
+        deployment.enabled_sensor_cards if deployment else None
+    )
+    dmon_asc_payload = None
+    if isinstance(sfmc_values, dict):
+        raw_asc = sfmc_values.get("dmon_asc_files")
+        if isinstance(raw_asc, dict):
+            dmon_asc_payload = raw_asc
+    schema = apply_dmon_science_checklist_items(
+        schema,
+        enabled_sensor_cards=enabled_cards,
+        dmon_asc_payload=dmon_asc_payload,
+        dmon_byte_count_display=autofill.get("dmon_msg_byte_count_val"),
+    )
     return apply_sfmc_freshness_to_schema(
         schema,
         fetched_at_utc=fetched_at,

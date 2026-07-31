@@ -290,6 +290,28 @@ def get_slocum_vehicle_health_mini_trend(df: Optional[pd.DataFrame]) -> List[Dic
     )
 
 
+def get_slocum_dmon_status(
+    df: Optional[pd.DataFrame],
+    last_update_timestamp: Optional[datetime] = None,
+) -> Dict[str, Any]:
+    return _status_from_last_row(
+        df,
+        value_keys=("SciDmonMsgByteCount",),
+        trend_name="Slocum DMON",
+        last_update_timestamp=last_update_timestamp,
+    )
+
+
+def get_slocum_dmon_mini_trend(df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
+    return _generate_mini_trend(
+        df=df,
+        preprocessor=_passthrough_dashboard_df,
+        metric_col="SciDmonMsgByteCount",
+        hours_back=24,
+        trend_name="Slocum DMON",
+    )
+
+
 # Transfer point for future sensors (dissolved_oxygen, etc.)
 SLOCUM_SENSOR_SUMMARY_SPECS: Dict[str, Dict[str, Any]] = {
     "ctd": {
@@ -326,6 +348,13 @@ SLOCUM_SENSOR_SUMMARY_SPECS: Dict[str, Dict[str, Any]] = {
         "mini_trend_fn": get_slocum_vehicle_health_mini_trend,
         "info_key": "vehicle_health_info",
         "values_key": "vehicle_health_values",
+    },
+    "dmon": {
+        "bundle": "dashboard",
+        "status_fn": get_slocum_dmon_status,
+        "mini_trend_fn": get_slocum_dmon_mini_trend,
+        "info_key": "dmon_info",
+        "values_key": "dmon_values",
     },
 }
 

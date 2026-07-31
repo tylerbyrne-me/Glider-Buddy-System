@@ -13,7 +13,7 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 - [ ] Confirm prod `data/` and `data_store/` ownership (`chown cove:cove` or service user) and reclaim stranded `*.tmp` if mission CSV sync still fails — see AGENTS.md NFS/`os.replace` notes; chat [Mission CSV rename fix](c7ca764b-4f6c-42b2-a304-54183c563871)
 - [ ] Commit, QA, and deploy the outstanding theme + chart hover/crosshair UI batch (keep as its own commit — not mixed with docs) — [Theme consistency](80b24643-2d50-47fd-96bb-2731d082fd3b), [Chart hover fix](c7ac3551-0b33-4987-a8c6-4d2e34e41304)
-- [ ] Prod verify: auto-checklist actually submitting, Iridium map toggle on prod, UTC hardening / sensor cards as applicable
+- [ ] Prod verify: auto-checklist actually submitting, Iridium map toggle on prod, UTC hardening / sensor cards as applicable; DMON card on a DMON-equipped glider (byte-count chart + ASC 48h list + green/red gap status dot + gated checklist Science items after schema **12** mirror rebuild + SFMC refresh)
 
 ## Medium priority
 

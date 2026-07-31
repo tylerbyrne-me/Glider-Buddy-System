@@ -63,6 +63,7 @@ SLOCUM_VALID_SENSOR_CARDS: Set[str] = {
     "flight",
     "navigation",
     "vehicle_health",
+    "dmon",
 }
 SLOCUM_DEFAULT_SENSOR_CARDS = ["ctd"]
 

@@ -296,6 +296,23 @@ const TIME_SERIES_CARD_CONFIGS = {
             },
         ],
     },
+    dmon: {
+        variables: ['sci_dmon_msg_byte_count', 'm_depth'],
+        footerId: 'slocumDmonLastDataFooter',
+        charts: [
+            {
+                canvasId: 'slocumDmonByteCountChart',
+                spinnerId: 'slocumDmonByteCountSpinner',
+                yLabel: 'Byte count',
+                series: [{ key: 'sci_dmon_msg_byte_count', label: 'sci_dmon_msg_byte_count' }],
+            },
+        ],
+        dmonAscPanel: {
+            noteId: 'slocumDmonAscNote',
+            bannerId: 'slocumDmonAscGapBanner',
+            tableBodyId: 'slocumDmonAscTableBody',
+        },
+    },
 };
 
 const TIME_SERIES_CATEGORIES = Object.keys(TIME_SERIES_CARD_CONFIGS);
@@ -1077,6 +1094,130 @@ async function refreshSfmcCallLengthChart(categoryCfg) {
     }
 }
 
+function formatAscFileSize(size) {
+    if (size == null || Number.isNaN(Number(size))) return '—';
+    const n = Number(size);
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function updateDmonAscGapIndicator(payload) {
+    const indicator = document.getElementById('dmonAscGapIndicator');
+    const card = document.querySelector('#left-nav-panel .summary-card[data-category="dmon"]');
+    if (!indicator) return;
+
+    const configured = Boolean(payload?.sfmc_configured);
+    const hasFilesOrSummary = Boolean(
+        (Array.isArray(payload?.files) && payload.files.length)
+        || (payload?.summary && String(payload.summary).trim()),
+    );
+    // Only show once we have a meaningful SFMC ASC snapshot (mirrors Waves ess_state gating).
+    if (!configured || !hasFilesOrSummary) {
+        indicator.style.display = 'none';
+        indicator.className = 'ess-indicator';
+        indicator.removeAttribute('title');
+        indicator.removeAttribute('aria-label');
+        if (card) card.removeAttribute('data-asc-gap-state');
+        return;
+    }
+
+    const hasGap = Boolean(payload?.has_gap_over_16h);
+    const state = hasGap ? 'gap' : 'ok';
+    indicator.style.display = 'inline-block';
+    indicator.className = `ess-indicator ${hasGap ? 'ess-extreme' : 'ess-calm'}`;
+    indicator.title = hasGap
+        ? 'ASC gap >16h — review offload continuity'
+        : 'No ASC gap >16h in last 48h';
+    indicator.setAttribute('aria-label', `ASC gap status: ${state}`);
+    if (card) card.setAttribute('data-asc-gap-state', state);
+}
+
+function renderDmonAscPanel(payload) {
+    updateDmonAscGapIndicator(payload);
+    const noteEl = document.getElementById('slocumDmonAscNote');
+    const bannerEl = document.getElementById('slocumDmonAscGapBanner');
+    const tbody = document.getElementById('slocumDmonAscTableBody');
+    if (!tbody) return;
+
+    const files = Array.isArray(payload?.files) ? payload.files : [];
+    const configured = Boolean(payload?.sfmc_configured);
+    const hasGap = Boolean(payload?.has_gap_over_16h);
+    const hoursSince = payload?.hours_since_last;
+
+    if (noteEl) {
+        const showNote = !configured || (files.length === 0 && !payload?.summary);
+        noteEl.style.display = showNote ? 'block' : 'none';
+        if (!configured) {
+            noteEl.textContent = 'SFMC *.asc listing is unavailable (not configured or not yet cached).';
+        } else if (payload?.fetch_error) {
+            noteEl.style.display = 'block';
+            noteEl.textContent = `SFMC cache note: ${payload.fetch_error}`;
+        } else if (files.length === 0) {
+            noteEl.style.display = 'block';
+            noteEl.textContent = payload?.summary || 'No *.asc files in the last 48 hours.';
+        }
+    }
+
+    if (bannerEl) {
+        if (hasGap) {
+            const ageText = hoursSince != null ? `${Number(hoursSince).toFixed(1)}h since last *.asc` : 'gap >16h detected';
+            bannerEl.style.display = 'block';
+            bannerEl.textContent = `ASC gap warning: ${ageText}. Review offload continuity.`;
+        } else {
+            bannerEl.style.display = 'none';
+            bannerEl.textContent = '';
+        }
+    }
+
+    if (!files.length) {
+        tbody.innerHTML = `<tr><td colspan="4" class="text-muted small">${
+            configured ? (payload?.summary || 'No *.asc files found.') : 'SFMC not configured'
+        }</td></tr>`;
+        return;
+    }
+
+    // Newest first for pilot scanning
+    const rows = [...files].reverse();
+    tbody.innerHTML = rows.map((row) => {
+        const gap = row.gap_after_prev_hours;
+        const gapOver = Boolean(row.gap_over_threshold);
+        const gapText = gap != null ? `${Number(gap).toFixed(1)}h` : '—';
+        const rowClass = gapOver ? 'table-warning' : '';
+        return `<tr class="${rowClass}">
+            <td class="small font-monospace">${row.fileName || '—'}</td>
+            <td class="small">${row.dateTimeModified || '—'}</td>
+            <td class="small">${formatAscFileSize(row.fileSize)}</td>
+            <td class="small${gapOver ? ' fw-semibold text-danger' : ''}">${gapText}</td>
+        </tr>`;
+    }).join('');
+}
+
+async function refreshDmonAscPanel() {
+    const datasetId = getDatasetId();
+    if (!datasetId) return;
+    const tbody = document.getElementById('slocumDmonAscTableBody');
+    if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="4" class="text-muted small">Loading…</td></tr>';
+    }
+    try {
+        const payload = await apiRequest(
+            `/api/slocum/sfmc/dmon-asc-files/${encodeURIComponent(datasetId)}`,
+            'GET',
+        );
+        renderDmonAscPanel(payload);
+    } catch (err) {
+        console.error('DMON ASC files failed:', err);
+        renderDmonAscPanel({
+            files: [],
+            sfmc_configured: false,
+            has_gap_over_16h: false,
+            summary: 'Failed to load *.asc listing',
+            fetch_error: String(err?.message || err),
+        });
+    }
+}
+
 function reRenderCategoryFromCache(category) {
     const cfg = TIME_SERIES_CARD_CONFIGS[category];
     if (!cfg) return;
@@ -1139,6 +1280,9 @@ async function refreshTimeSeriesCategory(category) {
         setCategoryLastDataFooter(cfg.footerId, payload?.cache_metadata?.last_data_timestamp);
         if (category === 'vehicle_health') {
             await refreshSfmcCallLengthChart(cfg);
+        }
+        if (category === 'dmon') {
+            await refreshDmonAscPanel();
         }
     } catch (err) {
         console.error(`Failed to load ${category} charts:`, err);
@@ -1379,6 +1523,9 @@ function updateSlocumCardFromSummary(category, summary) {
         const vac = formatCardSummaryValue(values.MVacuum, 2);
         const leak = formatCardSummaryValue(values.MLeakdetectVoltage, 2);
         miniSummary.innerHTML = `Vac: ${vac} inHg<br>Leak: ${leak} V`;
+    } else if (category === 'dmon' && miniSummary) {
+        const bytes = formatCardSummaryValue(values.SciDmonMsgByteCount, 0);
+        miniSummary.innerHTML = `Bytes: ${bytes}`;
     }
     if (footer) {
         footer.textContent = summary.time_ago_str || 'N/A';
@@ -1400,6 +1547,12 @@ async function refreshSlocumSummaryCards() {
             updateSlocumCardFromSummary(category, summary);
         });
         initializeMiniCharts();
+        // Keep DMON ASC gap indicator in sync with SFMC cache (not part of ERDDAP summaries).
+        if (document.querySelector('#left-nav-panel .summary-card[data-category="dmon"]')) {
+            refreshDmonAscPanel().catch((err) => {
+                console.debug('DMON ASC indicator refresh failed:', err);
+            });
+        }
     } catch (err) {
         console.debug('Slocum summary card refresh failed:', err);
     }
@@ -2270,4 +2423,11 @@ document.addEventListener('DOMContentLoaded', () => {
     initializeMiniCharts();
     initSlocumChartControls();
     handleLeftPanelClicks();
+
+    // Warm DMON ASC gap indicator from SFMC cache even before the detail pane is opened.
+    if (document.querySelector('#left-nav-panel .summary-card[data-category="dmon"]')) {
+        refreshDmonAscPanel().catch((err) => {
+            console.debug('DMON ASC indicator warm-up failed:', err);
+        });
+    }
 });

@@ -742,6 +742,9 @@ _SLOCUM_DASHBOARD_RENAME = {
     "c_thruster_on": "CThrusterOn",
     "c_thruster_on (percent)": "CThrusterOn",
     "c_thruster_on (%)": "CThrusterOn",
+    "sci_dmon_msg_byte_count": "SciDmonMsgByteCount",
+    "sci_dmon_msg_byte_count (bytes)": "SciDmonMsgByteCount",
+    "sci_dmon_msg_byte_count (byte)": "SciDmonMsgByteCount",
     "latitude (degrees_north)": "Latitude",
     "longitude (degrees_east)": "Longitude",
     # ERDDAP also emits radians for attitude; preprocess converts to degrees.
@@ -820,6 +823,7 @@ _SLOCUM_DASHBOARD_STEMS: dict[str, str] = {
     "m_digifin_leakdetect_reading": "MDigifinLeakdetectReading",
     "m_thruster_power": "MThrusterPower",
     "c_thruster_on": "CThrusterOn",
+    "sci_dmon_msg_byte_count": "SciDmonMsgByteCount",
 }
 
 _SLOCUM_CHECKLIST_STEMS: dict[str, str] = {
@@ -852,6 +856,7 @@ _SLOCUM_CHECKLIST_STD_COLS = [
     "MDepthRateAvgFinal",
     "MBmsPitchCurrent", "MBmsAftCurrent", "MBmsEbayCurrent",
     "MThrusterPower", "CThrusterOn",
+    "SciDmonMsgByteCount",
     "MSpeed", "MFinalWaterVx", "MFinalWaterVy",
     "MGpsLat", "MGpsLon",
     "CWptLat", "CWptLon",
@@ -1023,6 +1028,7 @@ def preprocess_slocum_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
         "MLeakdetectVoltage", "MLeakdetectVoltageForward", "MLeakdetectVoltageScience",
         "MDigifinLeakdetectReading",
         "MThrusterPower", "CThrusterOn",
+        "SciDmonMsgByteCount",
     ]
     df_processed = _initial_dataframe_setup(df, "Timestamp")
     if df_processed.empty:

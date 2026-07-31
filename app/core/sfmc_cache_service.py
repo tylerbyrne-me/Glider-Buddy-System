@@ -17,13 +17,14 @@ from sqlmodel import Session, select
 
 from . import models
 from .sfmc_client import load_sfmc_checklist_values, sfmc_is_configured
-from .sfmc_transforms import merge_connection_durations
+from .sfmc_transforms import merge_connection_durations, normalize_dmon_asc_files
 from .slocum_mirror_service import is_historical_dataset
 
 logger = logging.getLogger(__name__)
 
 _CONNECTION_DURATIONS_KEY = "connection_durations"
 _CONNECTION_DURATIONS_MAX_DAYS = 90
+_DMON_ASC_FILES_KEY = "dmon_asc_files"
 
 
 def _deployment_linked_to_historical(deployment: models.SlocumDeployment) -> bool:
@@ -58,6 +59,22 @@ def _parse_values_json(raw: Optional[str]) -> dict[str, Any]:
                 except (TypeError, ValueError, json.JSONDecodeError):
                     pass
             continue
+        if key == _DMON_ASC_FILES_KEY:
+            if isinstance(value, dict):
+                out[key] = value
+            elif isinstance(value, list):
+                # Legacy / raw entry list → normalize
+                out[key] = normalize_dmon_asc_files(value)
+            elif isinstance(value, str) and value.strip():
+                try:
+                    parsed = json.loads(value)
+                    if isinstance(parsed, dict):
+                        out[key] = parsed
+                    elif isinstance(parsed, list):
+                        out[key] = normalize_dmon_asc_files(parsed)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    pass
+            continue
         text = str(value).strip()
         if text:
             out[str(key)] = text
@@ -72,6 +89,12 @@ def _dump_values_json(values: dict[str, Any]) -> str:
         if key == _CONNECTION_DURATIONS_KEY:
             if isinstance(value, list):
                 cleaned[key] = value
+            continue
+        if key == _DMON_ASC_FILES_KEY:
+            if isinstance(value, dict):
+                cleaned[key] = value
+            elif isinstance(value, list):
+                cleaned[key] = normalize_dmon_asc_files(value)
             continue
         text = str(value).strip()
         if text:
@@ -113,6 +136,24 @@ def get_cached_connection_durations(
     if not isinstance(durations, list):
         durations = []
     return durations, fetched_at, fetch_error, configured
+
+
+def get_cached_dmon_asc_files(
+    session: Session,
+    deployment_id: Optional[int],
+) -> tuple[dict[str, Any], Optional[datetime], Optional[str], bool]:
+    """
+    Return ``(dmon_asc_payload, fetched_at_utc, fetch_error, sfmc_configured)``.
+
+    ``dmon_asc_payload`` is the normalized dict from ``normalize_dmon_asc_files``
+    (or empty dict when missing).
+    """
+    configured = sfmc_is_configured()
+    values, fetched_at, fetch_error = get_cached_sfmc_values(session, deployment_id)
+    payload = values.get(_DMON_ASC_FILES_KEY) if isinstance(values, dict) else None
+    if not isinstance(payload, dict):
+        payload = {}
+    return payload, fetched_at, fetch_error, configured
 
 
 def _get_or_create_snapshot(
@@ -188,6 +229,7 @@ async def refresh_sfmc_snapshot(
         values = await load_sfmc_checklist_values(glider)
         previous = _parse_values_json(row.values_json)
         incoming_durations = values.pop(_CONNECTION_DURATIONS_KEY, None) if isinstance(values, dict) else None
+        incoming_dmon_asc = values.pop(_DMON_ASC_FILES_KEY, None) if isinstance(values, dict) else None
         merged_durations = merge_connection_durations(
             previous.get(_CONNECTION_DURATIONS_KEY),
             incoming_durations,
@@ -198,6 +240,13 @@ async def refresh_sfmc_snapshot(
             payload[_CONNECTION_DURATIONS_KEY] = merged_durations
         elif previous.get(_CONNECTION_DURATIONS_KEY):
             payload[_CONNECTION_DURATIONS_KEY] = previous.get(_CONNECTION_DURATIONS_KEY)
+        # ASC listing is a rolling window — replace on each successful refresh.
+        if isinstance(incoming_dmon_asc, dict):
+            payload[_DMON_ASC_FILES_KEY] = incoming_dmon_asc
+        elif isinstance(incoming_dmon_asc, list):
+            payload[_DMON_ASC_FILES_KEY] = normalize_dmon_asc_files(incoming_dmon_asc)
+        elif previous.get(_DMON_ASC_FILES_KEY):
+            payload[_DMON_ASC_FILES_KEY] = previous.get(_DMON_ASC_FILES_KEY)
         row.values_json = _dump_values_json(payload)
         row.fetched_at_utc = datetime.now(timezone.utc)
         row.fetch_error = None

@@ -30,6 +30,7 @@ const PLOTTABLE_ITEM_IDS = new Set([
     'bms_currents_val',
     'leakdetect_val',
     'thruster_val',
+    'dmon_msg_byte_count_val',
 ]);
 
 const MULTI_SERIES_COLORS = [
@@ -40,6 +41,72 @@ const MULTI_SERIES_COLORS = [
     '#1098ad',
     '#f08c00',
 ];
+
+function escapeHtmlValue(value) {
+    if (value == null) return '';
+    return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function parseDmonAscPayload(rawValue) {
+    if (rawValue == null || rawValue === '') {
+        return { summary: 'N/A', has_gap_over_16h: false, files: [] };
+    }
+    if (typeof rawValue === 'object') {
+        return {
+            summary: rawValue.summary || 'N/A',
+            has_gap_over_16h: Boolean(rawValue.has_gap_over_16h),
+            hours_since_last: rawValue.hours_since_last,
+            files: Array.isArray(rawValue.files) ? rawValue.files : [],
+        };
+    }
+    const text = String(rawValue);
+    try {
+        const parsed = JSON.parse(text);
+        if (parsed && typeof parsed === 'object') {
+            return {
+                summary: parsed.summary || text,
+                has_gap_over_16h: Boolean(parsed.has_gap_over_16h),
+                hours_since_last: parsed.hours_since_last,
+                files: Array.isArray(parsed.files) ? parsed.files : [],
+            };
+        }
+    } catch (_err) {
+        // plain text summary
+    }
+    return { summary: text, has_gap_over_16h: false, files: [] };
+}
+
+function renderDmonAscChecklistHtml(rawValue) {
+    const payload = parseDmonAscPayload(rawValue);
+    const summaryEsc = escapeHtmlValue(payload.summary || 'N/A');
+    const gapClass = payload.has_gap_over_16h ? ' alert alert-warning py-1 px-2 mb-2' : '';
+    const files = [...(payload.files || [])].reverse();
+    let listHtml = '';
+    if (files.length) {
+        listHtml = `<ul class="list-unstyled small mb-0 mt-1" id="dmon_asc_files_list">
+            ${files.map((row) => {
+                const gapOver = Boolean(row.gap_over_threshold);
+                const gapText = row.gap_after_prev_hours != null
+                    ? ` · gap ${Number(row.gap_after_prev_hours).toFixed(1)}h`
+                    : '';
+                const cls = gapOver ? 'text-danger fw-semibold' : 'text-muted';
+                return `<li class="${cls}">
+                    <span class="font-monospace">${escapeHtmlValue(row.fileName || '—')}</span>
+                    <span class="ms-1">${escapeHtmlValue(row.dateTimeModified || '')}${escapeHtmlValue(gapText)}</span>
+                </li>`;
+            }).join('')}
+        </ul>`;
+    }
+    return `<div class="dmon-asc-checklist-wrap">
+        <div class="autofilled-value${gapClass}" id="dmon_asc_files_val">${summaryEsc}</div>
+        ${listHtml}
+    </div>`;
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
     registerForceUtcTimeDisplayPlugin();
@@ -691,15 +758,19 @@ document.addEventListener('DOMContentLoaded', async () => {
 
                 switch (item.item_type) {
                     case 'autofilled_value':
-                        inputHtml = isPlottable
-                            ? `<div class="checklist-plot-wrap">
+                        if (item.id === 'dmon_asc_files_val') {
+                            inputHtml = renderDmonAscChecklistHtml(value);
+                        } else {
+                            inputHtml = isPlottable
+                                ? `<div class="checklist-plot-wrap">
                                 <div class="autofilled-value" id="${item.id}">${valueEsc || 'N/A'}</div>
                                 <button type="button" class="btn btn-outline-secondary btn-sm checklist-plot-btn"
                                     data-checklist-plot-item="${escapeHtml(item.id)}" title="Plot over time with depth">
                                     Plot
                                 </button>
                                </div>`
-                            : `<div class="autofilled-value" id="${item.id}">${valueEsc || 'N/A'}</div>`;
+                                : `<div class="autofilled-value" id="${item.id}">${valueEsc || 'N/A'}</div>`;
+                        }
                         break;
                     case 'static_text':
                         inputHtml = `<div class="static-text" id="${item.id}">${valueEsc || '—'}</div>`;
@@ -912,6 +983,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                             item.item_type === 'autofilled_value'
                             || item.item_type === 'static_text'
                         ) {
+                            if (item.id === 'dmon_asc_files_val') {
+                                const wrap = el.closest('.dmon-asc-checklist-wrap')
+                                    || el.parentElement;
+                                if (wrap) {
+                                    wrap.outerHTML = renderDmonAscChecklistHtml(value);
+                                    updated += 1;
+                                }
+                                continue;
+                            }
                             if (
                                 el.classList.contains('autofilled-value')
                                 || el.classList.contains('static-text')

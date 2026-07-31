@@ -839,6 +839,16 @@ def build_checklist_autofill_snapshot(
             f"c_thruster_on={_fmt_num(thruster_on, 1)} %"
         )
 
+    dmon_bytes = (
+        _latest_valid(df["SciDmonMsgByteCount"])
+        if "SciDmonMsgByteCount" in df.columns
+        else None
+    )
+    if dmon_bytes is None:
+        dmon_bytes_display = "N/A (no samples in window / not on dataset)"
+    else:
+        dmon_bytes_display = f"{_fmt_num(dmon_bytes, 0)} bytes"
+
     density_series = (
         df["Density"]
         if "Density" in df.columns and df["Density"].notna().any()
@@ -1017,6 +1027,7 @@ def build_checklist_autofill_snapshot(
         "expected_script_ref_val": format_reference_display(refs.get("expected_script")),
         "ctd_freshness_val": ctd_latest or "N/A",
         "argos_id_ref_val": format_reference_display(refs.get("argos_id")),
+        "dmon_msg_byte_count_val": dmon_bytes_display,
     }
 
 
@@ -1145,6 +1156,11 @@ CHECKLIST_PLOTTABLE_ITEMS: dict[str, Any] = {
                 "axis": "y3",
             },
         ],
+    },
+    "dmon_msg_byte_count_val": {
+        "column": "SciDmonMsgByteCount",
+        "label": "sci_dmon_msg_byte_count",
+        "unit": "bytes",
     },
 }
 
@@ -1401,9 +1417,103 @@ async def load_checklist_autofill_values(
 
     if sfmc_values and not is_historical:
         for key, val in sfmc_values.items():
-            if key == "u_alt_min_depth_val":
+            if key in ("connection_durations", "dmon_asc_files", "u_alt_min_depth_val"):
+                continue
+            if not isinstance(val, str):
                 continue
             if val:
                 values[key] = str(val)
 
     return values
+
+
+def parse_enabled_sensor_cards(raw: Optional[str]) -> list[str]:
+    """Parse ``SlocumDeployment.enabled_sensor_cards`` JSON into a list of keys."""
+    if not raw or not str(raw).strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(item).strip() for item in parsed if str(item).strip()]
+
+
+def apply_dmon_science_checklist_items(
+    schema: Any,
+    *,
+    enabled_sensor_cards: list[str],
+    dmon_asc_payload: Optional[dict[str, Any]] = None,
+    dmon_byte_count_display: Optional[str] = None,
+) -> Any:
+    """
+    Gate Science-section DMON items on the ``dmon`` sensor card.
+
+    When DMON is disabled, remove ``asc_gap_check_val``.
+    When enabled, inject plottable byte-count + ASC file list before the gap dropdown.
+    """
+    from . import models as _models
+
+    is_dmon = "dmon" in {str(c).strip().lower() for c in (enabled_sensor_cards or [])}
+    asc_payload = dmon_asc_payload if isinstance(dmon_asc_payload, dict) else {}
+    has_gap = bool(asc_payload.get("has_gap_over_16h"))
+    summary = str(asc_payload.get("summary") or "No SFMC *.asc listing available.")
+    files = asc_payload.get("files") if isinstance(asc_payload.get("files"), list) else []
+    asc_value = json.dumps(
+        {
+            "summary": summary,
+            "has_gap_over_16h": has_gap,
+            "hours_since_last": asc_payload.get("hours_since_last"),
+            "files": files,
+        },
+        ensure_ascii=True,
+    )
+
+    for section in schema.sections:
+        if getattr(section, "id", None) != "science":
+            continue
+        items = list(section.items or [])
+        if not is_dmon:
+            section.items = [
+                item for item in items if getattr(item, "id", None) != "asc_gap_check_val"
+            ]
+            break
+
+        items = [
+            item
+            for item in items
+            if getattr(item, "id", None)
+            not in ("dmon_msg_byte_count_val", "dmon_asc_files_val")
+        ]
+        insert_at = next(
+            (
+                i
+                for i, item in enumerate(items)
+                if getattr(item, "id", None) == "asc_gap_check_val"
+            ),
+            len(items),
+        )
+        byte_item = _models.FormItem(
+            id="dmon_msg_byte_count_val",
+            label="DMON msg byte count (sci_dmon_msg_byte_count)",
+            item_type=_models.FormItemTypeEnum.AUTOFILLED_VALUE,
+            value=dmon_byte_count_display or "N/A",
+        )
+        asc_item = _models.FormItem(
+            id="dmon_asc_files_val",
+            label="DMON *.asc files (last 48h)",
+            item_type=_models.FormItemTypeEnum.AUTOFILLED_VALUE,
+            value=asc_value,
+        )
+        items.insert(insert_at, asc_item)
+        items.insert(insert_at, byte_item)
+        for item in items:
+            if getattr(item, "id", None) == "asc_gap_check_val" and has_gap:
+                existing = (getattr(item, "placeholder", None) or "").strip()
+                hint = "Gap >16h detected — consider Gaps noted"
+                item.placeholder = f"{existing} ({hint})" if existing else hint
+                break
+        section.items = items
+        break
+    return schema

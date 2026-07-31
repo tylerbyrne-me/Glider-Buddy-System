@@ -28,6 +28,7 @@ from .sfmc_transforms import (
     extract_from_surface_events_payload,
     extract_connection_durations,
     merge_sfmc_checklist_values,
+    normalize_dmon_asc_files,
     parse_goto_ma,
     parse_surface_dialog_log,
     pick_latest_goto_archive_filename,
@@ -326,6 +327,53 @@ def _folder_names_from_listing(payload: Any) -> list[str]:
     return []
 
 
+def _folder_entries_from_listing(payload: Any) -> list[dict[str, Any]]:
+    """
+    Preserve ``fileName`` / ``dateTimeModified`` / ``fileSize`` from a folder listing.
+
+    Unlike ``_folder_names_from_listing``, timestamps are retained for ASC gap checks.
+    """
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        entries: list[dict[str, Any]] = []
+        for item in payload:
+            if isinstance(item, str):
+                entries.append({"fileName": item, "dateTimeModified": None, "fileSize": None})
+                continue
+            if not isinstance(item, dict):
+                continue
+            name = (
+                item.get("fileName")
+                or item.get("filename")
+                or item.get("name")
+                or item.get("path")
+            )
+            if not name:
+                continue
+            entries.append(
+                {
+                    "fileName": str(name),
+                    "dateTimeModified": (
+                        item.get("dateTimeModified")
+                        or item.get("lastModified")
+                        or item.get("modified")
+                        or item.get("mtime")
+                    ),
+                    "fileSize": item.get("fileSize") or item.get("size"),
+                }
+            )
+        return entries
+    if isinstance(payload, dict):
+        for key in ("results", "files", "listing", "content", "entries", "fileListing"):
+            if key in payload:
+                return _folder_entries_from_listing(payload[key])
+        # Sometimes the listing is nested under data
+        if "data" in payload:
+            return _folder_entries_from_listing(payload["data"])
+    return []
+
+
 def _extract_script_from_scripts_payload(payload: Any) -> Optional[str]:
     """Best-effort assigned/current script name from scripts-for-glider JSON."""
     if payload is None:
@@ -449,6 +497,45 @@ async def download_glider_file_text(glider_name: str, folder: str, file_name: st
 def _last_modified_after_24h() -> str:
     dt = datetime.now(timezone.utc) - timedelta(hours=24)
     return dt.strftime("%Y%m%d%H%M")
+
+
+def _last_modified_after_hours(hours: float) -> str:
+    dt = datetime.now(timezone.utc) - timedelta(hours=max(0.0, float(hours)))
+    return dt.strftime("%Y%m%d%H%M")
+
+
+async def fetch_dmon_asc_files(
+    glider_name: str,
+    *,
+    hours: float = 48.0,
+) -> list[dict[str, Any]]:
+    """
+    List ``from-glider`` ``*.asc`` files (with timestamps) for DMON diagnostics.
+
+    Uses ``lastModifiedAfter`` for the rolling window. When that window is empty
+    but SFMC responds, falls back to an unfiltered ``*.asc`` listing and returns
+    raw entries so callers can still compute hours-since-last.
+    """
+    payload = await fetch_folder_listing(
+        glider_name,
+        "from-glider",
+        page=0,
+        filter_glob="*.asc",
+        last_modified_after=_last_modified_after_hours(hours),
+    )
+    entries = _folder_entries_from_listing(payload)
+    if entries:
+        return entries
+    if payload is None:
+        return []
+    # Empty 48h window — try newest overall so gap-since-last still works.
+    fallback = await fetch_folder_listing(
+        glider_name,
+        "from-glider",
+        page=0,
+        filter_glob="*.asc",
+    )
+    return _folder_entries_from_listing(fallback)
 
 
 async def fetch_surface_events_payload(glider_name: str) -> Optional[dict[str, Any]]:
@@ -712,7 +799,8 @@ async def load_sfmc_checklist_values(glider_name: str) -> dict[str, Any]:
     live folder listings). Archived SFMC missions are not covered — callers must
     skip archived Buddy ``SlocumDeployment`` rows on the background refresh loop.
 
-    May include a non-string ``connection_durations`` list for Vehicle Health charts.
+    May include a non-string ``connection_durations`` list for Vehicle Health charts
+    and a ``dmon_asc_files`` list (normalized) for DMON ASC gap checks.
     """
     name = (glider_name or "").strip()
     if not name or not sfmc_is_configured():
@@ -723,6 +811,7 @@ async def load_sfmc_checklist_values(glider_name: str) -> dict[str, Any]:
     active_script: Optional[str] = None
     surface: Optional[dict[str, Any]] = None
     connection_durations: list[dict[str, Any]] = []
+    dmon_asc_raw: list[dict[str, Any]] = []
 
     try:
         mission = await fetch_newest_mission_details(name)
@@ -793,13 +882,25 @@ async def load_sfmc_checklist_values(glider_name: str) -> dict[str, Any]:
     except Exception as err:
         logger.warning("SFMC goto archive fetch failed for %s: %s", name, err)
 
+    try:
+        dmon_asc_raw = await fetch_dmon_asc_files(name, hours=48.0)
+    except Exception as err:
+        logger.warning("SFMC DMON *.asc listing failed for %s: %s", name, err)
+
     merged: dict[str, Any] = merge_sfmc_checklist_values(*parts)
     if connection_durations:
         merged["connection_durations"] = connection_durations
+    if dmon_asc_raw is not None:
+        # Store normalized summary (files + gap flags) so cache consumers share one shape.
+        merged["dmon_asc_files"] = normalize_dmon_asc_files(dmon_asc_raw)
     if merged:
         logger.info(
             "SFMC checklist autofill for %s: %s",
             name,
-            sorted(k for k in merged.keys() if k != "connection_durations"),
+            sorted(
+                k
+                for k in merged.keys()
+                if k not in ("connection_durations", "dmon_asc_files")
+            ),
         )
     return merged

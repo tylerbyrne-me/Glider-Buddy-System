@@ -54,6 +54,7 @@ def _merge_slocum_summary_context(
     template_context: Dict,
     dataset_id: str,
     enabled_cards: List[str],
+    session: Optional[SQLModelSession] = None,
 ) -> None:
     """Attach CTD (and future sensor) summary card context for SSR."""
     summaries = build_slocum_sensor_summaries(dataset_id, enabled_cards)
@@ -68,9 +69,35 @@ def _merge_slocum_summary_context(
         "time_ago_str": "N/A",
         "mini_trend": [],
     }
-    for card in ("ctd", "power", "flight", "navigation", "vehicle_health"):
+    for card in ("ctd", "power", "flight", "navigation", "vehicle_health", "dmon"):
         template_context.setdefault(f"{card}_info", dict(empty_info))
         template_context.setdefault(f"{card}_values", {})
+
+    # DMON left-nav gap indicator (green/red) from cached SFMC *.asc listing.
+    if session is not None and "dmon" in enabled_cards:
+        try:
+            from ..core.sfmc_cache_service import get_cached_dmon_asc_files
+            from ..core.slocum_deployment_service import resolve_deployment_for_dataset
+
+            deployment = resolve_deployment_for_dataset(session, dataset_id)
+            if deployment is not None:
+                payload, _fetched_at, _err, configured = get_cached_dmon_asc_files(
+                    session, deployment.id
+                )
+                dmon_info = template_context.get("dmon_info")
+                if not isinstance(dmon_info, dict):
+                    dmon_info = dict(empty_info)
+                    template_context["dmon_info"] = dmon_info
+                if configured and isinstance(payload, dict) and payload:
+                    dmon_info["asc_gap_state"] = (
+                        "gap" if payload.get("has_gap_over_16h") else "ok"
+                    )
+                else:
+                    dmon_info["asc_gap_state"] = None
+        except Exception:
+            logger.exception(
+                "Failed to attach DMON ASC gap state for dataset %s", dataset_id
+            )
 
 
 @router.get("/platform", response_class=HTMLResponse)
@@ -282,7 +309,7 @@ async def get_slocum_dashboard(
         session, dataset, username=current_user.username
     )
     template_context["slocum_enabled_sensor_cards"] = enabled_cards
-    _merge_slocum_summary_context(template_context, dataset, enabled_cards)
+    _merge_slocum_summary_context(template_context, dataset, enabled_cards, session=session)
     return templates.TemplateResponse("slocum_dashboard.html", template_context)
 
 
@@ -318,7 +345,7 @@ async def get_slocum_historical_dashboard(
         session, dataset, username=current_user.username
     )
     template_context["slocum_enabled_sensor_cards"] = enabled_cards
-    _merge_slocum_summary_context(template_context, dataset, enabled_cards)
+    _merge_slocum_summary_context(template_context, dataset, enabled_cards, session=session)
     return templates.TemplateResponse("slocum_dashboard.html", template_context)
 
 

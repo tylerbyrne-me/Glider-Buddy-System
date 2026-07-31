@@ -249,6 +249,7 @@ _SLOCUM_VARIABLE_TO_COLUMN = {
     "m_digifin_leakdetect_reading": "MDigifinLeakdetectReading",
     "m_thruster_power": "MThrusterPower",
     "c_thruster_on": "CThrusterOn",
+    "sci_dmon_msg_byte_count": "SciDmonMsgByteCount",
     "conductivity": "Conductivity",
     "temperature": "Temperature",
     "pressure": "Pressure",
@@ -316,6 +317,7 @@ _SLOCUM_CSV_COLUMN_RENAME = {
     "MDigifinLeakdetectReading": "m_digifin_leakdetect_reading",
     "MThrusterPower": "m_thruster_power",
     "CThrusterOn": "c_thruster_on",
+    "SciDmonMsgByteCount": "sci_dmon_msg_byte_count",
 }
 
 _SLOCUM_CHART_VARIABLES = [
@@ -330,6 +332,7 @@ _SLOCUM_CHART_VARIABLES = [
     "m_leakdetect_voltage", "m_leakdetect_voltage_forward", "m_leakdetect_voltage_science",
     "m_digifin_leakdetect_reading",
     "m_thruster_power", "c_thruster_on",
+    "sci_dmon_msg_byte_count",
     "coulomb_amphr_daily", "water_depth_altimeter", "water_current_speed",
     "conductivity", "temperature", "pressure", "salinity", "density",
 ]
@@ -643,6 +646,52 @@ async def get_slocum_sfmc_connection_durations(
     )
     return {
         "connections": durations,
+        "sfmc_configured": configured,
+        "fetched_at_utc": fetched_at.isoformat() if fetched_at else None,
+        "fetch_error": fetch_error,
+    }
+
+
+@router.get("/sfmc/dmon-asc-files/{dataset_id}")
+async def get_slocum_sfmc_dmon_asc_files(
+    dataset_id: str,
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """
+    Cached SFMC ``from-glider`` ``*.asc`` listing for DMON sensor card / checklist.
+
+    Reads the SFMC snapshot only (no live SFMC HTTP).
+    """
+    if not is_feature_enabled("slocum_platform"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
+
+    from ..core.sfmc_cache_service import get_cached_dmon_asc_files
+    from ..core.slocum_deployment_service import resolve_deployment_for_dataset
+
+    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    if deployment is None:
+        return {
+            "files": [],
+            "hours_since_last": None,
+            "has_gap_over_16h": False,
+            "file_count": 0,
+            "summary": "No deployment found for dataset",
+            "sfmc_configured": False,
+            "fetched_at_utc": None,
+            "fetch_error": "No deployment found for dataset",
+        }
+
+    payload, fetched_at, fetch_error, configured = get_cached_dmon_asc_files(
+        session, deployment.id
+    )
+    files = payload.get("files") if isinstance(payload.get("files"), list) else []
+    return {
+        "files": files,
+        "hours_since_last": payload.get("hours_since_last"),
+        "has_gap_over_16h": bool(payload.get("has_gap_over_16h")),
+        "file_count": int(payload.get("file_count") or len(files)),
+        "summary": payload.get("summary") or "",
         "sfmc_configured": configured,
         "fetched_at_utc": fetched_at.isoformat() if fetched_at else None,
         "fetch_error": fetch_error,
