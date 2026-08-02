@@ -24,5 +24,5 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 - [ ] Slocum checklist history follow-ups (multi-day matrix / sparklines); side-by-side compare shipped 2026-07-29 — [Checklist history ideas](378f5e79-578b-4f7a-99cd-ca202e222768)
 - [ ] Dockerize app for a more stable host — [Docker migration options](3357a043-5fd2-46e6-bfb5-fd14329e8c7e)
-- [ ] Rebrand to “Glider Buddy System” (repo + product); Phase 3 ops called out as separate — [Glider Buddy rebrand](048fab21-2379-425a-935a-b58c0cb17690)
+- [ ] Rebrand follow-ups (post GBS registry + HTML URL hardening): rename `wgbs_logo.svg` / favicon assets; GitHub repo `Wave-Glider-Buddy-System` → `Glider-Buddy-System`; prod path `/home/cove/Wave-Glider-Buddy-System`; archive-doc naming sweep; optional full WG API under `/api/wave_glider/`; optional move of `slocum_*.py` into `app/platforms/slocum/` — [ADR 0003](../decisions/0003-platform-brand-naming.md)
 - [ ] Optionally standardize complex error handling in `app/routers/forms.py` and `app/routers/live_kml_router.py` (acceptable as-is; see `docs/archive/reviews/HIGH_PRIORITY_COMPLETION_SUMMARY.md`)

@@ -5,7 +5,7 @@ Handles HTTP endpoints for shared tips and tricks functionality.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import List, Optional
 from datetime import datetime, timezone
 import sqlalchemy as sa
@@ -17,26 +17,36 @@ from ..core.infra.db import get_db_session, SQLModelSession
 from ..core.auth import get_current_active_user, get_optional_current_user
 from ..core.templates import templates
 from ..core.template_context import get_template_context
+from ..core.platforms import (
+    PLATFORM_SLOCUM,
+    PLATFORM_WAVE_GLIDER,
+    html_path_for,
+    platform_page_context,
+)
 import logging
 
 router = APIRouter(tags=["Shared Tips"])
 logger = logging.getLogger(__name__)
 
 
-@router.get("/shared_tips.html", response_class=HTMLResponse)
+def _shared_tips_page(request: Request, current_user, platform_id: str):
+    context = get_template_context(request=request, current_user=current_user)
+    context.update(platform_page_context(platform_id))
+    return templates.TemplateResponse("shared_tips.html", context)
+
+
+@router.get("/wave-glider/shared_tips.html", response_class=HTMLResponse)
 async def shared_tips_page(
     request: Request,
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
     """Shared tips main page (Wave Glider)."""
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "wave_glider"
-    context["platform_home_url"] = "/wave-glider/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "shared_tips.html",
-        context
-    )
+    return _shared_tips_page(request, current_user, PLATFORM_WAVE_GLIDER)
+
+
+@router.get("/shared_tips.html", response_class=HTMLResponse, include_in_schema=False)
+async def shared_tips_page_legacy():
+    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "shared_tips.html"), status_code=302)
 
 
 @router.get("/slocum/shared_tips.html", response_class=HTMLResponse)
@@ -45,14 +55,7 @@ async def slocum_shared_tips_page(
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
     """Shared tips page for Slocum platform."""
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "slocum"
-    context["platform_home_url"] = "/slocum/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "shared_tips.html",
-        context
-    )
+    return _shared_tips_page(request, current_user, PLATFORM_SLOCUM)
 
 
 @router.get("/api/shared-tips", response_model=List[models.SharedTipRead])

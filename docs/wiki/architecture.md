@@ -1,15 +1,25 @@
 # Architecture
 
-_Last updated: 2026-07-31_
+_Last updated: 2026-08-02_
 
 ## One-paragraph summary
 
-Wave Glider Buddy System is a FastAPI web app that supports Wave Glider (and optionally Slocum) missions: home hub for active missions, real-time dashboards (power, CTD, weather, waves, AIS, errors), station metadata and WG-VM4 offload tracking, mission forms (PIC handoff, offload logs), knowledge base / LLM features, and admin tools. Telemetry is synced from remote or local sources into on-disk caches under `data_store/` and `data/`; a background scheduler refreshes active mission caches. Production typically runs under gunicorn with two Uvicorn workers; only the leader worker runs sync and APScheduler (fcntl lock).
+**Glider Buddy System (GBS)** is a FastAPI web app for multi-platform glider operations. Today it supports **Wave Glider** and **Slocum** (with room for more): home hubs, real-time dashboards, station/offload and PIC workflows (WG), knowledge base / LLM features, and admin tools. Platforms are registered in `app/core/platforms/` (IDs, URL prefixes, brand titles, access attrs). Telemetry is synced into on-disk caches under `data_store/` and `data/`; a background scheduler refreshes active caches. Production typically runs under gunicorn with two Uvicorn workers; only the leader worker runs sync and APScheduler (fcntl lock).
+
+## Platforms
+
+- **Registry** — [`app/core/platforms/registry.py`](../../app/core/platforms/registry.py): canonical `platform_id` (`wave_glider`, `slocum`), kebab URL prefixes (`/wave-glider`, `/slocum`), home/API prefixes, KB toggles, ACL attribute names.
+- **Brand** — Product: *Glider Buddy System* / *GBS*. In-platform chrome: *{Display} Glider Buddy System* (e.g. *Wave Glider Buddy System*).
+- **HTML** — Platform pages live under `/{url_prefix}/...`; legacy Wave Glider root HTML paths redirect to `/wave-glider/...`.
+- **APIs** — Prefer `/api/{platform_id}/...` for new work; existing Wave Glider `/api/...` paths remain supported (grandfathered).
+- **New platforms** — Prefer new code under `app/platforms/{id}/` (documented target); register the platform in the registry first. Do not scatter new string literals.
+
+See [conventions](./conventions.md#product--platform-naming) and [ADR 0003](../decisions/0003-platform-brand-naming.md).
 
 ## Components
 
 - **App entry / lifespan** — FastAPI app, middleware, startup leader lock, router mounts (`app/app.py`)
-- **Core** — business logic, data loading, auth, models, infra (logging, feature toggles, caching helpers) (`app/core/`)
+- **Core** — business logic, data loading, auth, models, platforms registry, infra (logging, feature toggles, caching helpers) (`app/core/`)
 - **Routers** — HTTP endpoints only; depend on core/services, never the reverse (`app/routers/`)
 - **Services** — higher-level orchestration (knowledge base, reporting, sensor tracker, etc.) (`app/services/`)
 - **Web assets** — Jinja templates in `web/templates/` and static files in `web/static/` (wired in `app/core/templates.py` / `app/app.py`); Python form helpers in `app/forms/`
@@ -37,6 +47,7 @@ Slocum mirror and overage fetches store **full ERDDAP resolution** by default (a
 |------|---------|
 | `app/app.py` | App factory, lifespan, router includes, startup sync/cache |
 | `app/config.py` | Settings / env-backed configuration |
+| `app/core/platforms/` | Product brand + platform registry |
 | `app/core/infra/logging_config.py` | Root logging, request IDs |
 | `app/core/data/` | Data service / telemetry loading |
 | `AGENTS.md` | Ops runbook (gunicorn, logging, cache inventory) |
@@ -48,4 +59,4 @@ Slocum mirror and overage fetches store **full ERDDAP resolution** by default (a
 - **`os.replace` failures on NFS/SELinux** — copy fallback is intentional; stranded `*.tmp` are cleaned by scheduled jobs.
 - **Admin scheduler status empty on non-leader** — scheduler lives on the leader worker only.
 - **Slocum long windows look dense** — overage/mirror are full-res; sparse charts mean the sensor or UI Resample, not automatic >48h ERDDAP decimation.
-- **New Slocum series empty after deploy** — mirror schema bump requires leader sync (or admin force rebuild) before digifin/thruster/DMON (etc.) appear in parquet.
+- **Wave Glider has no `{id}_platform` feature toggle** — WG remains always-on; Slocum (and future platforms) use `{id}_platform`.

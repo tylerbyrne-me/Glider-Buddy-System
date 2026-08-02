@@ -68,7 +68,8 @@ web/templates/
 ```jinja2
 {% extends "base.html" %}
 
-{% block title %}Page Title - Wave Glider Buddy{% endblock %}
+{% block title %}Page Title - {{ platform_buddy_title }}{% endblock %}
+{# Non-platform pages: use {{ app_name }} or {{ app_name_short }} (GBS) #}
 
 {% block content %}
     <!-- Page content here -->
@@ -430,7 +431,7 @@ import { checkAuth } from '/static/js/auth.js';
 
 **Location:** `web/static/images/`
 
-**Naming:** Use descriptive names (e.g., `login_splash.jpg`, `wgbs_logo.svg`)
+**Naming:** Use descriptive names (e.g., `login_splash.jpg`, `wgbs_logo.svg` — logo rename is a backlog follow-up). Product CSS classes use the `gbs-` prefix (e.g. `.gbs-navbar`).
 
 **Usage in Templates:**
 ```jinja2

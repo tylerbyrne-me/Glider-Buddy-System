@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Login - Wave Glider Buddy{% endblock %}
+{% block title %}Login - {{ app_name }}{% endblock %}
 
 {% block body_class %}{% endblock %} {# Override to remove default body classes like container-fluid #}
 
@@ -31,12 +31,12 @@
 
 {% block navbar %}
     {# Use the same banner structure as the rest of the app, but simplified for login #}
-    <nav class="navbar navbar-dark bg-dark fixed-top wgbs-navbar wgbs-navbar--simple">
-      <div class="container-fluid wgbs-navbar-inner">
+    <nav class="navbar navbar-dark bg-dark fixed-top gbs-navbar gbs-navbar--simple">
+      <div class="container-fluid gbs-navbar-inner">
         <div class="navbar-top-row d-flex align-items-center justify-content-center w-100">
           <a class="navbar-brand d-flex align-items-center" href="/home.html">
-            <img src="/static/images/wgbs_logo.svg" alt="Wave Glider Buddy System Logo" class="navbar-logo me-2">
-            <h3 class="navbar-title mb-0">Wave Glider Buddy System</h3>
+            <img src="/static/images/wgbs_logo.svg" alt="{{ app_name }} Logo" class="navbar-logo me-2">
+            <h3 class="navbar-title mb-0">{{ app_name }}</h3>
           </a>
         </div>
       </div>
@@ -46,7 +46,7 @@
     <div class="login-container">
         <div class="card login-card shadow">
             <div class="card-body p-4">
-                <h3 class="card-title text-center mb-4">WGBS Login</h3>
+                <h3 class="card-title text-center mb-4">{{ app_name_short }} Login</h3>
                 <div id="loginError" class="alert alert-danger" style="display: none;" role="alert">
                     <!-- Error messages will be displayed here -->
                 </div>

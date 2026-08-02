@@ -23,7 +23,7 @@ Detailed coding and folder standards: [standards/README.md](./standards/README.m
 
 - [Backlog](../tasks/backlog.md) / [In progress](../tasks/in-progress.md) / [Done](../tasks/done.md)
 - [Bugs](../bugs/README.md)
-- [Decisions (ADRs)](../decisions/0000-template.md) — [0001 leader lock](../decisions/0001-gunicorn-leader-lock.md), [0002 no preload](../decisions/0002-no-gunicorn-preload.md)
+- [Decisions (ADRs)](../decisions/0000-template.md) — [0001 leader lock](../decisions/0001-gunicorn-leader-lock.md), [0002 no preload](../decisions/0002-no-gunicorn-preload.md), [0003 platform/brand naming](../decisions/0003-platform-brand-naming.md)
 
 ## Archive
 

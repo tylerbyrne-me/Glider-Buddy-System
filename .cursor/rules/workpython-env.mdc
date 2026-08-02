@@ -6,19 +6,28 @@ alwaysApply: true
 
 All terminal commands that need this project’s dependencies must use the **WorkPython** conda environment.
 
-Before running any terminal command that invokes Python, pytest, pip, or similar:
+On this machine, **git** (and related tools such as `gh` when installed in the env) are provided by WorkPython the same way as `pip` and `python` — they are **not** on the default system PATH. A bare PowerShell session will fail with `git: The term 'git' is not recognized` unless WorkPython is active.
+
+Before running any terminal command that invokes Python, pytest, pip, git, gh, or similar:
 
 ```powershell
 conda activate WorkPython
 ```
 
-On Windows without activating the shell, prefer the interpreter path:
+On Windows without activating the shell, prefer the interpreter path for Python:
 
 ```powershell
 & "$env:USERPROFILE\.conda\envs\WorkPython\python.exe" path\to\script.py
 ```
 
-Never suggest or run `pip install`, `python`, `pytest`, or other CLI tools against this repo without ensuring WorkPython is active. If writing a sequence of shell commands, activate WorkPython first (or use the interpreter path above).
+For one-off git/gh without an interactive activate:
+
+```powershell
+conda run -n WorkPython git status
+conda run -n WorkPython gh --version
+```
+
+Never suggest or run `pip install`, `python`, `pytest`, `git`, `gh`, or other env-provided CLI tools against this repo without ensuring WorkPython is active. If writing a sequence of shell commands, activate WorkPython first (or use `conda run -n WorkPython` / the interpreter path above).
 
 **Windows:** `conda run -n WorkPython python -c "..."` does not support multiline `-c` strings; use a small `.py` file or the interpreter path above.
 

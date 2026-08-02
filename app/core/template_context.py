@@ -4,8 +4,20 @@ Template context processor for adding global context variables to all templates.
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 
 from .infra.feature_toggles import get_feature_context
+from .platforms import (
+    PLATFORM_WAVE_GLIDER,
+    PRODUCT_NAME_FULL,
+    PRODUCT_NAME_SHORT,
+    buddy_title_for,
+    display_name_for,
+    home_url_for,
+    is_known_platform,
+    platform_labels_map,
+    resolve_platform_from_path,
+)
 from ..config import settings
 
 
@@ -26,31 +38,45 @@ def _get_static_version_token() -> str:
     return "1.0.0"
 
 
+def _brand_context(platform: Optional[str] = None) -> Dict[str, Any]:
+    """Product + platform-aware brand strings for templates."""
+    display = display_name_for(platform) if is_known_platform(platform) else None
+    return {
+        "app_name": PRODUCT_NAME_FULL,
+        "app_name_short": PRODUCT_NAME_SHORT,
+        "platform_buddy_title": buddy_title_for(platform),
+        "platform_display_name": display,
+        "platform_labels_json": json.dumps(platform_labels_map()),
+    }
+
+
 def get_platform_context_from_request(request: Any) -> Dict[str, Any]:
     """
     Derive platform and platform_home_url from request path for platform-aware nav.
     URL is source of truth; no session/cookie for current platform.
     """
-    # Starlette/FastAPI Request uses url.path; request.path may be missing
     url = getattr(request, "url", None)
     path = (url.path if url is not None else "") or getattr(request, "path", "") or ""
-    # Prefer exact prefix; fall back to substring for proxied/prefixed paths
-    if path.startswith("/slocum") or "/slocum" in path:
-        return {"platform": "slocum", "platform_home_url": "/slocum/home"}
-    if path.startswith("/wave-glider") or "/wave-glider" in path:
-        return {"platform": "wave_glider", "platform_home_url": "/wave-glider/home"}
-    # Splash (/platform) or other pages: no platform chosen
-    return {"platform": None, "platform_home_url": "/wave-glider/home"}
+    platform = resolve_platform_from_path(path)
+    home = home_url_for(platform) if platform else home_url_for(PLATFORM_WAVE_GLIDER)
+    ctx = {
+        "platform": platform,
+        "platform_home_url": home,
+    }
+    ctx.update(_brand_context(platform))
+    return ctx
 
 
 def resolve_admin_platform_context(platform: Optional[str] = None) -> Dict[str, Any]:
     """Banner context for shared admin pages (?platform=wave_glider|slocum)."""
-    normalized = platform if platform in ("wave_glider", "slocum") else "wave_glider"
-    return {
+    normalized = platform if is_known_platform(platform) else PLATFORM_WAVE_GLIDER
+    ctx = {
         "platform": normalized,
-        "platform_home_url": "/slocum/home" if normalized == "slocum" else "/wave-glider/home",
+        "platform_home_url": home_url_for(normalized),
         "show_banner_nav": True,
     }
+    ctx.update(_brand_context(normalized))
+    return ctx
 
 
 def get_global_template_context() -> Dict[str, Any]:
@@ -60,28 +86,21 @@ def get_global_template_context() -> Dict[str, Any]:
     Returns:
         dict: Global template context variables
     """
-    # Get feature context (cached for performance)
     context = get_feature_context()
     
-    # Add application-wide context
     context.update({
-        # Application metadata
-        "app_name": "Wave Glider Buddy System",
-        # Cache-bust key static files automatically when they change.
+        **_brand_context(None),
         "app_version": _get_static_version_token(),
         "current_year": datetime.now().year,
         "current_utc": datetime.now(timezone.utc),
         
-        # Configuration context
         "active_missions": settings.active_realtime_missions,
         "mission_count": len(settings.active_realtime_missions),
         "forms_storage_mode": settings.forms_storage_mode,
         
-        # Environment context
         "is_production": not settings.jwt_secret_key.startswith("CHANGE_THIS"),
         "is_development": settings.jwt_secret_key.startswith("CHANGE_THIS"),
         
-        # Feature summary for templates
         "feature_summary": {
             "enabled_count": context.get("feature_count", 0),
             "total_count": context.get("total_features", 0),
@@ -110,6 +129,9 @@ def get_template_context(**kwargs) -> Dict[str, Any]:
         context["request"] = request
         context.update(get_platform_context_from_request(request))
     context.update(kwargs)
+    # Recompute buddy title if caller set platform explicitly after request merge
+    if "platform" in context:
+        context.update(_brand_context(context.get("platform")))
     return context
 
 
@@ -123,8 +145,9 @@ def get_minimal_template_context(**kwargs) -> Dict[str, Any]:
     Returns:
         dict: Minimal template context
     """
+    platform = kwargs.get("platform")
     return {
-        "app_name": "Wave Glider Buddy System",
+        **_brand_context(platform if isinstance(platform, str) else None),
         "current_year": datetime.now().year,
         **kwargs
     }
@@ -142,7 +165,6 @@ def get_admin_template_context(**kwargs) -> Dict[str, Any]:
     """
     context = get_global_template_context()
     
-    # Add admin-specific context
     context.update({
         "is_admin_page": True,
         "admin_features": {
@@ -154,6 +176,8 @@ def get_admin_template_context(**kwargs) -> Dict[str, Any]:
     })
     
     context.update(kwargs)
+    if "platform" in context:
+        context.update(_brand_context(context.get("platform")))
     return context
 
 
@@ -169,7 +193,6 @@ def get_user_template_context(**kwargs) -> Dict[str, Any]:
     """
     context = get_global_template_context()
     
-    # Add user-specific context
     context.update({
         "is_user_page": True,
         "user_features": {
@@ -180,4 +203,6 @@ def get_user_template_context(**kwargs) -> Dict[str, Any]:
     })
     
     context.update(kwargs)
+    if "platform" in context:
+        context.update(_brand_context(context.get("platform")))
     return context

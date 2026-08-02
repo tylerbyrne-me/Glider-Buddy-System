@@ -15,6 +15,12 @@ from ..core.templates import templates
 from app.config import settings
 from ..core.template_context import get_template_context
 from ..core.infra.feature_toggles import is_feature_enabled
+from ..core.platforms import (
+    PLATFORM_SLOCUM,
+    PLATFORM_WAVE_GLIDER,
+    home_url_for,
+    platform_labels_map,
+)
 from ..core.slocum_deployment_service import get_or_create_deployment_for_dataset
 from ..core.data.slocum_summaries import build_slocum_sensor_summaries
 from sqlmodel import select
@@ -110,19 +116,20 @@ async def get_platform_choice(
         return RedirectResponse(url="/login.html")
     allowed_platforms = get_allowed_platforms_for_user(current_user)
     if len(allowed_platforms) == 1:
-        if allowed_platforms[0] == "slocum":
-            return RedirectResponse(url="/slocum/home")
-        return RedirectResponse(url="/wave-glider/home")
+        if allowed_platforms[0] == PLATFORM_SLOCUM:
+            return RedirectResponse(url=home_url_for(PLATFORM_SLOCUM))
+        return RedirectResponse(url=home_url_for(PLATFORM_WAVE_GLIDER))
     template_context = get_template_context(request=request, current_user=current_user)
     template_context["show_banner_nav"] = False  # No nav tabs on splash to avoid cross-platform confusion
     template_context["allowed_platforms"] = allowed_platforms
+    template_context["platform_labels"] = platform_labels_map()
     return templates.TemplateResponse("platform_choice.html", template_context)
 
 
 @router.get("/home.html", response_class=HTMLResponse)
 async def get_home_page_redirect():
     """Legacy: redirect to canonical Wave Glider home."""
-    return RedirectResponse(url="/wave-glider/home")
+    return RedirectResponse(url=home_url_for(PLATFORM_WAVE_GLIDER))
 
 
 async def _get_wave_glider_home_response(
@@ -254,8 +261,8 @@ async def _get_wave_glider_home_response(
         active_mission_data=active_mission_data,
     )
     template_context["show_banner_nav"] = True
-    template_context["platform"] = "wave_glider"
-    template_context["platform_home_url"] = "/wave-glider/home"
+    template_context["platform"] = PLATFORM_WAVE_GLIDER
+    template_context["platform_home_url"] = home_url_for(PLATFORM_WAVE_GLIDER)
     logger.info(f"Template context - active_missions: {active_missions}, active_mission_data keys: {list(active_mission_data.keys())}")
     logger.info(f"Active missions type: {type(active_missions)}, length: {len(active_missions) if active_missions else 0}")
     
@@ -271,7 +278,7 @@ async def get_wave_glider_home(
     """Wave Glider home: mission list and briefings."""
     if not current_user:
         return RedirectResponse(url="/login.html")
-    denied = redirect_if_platform_denied(current_user, "wave_glider")
+    denied = redirect_if_platform_denied(current_user, PLATFORM_WAVE_GLIDER)
     if denied:
         return denied
     return await _get_wave_glider_home_response(request, current_user, session)
@@ -289,19 +296,19 @@ async def get_slocum_dashboard(
         return RedirectResponse(url="/login.html")
     if not is_feature_enabled("slocum_platform"):
         return RedirectResponse(url="/platform")
-    denied = redirect_if_platform_denied(current_user, "slocum")
+    denied = redirect_if_platform_denied(current_user, PLATFORM_SLOCUM)
     if denied:
         return denied
     if not dataset:
-        return RedirectResponse(url="/slocum/home")
+        return RedirectResponse(url=home_url_for(PLATFORM_SLOCUM))
     template_context = get_template_context(
         request=request,
         current_user=current_user,
         active_missions=[],
     )
     template_context["show_banner_nav"] = True
-    template_context["platform"] = "slocum"
-    template_context["platform_home_url"] = "/slocum/home"
+    template_context["platform"] = PLATFORM_SLOCUM
+    template_context["platform_home_url"] = home_url_for(PLATFORM_SLOCUM)
     template_context["dataset"] = dataset
     template_context["is_historical_dataset"] = False
     template_context["is_current_mission_realtime"] = True  # Active dataset: show auto-refresh in banner
@@ -325,19 +332,19 @@ async def get_slocum_historical_dashboard(
         return RedirectResponse(url="/login.html")
     if not is_feature_enabled("slocum_platform"):
         return RedirectResponse(url="/platform")
-    denied = redirect_if_platform_denied(current_user, "slocum")
+    denied = redirect_if_platform_denied(current_user, PLATFORM_SLOCUM)
     if denied:
         return denied
     if not dataset:
-        return RedirectResponse(url="/slocum/home")
+        return RedirectResponse(url=home_url_for(PLATFORM_SLOCUM))
     template_context = get_template_context(
         request=request,
         current_user=current_user,
         active_missions=[],
     )
     template_context["show_banner_nav"] = True
-    template_context["platform"] = "slocum"
-    template_context["platform_home_url"] = "/slocum/home"
+    template_context["platform"] = PLATFORM_SLOCUM
+    template_context["platform_home_url"] = home_url_for(PLATFORM_SLOCUM)
     template_context["dataset"] = dataset
     template_context["is_historical_dataset"] = True
     template_context["is_current_mission_realtime"] = False  # Historical: no auto-refresh in banner
@@ -359,10 +366,10 @@ async def get_slocum_home(
         return RedirectResponse(url="/login.html")
     if not is_feature_enabled("slocum_platform"):
         return RedirectResponse(url="/platform")
-    denied = redirect_if_platform_denied(current_user, "slocum")
+    denied = redirect_if_platform_denied(current_user, PLATFORM_SLOCUM)
     if denied:
         return denied
-    show_wg_map_overlay = user_has_platform_access(current_user, "wave_glider")
+    show_wg_map_overlay = user_has_platform_access(current_user, PLATFORM_WAVE_GLIDER)
     active_missions = (
         list(settings.active_realtime_missions or [])
         if show_wg_map_overlay
@@ -374,8 +381,8 @@ async def get_slocum_home(
         active_missions=active_missions,
     )
     template_context["show_banner_nav"] = True
-    template_context["platform"] = "slocum"
-    template_context["platform_home_url"] = "/slocum/home"
+    template_context["platform"] = PLATFORM_SLOCUM
+    template_context["platform_home_url"] = home_url_for(PLATFORM_SLOCUM)
     template_context["show_wg_map_overlay"] = show_wg_map_overlay
     return templates.TemplateResponse("slocum_home.html", template_context)
 
@@ -390,11 +397,11 @@ async def get_slocum_admin_mission_overviews_page(
         return RedirectResponse(url="/login.html")
     if not is_feature_enabled("slocum_platform"):
         return RedirectResponse(url="/platform")
-    denied = redirect_if_platform_denied(current_user, "slocum")
+    denied = redirect_if_platform_denied(current_user, PLATFORM_SLOCUM)
     if denied:
         return denied
     template_context = get_template_context(request=request, current_user=current_user)
     template_context["show_banner_nav"] = True
-    template_context["platform"] = "slocum"
-    template_context["platform_home_url"] = "/slocum/home"
+    template_context["platform"] = PLATFORM_SLOCUM
+    template_context["platform_home_url"] = home_url_for(PLATFORM_SLOCUM)
     return templates.TemplateResponse("admin/slocum_mission_overviews.html", template_context)

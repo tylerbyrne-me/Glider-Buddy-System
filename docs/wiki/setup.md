@@ -38,6 +38,7 @@ See also [TESTING_QUICK_REFERENCE.md](./standards/TESTING_QUICK_REFERENCE.md).
 
 ## Common gotchas
 
+- **git** / **gh** live in WorkPython (like `pip`), not on the default system PATH — `conda activate WorkPython` before git, or use `conda run -n WorkPython git ...`.
 - On Windows, `conda run -n WorkPython python -c "..."` does not support multiline `-c` strings — use a `.py` file or `$env:USERPROFILE\.conda\envs\WorkPython\python.exe`.
 - Templates and static files are under `web/templates/` and `web/static/` (not a top-level `templates/` app package).
 - Production ops (systemd, gunicorn flags, cache cleanup) live in root [`AGENTS.md`](../../AGENTS.md), not only here.

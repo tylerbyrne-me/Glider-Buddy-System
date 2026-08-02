@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}ESS Waypoint Planner – {{ mission }} – Wave Glider Buddy System{% endblock %}
+{% block title %}ESS Waypoint Planner – {{ mission }} – {{ platform_buddy_title }}{% endblock %}
 
 {% block content %}
 <script type="application/json" id="essInitialData">{{ ({"mission_id": mission_id, "initial_position": initial_position, "initial_wave_measured": initial_wave_measured, "source": source_preference or "", "local_path": local_path or ""} | tojson).replace("</", "\\u003c/") }}</script>

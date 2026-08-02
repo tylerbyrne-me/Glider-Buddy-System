@@ -5,7 +5,7 @@ Handles HTTP endpoints for chatbot/FAQ functionality.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import List, Optional
 from datetime import datetime, timezone
 
@@ -17,6 +17,14 @@ from ..services.chatbot_service import chatbot_service
 from ..services.llm_service import llm_service, ContextSource
 from ..core.templates import templates
 from ..core.template_context import get_template_context
+from ..core.platforms import (
+    PLATFORM_SLOCUM,
+    PLATFORM_WAVE_GLIDER,
+    html_path_for,
+    is_known_platform,
+    platform_page_context,
+    url_prefix_for,
+)
 from ..config import settings
 import logging
 
@@ -24,20 +32,25 @@ router = APIRouter(tags=["Chatbot"])
 logger = logging.getLogger(__name__)
 
 
-@router.get("/chatbot.html", response_class=HTMLResponse)
+def _chatbot_page(request: Request, current_user, platform_id: str):
+    context = get_template_context(request=request, current_user=current_user)
+    context.update(platform_page_context(platform_id))
+    return templates.TemplateResponse("chatbot.html", context)
+
+
+@router.get("/wave-glider/chatbot.html", response_class=HTMLResponse)
 async def chatbot_page(
     request: Request,
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
     """Chatbot main page (Wave Glider)."""
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "wave_glider"
-    context["platform_home_url"] = "/wave-glider/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "chatbot.html",
-        context
-    )
+    return _chatbot_page(request, current_user, PLATFORM_WAVE_GLIDER)
+
+
+@router.get("/chatbot.html", response_class=HTMLResponse, include_in_schema=False)
+async def chatbot_page_legacy():
+    """Legacy root path → canonical Wave Glider URL."""
+    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "chatbot.html"), status_code=302)
 
 
 @router.get("/slocum/chatbot.html", response_class=HTMLResponse)
@@ -46,30 +59,27 @@ async def slocum_chatbot_page(
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
     """Chatbot page for Slocum platform."""
+    return _chatbot_page(request, current_user, PLATFORM_SLOCUM)
+
+
+def _admin_faqs_page(request: Request, current_user, platform_id: str):
     context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "slocum"
-    context["platform_home_url"] = "/slocum/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "chatbot.html",
-        context
-    )
+    context.update(platform_page_context(platform_id))
+    return templates.TemplateResponse("admin/faqs.html", context)
 
 
-@router.get("/admin_faqs.html", response_class=HTMLResponse)
+@router.get("/wave-glider/admin_faqs.html", response_class=HTMLResponse)
 async def admin_faqs_page(
     request: Request,
     current_user: models.User = Depends(get_current_admin_user)
 ):
     """FAQ management page (admin only)."""
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "wave_glider"
-    context["platform_home_url"] = "/wave-glider/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "admin/faqs.html",
-        context
-    )
+    return _admin_faqs_page(request, current_user, PLATFORM_WAVE_GLIDER)
+
+
+@router.get("/admin_faqs.html", response_class=HTMLResponse, include_in_schema=False)
+async def admin_faqs_page_legacy():
+    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "admin_faqs.html"), status_code=302)
 
 
 @router.get("/slocum/admin_faqs.html", response_class=HTMLResponse)
@@ -78,14 +88,7 @@ async def slocum_admin_faqs_page(
     current_user: models.User = Depends(get_current_admin_user)
 ):
     """FAQ management page for Slocum platform (admin only)."""
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "slocum"
-    context["platform_home_url"] = "/slocum/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "admin/faqs.html",
-        context
-    )
+    return _admin_faqs_page(request, current_user, PLATFORM_SLOCUM)
 
 
 @router.get("/api/chatbot/status")
@@ -137,10 +140,9 @@ async def query_chatbot(
     Slocum context never sees or references Wave Glider content, and vice versa.
     """
     try:
-        # Normalize to canonical platform only; no cross-platform data
-        raw = (query_request.platform or "wave_glider").strip().lower()
-        platform = "slocum" if raw == "slocum" else "wave_glider"
-        kb_base = "/slocum" if platform == "slocum" else ""
+        raw = (query_request.platform or PLATFORM_WAVE_GLIDER).strip().lower()
+        platform = raw if is_known_platform(raw) else PLATFORM_WAVE_GLIDER
+        kb_base = url_prefix_for(platform)
         
         # Get user ID from database
         from ..core import auth
@@ -257,7 +259,7 @@ async def query_chatbot(
                     type="document",
                     id=doc.id,
                     title=doc.title,
-                    url=f"{kb_base}/knowledge_base.html#document-{doc.id}" if kb_base else f"/knowledge_base.html#document-{doc.id}",
+                    url=f"{kb_base}/knowledge_base.html#document-{doc.id}",
                     snippet=snippet_meta.get("snippet"),
                     similarity=snippet_meta.get("similarity"),
                     chunk_index=snippet_meta.get("chunk_index"),
@@ -281,7 +283,7 @@ async def query_chatbot(
                     type="tip",
                     id=tip.id,
                     title=tip.title,
-                    url=f"{kb_base}/shared_tips.html?tip_id={tip.id}" if kb_base else f"/shared_tips.html?tip_id={tip.id}",
+                    url=f"{kb_base}/shared_tips.html?tip_id={tip.id}",
                     snippet=snippet_meta.get("snippet"),
                     similarity=snippet_meta.get("similarity"),
                     chunk_index=snippet_meta.get("chunk_index"),

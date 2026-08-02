@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Register - Wave Glider Buddy{% endblock %}
+{% block title %}Register - {{ app_name }}{% endblock %}
 
 {% block body_class %}{% endblock %} {# Override to remove default body classes #}
 
@@ -25,10 +25,10 @@
 
 {% block navbar %}
     {# Override the default banner with a simpler one for the register page #}
-    <nav class="navbar navbar-dark bg-dark fixed-top wgbs-navbar wgbs-navbar--simple">
-      <div class="container-fluid wgbs-navbar-inner">
+    <nav class="navbar navbar-dark bg-dark fixed-top gbs-navbar gbs-navbar--simple">
+      <div class="container-fluid gbs-navbar-inner">
         <div class="navbar-top-row d-flex align-items-center justify-content-center w-100">
-          <span class="navbar-brand mb-0 navbar-title">Wave Glider Buddy System</span>
+          <span class="navbar-brand mb-0 navbar-title">{{ app_name }}</span>
         </div>
       </div>
     </nav>

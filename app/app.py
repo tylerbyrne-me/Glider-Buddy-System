@@ -144,7 +144,9 @@ except ImportError:
     IS_UNIX = False
     fcntl = None  # type: ignore # Make fcntl None on non-Unix systems
 
-app = FastAPI()
+from .core.platforms import PRODUCT_NAME_FULL
+
+app = FastAPI(title=PRODUCT_NAME_FULL, description=f"{PRODUCT_NAME_FULL} multi-platform glider operations")
 
 # Session middleware for SQLAdmin (and any session-based auth). Session cookie expires with JWT.
 from starlette.middleware.sessions import SessionMiddleware
@@ -3885,11 +3887,13 @@ async def get_mission_form_page(
 
 
 # --- HTML Route for Station Offload Status Page ---
-@app.get("/view_station_status.html", response_class=HTMLResponse)
+@app.get("/wave-glider/view_station_status.html", response_class=HTMLResponse)
 async def get_view_station_status_page(
     request: Request,
     current_user: Optional[models.User] = Depends(get_optional_current_user),
 ):
+    from .core.platforms import PLATFORM_WAVE_GLIDER, platform_page_context
+
     username_for_log = (
         current_user.username if current_user else "anonymous/unauthenticated"
     )
@@ -3898,18 +3902,26 @@ async def get_view_station_status_page(
     )
     logger.info(
         f"User '{username_for_log}' (role: {user_role_for_log}) "
-        f"accessing /view_station_status.html."
+        f"accessing /wave-glider/view_station_status.html."
     )
     context = get_template_context(
         request=request,
-        current_user=current_user, # Removed show_mission_selector
+        current_user=current_user,
     )
-    context["platform"] = "wave_glider"
-    context["platform_home_url"] = "/wave-glider/home"
-    context["show_banner_nav"] = True
+    context.update(platform_page_context(PLATFORM_WAVE_GLIDER))
     return templates.TemplateResponse(
         "view_station_status.html",
         context
+    )
+
+
+@app.get("/view_station_status.html", response_class=HTMLResponse, include_in_schema=False)
+async def get_view_station_status_page_legacy():
+    from .core.platforms import PLATFORM_WAVE_GLIDER, html_path_for
+
+    return RedirectResponse(
+        url=html_path_for(PLATFORM_WAVE_GLIDER, "view_station_status.html"),
+        status_code=302,
     )
 
 

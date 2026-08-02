@@ -1,12 +1,12 @@
-<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top wgbs-navbar">
-  <div class="container-fluid wgbs-navbar-inner">
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark fixed-top gbs-navbar">
+  <div class="container-fluid gbs-navbar-inner">
     <div class="d-flex flex-column w-100">
       <!-- Top Row: brand, clock, toggler (mobile) -->
       <div class="navbar-top-row d-flex align-items-center w-100 position-relative" style="height: var(--banner-top-row-height);">
         <div class="d-flex align-items-center navbar-brand-wrap" style="padding-left: 0;">
           <a class="navbar-brand d-flex align-items-center" href="{% if platform is none %}/platform{% else %}{{ platform_home_url | default('/wave-glider/home') }}{% endif %}" style="padding-top: 0; padding-bottom: 0; margin-right: 0;">
-            <img src="/static/images/wgbs_logo.svg" alt="Wave Glider Buddy System Logo" class="navbar-logo me-2">
-            <h3 class="navbar-title mb-0">Wave Glider Buddy System</h3>
+            <img src="/static/images/wgbs_logo.svg" alt="{{ app_name }} Logo" class="navbar-logo me-2">
+            <h3 class="navbar-title mb-0">{% if platform %}{{ platform_buddy_title }}{% else %}{{ app_name }}{% endif %}</h3>
           </a>
         </div>
         <div class="position-absolute top-50 start-50 translate-middle d-none d-md-block">
@@ -138,20 +138,20 @@
               <i class="fas fa-book"></i> Knowledge Base
             </a>
             <ul class="dropdown-menu" aria-labelledby="knowledgeBaseDropdown">
-              <li><a class="dropdown-item" href="/chatbot.html">
+              <li><a class="dropdown-item" href="/wave-glider/chatbot.html">
                 <i class="fas fa-robot"></i> Ask Chatbot
               </a></li>
               <li><hr class="dropdown-divider"></li>
-              <li><a class="dropdown-item" href="/knowledge_base.html">
+              <li><a class="dropdown-item" href="/wave-glider/knowledge_base.html">
                 <i class="fas fa-book"></i> Documents
               </a></li>
-              <li><a class="dropdown-item" href="/my_notes.html">
+              <li><a class="dropdown-item" href="/wave-glider/my_notes.html">
                 <i class="fas fa-sticky-note"></i> My Notes
               </a></li>
-              <li><a class="dropdown-item" href="/shared_tips.html">
+              <li><a class="dropdown-item" href="/wave-glider/shared_tips.html">
                 <i class="fas fa-lightbulb"></i> Shared Tips
               </a></li>
-              <li><a class="dropdown-item" href="/admin_faqs.html">
+              <li><a class="dropdown-item" href="/wave-glider/admin_faqs.html">
                 <i class="fas fa-question-circle"></i> Manage FAQs
               </a></li>
             </ul>
@@ -160,7 +160,7 @@
           {% if platform == 'wave_glider' and (features.wave_glider_specific_nav | default(true)) %}
           {% if features.station_offloads %}
           <li class="nav-item me-lg-3">
-            <a class="nav-link" href="/view_station_status.html">Station Offloads</a>
+            <a class="nav-link" href="/wave-glider/view_station_status.html">Station Offloads</a>
           </li>
           {% endif %}
           {% if features.pic_management %}
@@ -170,8 +170,8 @@
             </a>
             <ul class="dropdown-menu" aria-labelledby="picManagementDropdownLink">
               <li><a class="dropdown-item" id="submitNewPicHandoffLink" href="#">Submit New PIC Handoff</a></li>
-              <li><a class="dropdown-item" href="/my_pic_handoffs.html">My PIC Handoffs</a></li>
-              <li><a class="dropdown-item" href="/view_pic_handoffs.html">Recent PIC Handoffs (24h)</a></li>
+              <li><a class="dropdown-item" href="/wave-glider/my_pic_handoffs.html">My PIC Handoffs</a></li>
+              <li><a class="dropdown-item" href="/wave-glider/view_pic_handoffs.html">Recent PIC Handoffs (24h)</a></li>
             </ul>
           </li>
           {% endif %}

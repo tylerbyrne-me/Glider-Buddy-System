@@ -556,7 +556,7 @@ function updateSlocumTrackInfo() {
     }
     const totalPoints = slocumTracks.reduce((sum, t) => sum + t.pointCount, 0);
     const wptCount = slocumTracks.filter((t) => t.waypointLayer).length;
-    let html = '<div class="alert alert-secondary mb-2"><strong>Slocum gliders</strong> – ';
+    let html = '<div class="alert alert-secondary mb-2"><strong>Slocum Gliders</strong> – ';
     html += `${slocumTracks.length} dataset(s), ${totalPoints.toLocaleString()} points`;
     if (wptCount > 0) {
         html += ` · ${wptCount} waypoint(s)`;

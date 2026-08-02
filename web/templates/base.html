@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{% block title %}Wave Glider Buddy System{% endblock %}</title>
+    <title>{% block title %}{{ app_name }}{% endblock %}</title>
     <script>
       (function() {
         var rootEl = document.documentElement;
@@ -70,7 +70,7 @@
 
     {% block footer %}
     <footer class="mt-5 mb-3 text-center text-muted small">
-        Wave Glider Buddy System
+        {{ app_name }}
         {% if request.path == "/" or (request.path and request.path.startswith("/wave-glider")) %}
         <br>
         <small class="text-muted">
@@ -157,7 +157,7 @@
 
     {% include "_permissions_modal.html" %}
 
-    <script>window.APP_FEATURES = {{ feature_flags_json|safe }}; window.APP_PLATFORM = "{{ platform if platform is not none else 'wave_glider' }}";</script>
+    <script>window.APP_FEATURES = {{ feature_flags_json|safe }}; window.APP_PLATFORM = "{{ platform if platform is not none else 'wave_glider' }}"; window.APP_PLATFORM_LABELS = {{ platform_labels_json|default('{}')|safe }};</script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>

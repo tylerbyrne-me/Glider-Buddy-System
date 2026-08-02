@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Choose Platform - Wave Glider Buddy System{% endblock %}
+{% block title %}Choose Platform - {{ app_name }}{% endblock %}
 
 {% block content %}
 <div class="container mt-5">
@@ -8,13 +8,14 @@
     <p class="text-center text-muted mb-5">Welcome, {{ current_user.full_name or current_user.username }}. Select a platform to continue.</p>
     <div class="row justify-content-center g-4">
         {% set allowed = allowed_platforms | default(['wave_glider', 'slocum']) %}
+        {% set labels = platform_labels | default({'wave_glider': 'Wave Glider', 'slocum': 'Slocum'}) %}
         {% if 'wave_glider' in allowed %}
         <div class="col-12 col-md-5">
             <a href="/wave-glider/home" class="text-decoration-none">
                 <div class="card h-100 shadow-sm border-primary">
                     <div class="card-body text-center py-5">
                         <i class="fas fa-water fa-3x text-primary mb-3"></i>
-                        <h4 class="card-title">Wave Glider</h4>
+                        <h4 class="card-title">{{ labels['wave_glider'] | default('Wave Glider') }}</h4>
                         <p class="card-text text-muted">Mission briefings, dashboards, and Wave Glider data.</p>
                     </div>
                 </div>
@@ -27,7 +28,7 @@
                 <div class="card h-100 shadow-sm border-secondary">
                     <div class="card-body text-center py-5">
                         <i class="fas fa-map-marked-alt fa-3x text-secondary mb-3"></i>
-                        <h4 class="card-title">Slocum Glider</h4>
+                        <h4 class="card-title">{{ labels['slocum'] | default('Slocum') }}</h4>
                         <p class="card-text text-muted">Slocum datasets, map, and glider data.</p>
                     </div>
                 </div>

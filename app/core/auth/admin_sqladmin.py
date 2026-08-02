@@ -478,7 +478,7 @@ def setup_sqladmin(app: FastAPI):
         admin = Admin(
             app=app,
             engine=sqlite_engine,
-            title="Wave Glider Admin - Operations",
+            title="GBS Admin - Operations",
             authentication_backend=authentication_backend,
             base_url=settings.app_admin_base_url.strip() or "/admin",
         )

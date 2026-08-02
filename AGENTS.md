@@ -24,18 +24,20 @@ Don't guess at style — [`docs/wiki/conventions.md`](docs/wiki/conventions.md) 
 
 ## Python environment
 
-Use the **conda** environment **`WorkPython`** for any commands that need this project’s dependencies (imports, tests, scripts, PDF/report generation).
+Use the **conda** environment **`WorkPython`** for any commands that need this project’s dependencies (imports, tests, scripts, PDF/report generation). **git** and **gh** are also installed in WorkPython (like `pip` / `python`), not on the default system PATH — activate the env before git operations or agents will not find them.
 
 ```powershell
 conda activate WorkPython
 python -m pytest ...
 python path\to\script.py
+git status
 ```
 
 To run a single command without activating the shell (Windows):
 
 ```powershell
 & "$env:USERPROFILE\.conda\envs\WorkPython\python.exe" path\to\script.py
+conda run -n WorkPython git status
 ```
 
 **Windows:** `conda run -n WorkPython python -c "..."` does not support multiline `-c` strings; use a small `.py` file or the interpreter path above.
@@ -67,7 +69,7 @@ Install at `/etc/systemd/system/gliderbuddy.service` (adjust paths if needed):
 
 ```ini
 [Unit]
-Description=Wave Glider Buddy System FastAPI Application
+Description=Glider Buddy System FastAPI Application
 After=network.target
 StartLimitIntervalSec=300
 StartLimitBurst=5

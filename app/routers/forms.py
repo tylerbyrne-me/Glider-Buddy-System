@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Body
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import List, Optional
 from datetime import datetime, timedelta, timezone
 from sqlmodel import select, or_
@@ -14,6 +14,7 @@ from pathlib import Path
 from ..forms.form_definitions import get_static_form_schema
 from ..core.templates import templates
 from ..core.template_context import get_template_context
+from ..core.platforms import PLATFORM_WAVE_GLIDER, html_path_for, platform_page_context
 
 router = APIRouter(tags=["Forms"])
 logger = logging.getLogger(__name__)
@@ -861,53 +862,50 @@ async def submit_form(
         raise HTTPException(status_code=500, detail=f"Failed to save form: {e}")
 
 # --- HTML Endpoints ---
-@router.get("/view_forms.html", response_class=HTMLResponse)
+def _wg_forms_page(request: Request, current_user, template_name: str, log_path: str):
+    username_for_log = (
+        current_user.username if current_user else "anonymous/unauthenticated"
+    )
+    logger.info(f"User '{username_for_log}' accessing {log_path}.")
+    context = get_template_context(request=request, current_user=current_user)
+    context.update(platform_page_context(PLATFORM_WAVE_GLIDER))
+    return templates.TemplateResponse(template_name, context)
+
+
+@router.get("/wave-glider/view_forms.html", response_class=HTMLResponse)
 async def get_view_forms_page(
     request: Request,
     current_user: Optional[models.User] = Depends(get_optional_current_user),
 ):
-    username_for_log = (
-        current_user.username if current_user else "anonymous/unauthenticated"
-    )
-    user_role_for_log = current_user.role.value if current_user else "N/A"
-    logger.info(
-        f"User '{username_for_log}' (role: {user_role_for_log}) accessing /view_forms.html."
-    )
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "wave_glider"
-    context["platform_home_url"] = "/wave-glider/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "view_forms.html",
-        context,
-    )
+    return _wg_forms_page(request, current_user, "view_forms.html", "/wave-glider/view_forms.html")
 
-@router.get("/my_pic_handoffs.html", response_class=HTMLResponse)
+
+@router.get("/view_forms.html", response_class=HTMLResponse, include_in_schema=False)
+async def get_view_forms_page_legacy():
+    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "view_forms.html"), status_code=302)
+
+
+@router.get("/wave-glider/my_pic_handoffs.html", response_class=HTMLResponse)
 async def get_my_pic_handoffs_page(
     request: Request,
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
-    logger.info(f"User '{current_user.username if current_user else 'anonymous'}' accessing /my_pic_handoffs.html.")
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "wave_glider"
-    context["platform_home_url"] = "/wave-glider/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "my_pic_handoffs.html",
-        context,
-    )
+    return _wg_forms_page(request, current_user, "my_pic_handoffs.html", "/wave-glider/my_pic_handoffs.html")
 
-@router.get("/view_pic_handoffs.html", response_class=HTMLResponse)
+
+@router.get("/my_pic_handoffs.html", response_class=HTMLResponse, include_in_schema=False)
+async def get_my_pic_handoffs_page_legacy():
+    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "my_pic_handoffs.html"), status_code=302)
+
+
+@router.get("/wave-glider/view_pic_handoffs.html", response_class=HTMLResponse)
 async def get_view_pic_handoffs_page(
     request: Request,
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
-    logger.info(f"User '{current_user.username if current_user else 'anonymous'}' accessing /view_pic_handoffs.html.")
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "wave_glider"
-    context["platform_home_url"] = "/wave-glider/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "view_pic_handoffs.html",
-        context,
-    ) 
+    return _wg_forms_page(request, current_user, "view_pic_handoffs.html", "/wave-glider/view_pic_handoffs.html")
+
+
+@router.get("/view_pic_handoffs.html", response_class=HTMLResponse, include_in_schema=False)
+async def get_view_pic_handoffs_page_legacy():
+    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "view_pic_handoffs.html"), status_code=302) 

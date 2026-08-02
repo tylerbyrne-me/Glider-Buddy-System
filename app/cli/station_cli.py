@@ -18,7 +18,9 @@ BASE_API_URL = os.getenv("CLI_ADMIN_API_URL", "http://localhost:8000/api")
 ADMIN_USERNAME = os.getenv("CLI_ADMIN_USERNAME")
 ADMIN_PASSWORD = os.getenv("CLI_ADMIN_PASSWORD")
 
-app_cli = typer.Typer(help="Wave Glider Buddy System Command Line Interface.")
+from ..core.platforms import PRODUCT_NAME_FULL, PRODUCT_NAME_SHORT
+
+app_cli = typer.Typer(help=f"{PRODUCT_NAME_FULL} Command Line Interface.")
 console = Console()
 
 
@@ -218,7 +220,7 @@ def import_station_metadata(
 @app_cli.command()
 def hello(name: str = "World"):
     """A simple test command."""
-    console.print(f"Hello {name} from the Wave Glider Buddy CLI!")
+    console.print(f"Hello {name} from the {PRODUCT_NAME_SHORT} CLI!")
 
 
 if __name__ == "__main__":

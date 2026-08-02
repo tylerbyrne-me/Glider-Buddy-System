@@ -20,6 +20,12 @@ from .security import (  # TokenData imported from here, added get_password_hash
 # assuming it fetches them from settings.
 from ..infra.db import get_db_session  # Import the new get_db_session
 from ..infra.feature_toggles import is_feature_enabled
+from ..platforms import (
+    PLATFORMS,
+    get_platform,
+    is_known_platform,
+    known_platform_ids,
+)
 
 # Color palette for user shifts
 USER_COLORS = [
@@ -274,23 +280,17 @@ def user_has_platform_access(user: User, platform: str) -> bool:
     """Return True if the user may access the given platform (admins always allowed)."""
     if user.role == UserRoleEnum.admin:
         return True
-    if platform == "slocum":
-        if not is_feature_enabled("slocum_platform"):
-            return False
-        return bool(getattr(user, "can_access_slocum", True))
-    if platform == "wave_glider":
-        return bool(getattr(user, "can_access_wave_glider", True))
-    return True
+    if not is_known_platform(platform):
+        return True
+    spec = get_platform(platform)
+    if spec.feature_toggle and not is_feature_enabled(spec.feature_toggle):
+        return False
+    return bool(getattr(user, spec.access_attr, True))
 
 
 def get_allowed_platforms_for_user(user: User) -> List[str]:
     """Platforms the user may access (global toggle + per-user flag)."""
-    allowed: List[str] = []
-    if user_has_platform_access(user, "wave_glider"):
-        allowed.append("wave_glider")
-    if user_has_platform_access(user, "slocum"):
-        allowed.append("slocum")
-    return allowed
+    return [pid for pid in known_platform_ids() if user_has_platform_access(user, pid)]
 
 
 def redirect_if_platform_denied(user: User, platform: str) -> Optional[RedirectResponse]:
@@ -302,6 +302,8 @@ def redirect_if_platform_denied(user: User, platform: str) -> Optional[RedirectR
 
 def require_platform_access(platform: Literal["wave_glider", "slocum"]):
     """FastAPI dependency factory enforcing per-user platform access."""
+    if platform not in PLATFORMS:
+        raise ValueError(f"Unknown platform for access dependency: {platform!r}")
 
     async def _check(current_user: User = Depends(get_current_active_user)) -> User:
         if not user_has_platform_access(current_user, platform):

@@ -1,4 +1,4 @@
-/* Custom styling for the Wave Glider Buddy System */
+/* Custom styling for the Glider Buddy System */
 
 /* Error chart container styling */
 .chart-container {
@@ -142,7 +142,7 @@ h5.mt-3 {
 }
 
 /* Fixed navbar and collapsible banner layout */
-.wgbs-navbar,
+.gbs-navbar,
 .navbar.fixed-top {
     position: fixed !important;
     top: 0;
@@ -152,7 +152,7 @@ h5.mt-3 {
     min-height: var(--banner-top-row-height);
 }
 
-.wgbs-navbar-inner {
+.gbs-navbar-inner {
     position: relative;
     flex-direction: column !important;
     flex-wrap: nowrap !important;
@@ -164,7 +164,7 @@ h5.mt-3 {
 }
 
 /* Override Bootstrap .navbar > .container-fluid horizontal flex */
-.navbar.wgbs-navbar > .container-fluid.wgbs-navbar-inner {
+.navbar.gbs-navbar > .container-fluid.gbs-navbar-inner {
     display: flex !important;
     flex-direction: column !important;
     flex-wrap: nowrap !important;
@@ -172,46 +172,46 @@ h5.mt-3 {
     justify-content: flex-start !important;
 }
 
-.wgbs-navbar .navbar-top-row {
+.gbs-navbar .navbar-top-row {
     height: var(--banner-top-row-height);
     min-height: var(--banner-top-row-height);
 }
 
-.wgbs-navbar .navbar-brand-wrap {
+.gbs-navbar .navbar-brand-wrap {
     padding-left: 0;
 }
 
 @media (max-width: 991.98px) {
-    .wgbs-navbar .navbar-brand-wrap {
+    .gbs-navbar .navbar-brand-wrap {
         max-width: calc(100% - 3rem);
     }
 }
 
-.wgbs-navbar .navbar-title {
+.gbs-navbar .navbar-title {
     white-space: nowrap;
 }
 
 @media (max-width: 991.98px) {
-    .wgbs-navbar .navbar-title {
+    .gbs-navbar .navbar-title {
         font-size: clamp(0.85rem, 3.5vw, 1.25rem);
         overflow: hidden;
         text-overflow: ellipsis;
     }
 }
 
-.wgbs-navbar .navbar-logo {
+.gbs-navbar .navbar-logo {
     flex-shrink: 0;
 }
 
 /* Mobile: collapsed vertical menu */
 @media (max-width: 991.98px) {
-    .wgbs-navbar .navbar-collapse {
+    .gbs-navbar .navbar-collapse {
         max-height: calc(100vh - var(--banner-top-row-height));
         overflow-y: auto;
         padding-bottom: 0.75rem;
     }
 
-    .wgbs-navbar .navbar-user-nav {
+    .gbs-navbar .navbar-user-nav {
         position: static;
         height: auto;
         border-bottom: 1px solid rgba(255, 255, 255, 0.15);
@@ -219,12 +219,12 @@ h5.mt-3 {
         padding-bottom: 0.25rem;
     }
 
-    .wgbs-navbar .navbar-main-nav .nav-link {
+    .gbs-navbar .navbar-main-nav .nav-link {
         padding-top: 0.5rem;
         padding-bottom: 0.5rem;
     }
 
-    .wgbs-navbar .navbar-main-nav .dropdown-menu {
+    .gbs-navbar .navbar-main-nav .dropdown-menu {
         position: static !important;
         float: none;
         border: none;
@@ -235,15 +235,15 @@ h5.mt-3 {
 
 /* Desktop: restore original two-row banner (top row + bottom nav row) */
 @media (min-width: 992px) {
-    .wgbs-navbar {
+    .gbs-navbar {
         min-height: var(--banner-height);
         height: var(--banner-height);
     }
-    .wgbs-navbar .navbar-collapse {
+    .gbs-navbar .navbar-collapse {
         display: contents !important;
     }
 
-    .wgbs-navbar .navbar-user-nav {
+    .gbs-navbar .navbar-user-nav {
         position: absolute;
         top: 0;
         right: 0;
@@ -256,14 +256,14 @@ h5.mt-3 {
         border-bottom: none;
     }
 
-    .wgbs-navbar .navbar-bottom-row {
+    .gbs-navbar .navbar-bottom-row {
         height: var(--banner-bottom-row-height);
         display: flex;
         align-items: center;
         width: 100%;
     }
 
-    .wgbs-navbar .navbar-main-nav {
+    .gbs-navbar .navbar-main-nav {
         flex-direction: row !important;
         flex-wrap: wrap;
         align-items: center;
@@ -273,11 +273,11 @@ h5.mt-3 {
 }
 
 /* Login/register: single-row banner only */
-.wgbs-navbar--simple {
+.gbs-navbar--simple {
     min-height: var(--banner-top-row-height);
 }
 
-.wgbs-navbar--simple .wgbs-navbar-inner {
+.gbs-navbar--simple .gbs-navbar-inner {
     padding-top: 0;
     padding-bottom: 0;
 }

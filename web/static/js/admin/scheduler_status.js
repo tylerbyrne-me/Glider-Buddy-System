@@ -7,8 +7,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let allJobs = [];
 
     const PLATFORM_LABELS = {
-        wave_glider: 'Wave Glider',
-        slocum: 'Slocum',
+        ...(typeof window !== 'undefined' && window.APP_PLATFORM_LABELS ? window.APP_PLATFORM_LABELS : {
+            wave_glider: 'Wave Glider',
+            slocum: 'Slocum',
+        }),
         system: 'System',
     };
 

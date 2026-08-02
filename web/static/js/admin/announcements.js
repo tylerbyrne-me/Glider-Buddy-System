@@ -62,8 +62,10 @@ document.addEventListener('DOMContentLoaded', async function() {
             : '<span class="badge bg-secondary">Archived</span>';
         const platformLabel = {
             all: 'All',
-            wave_glider: 'Wave Glider',
-            slocum: 'Slocum',
+            ...(typeof window !== 'undefined' && window.APP_PLATFORM_LABELS ? window.APP_PLATFORM_LABELS : {
+                wave_glider: 'Wave Glider',
+                slocum: 'Slocum',
+            }),
         }[ann.platform || 'all'] || ann.platform || 'All';
         const platformBadge = `<span class="badge bg-dark ms-1">${platformLabel}</span>`;
 

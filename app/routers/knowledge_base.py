@@ -5,7 +5,7 @@ Handles HTTP endpoints for knowledge base functionality.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Query
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from typing import List, Optional
 from pathlib import Path
 from datetime import datetime, timezone
@@ -17,6 +17,12 @@ from ..core.auth import get_current_active_user, get_current_admin_user, get_opt
 from ..services.knowledge_base_service import KnowledgeBaseService
 from ..core.templates import templates
 from ..core.template_context import get_template_context
+from ..core.platforms import (
+    PLATFORM_SLOCUM,
+    PLATFORM_WAVE_GLIDER,
+    html_path_for,
+    platform_page_context,
+)
 from ..config import settings
 from fastapi import Request
 import logging
@@ -38,7 +44,7 @@ SLOCUM_DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 def _documents_dir_for_platform(platform: str) -> Path:
     """Return the file storage directory for the given platform."""
-    return SLOCUM_DOCUMENTS_DIR if platform == "slocum" else KB_DOCUMENTS_DIR
+    return SLOCUM_DOCUMENTS_DIR if platform == PLATFORM_SLOCUM else KB_DOCUMENTS_DIR
 
 
 def _normalize_file_url(file_path: str) -> str:
@@ -54,21 +60,25 @@ def _normalize_file_url(file_path: str) -> str:
     return f"/{normalized_path}"
 
 
+def _kb_page(request: Request, current_user, platform_id: str):
+    context = get_template_context(request=request, current_user=current_user)
+    context.update(platform_page_context(platform_id))
+    return templates.TemplateResponse("knowledge_base.html", context)
+
+
 # --- HTML Page Endpoints ---
-@router.get("/knowledge_base.html", response_class=HTMLResponse)
+@router.get("/wave-glider/knowledge_base.html", response_class=HTMLResponse)
 async def knowledge_base_page(
     request: Request,
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
     """Knowledge base main page (Wave Glider)."""
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "wave_glider"
-    context["platform_home_url"] = "/wave-glider/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "knowledge_base.html",
-        context
-    )
+    return _kb_page(request, current_user, PLATFORM_WAVE_GLIDER)
+
+
+@router.get("/knowledge_base.html", response_class=HTMLResponse, include_in_schema=False)
+async def knowledge_base_page_legacy():
+    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "knowledge_base.html"), status_code=302)
 
 
 @router.get("/slocum/knowledge_base.html", response_class=HTMLResponse)
@@ -77,14 +87,7 @@ async def slocum_knowledge_base_page(
     current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
     """Knowledge base page for Slocum platform."""
-    context = get_template_context(request=request, current_user=current_user)
-    context["platform"] = "slocum"
-    context["platform_home_url"] = "/slocum/home"
-    context["show_banner_nav"] = True
-    return templates.TemplateResponse(
-        "knowledge_base.html",
-        context
-    )
+    return _kb_page(request, current_user, PLATFORM_SLOCUM)
 
 
 @router.post("/api/knowledge/documents/upload", response_model=models.KnowledgeDocumentUploadResponse)
