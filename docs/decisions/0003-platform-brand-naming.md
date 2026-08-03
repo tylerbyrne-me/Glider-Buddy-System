@@ -28,4 +28,4 @@ The application grew from a Wave Glider–only product into a multi-platform sys
 
 - Adding a platform means: register a `PlatformSpec`, add routes under its URL prefix, optional `{id}_platform` toggle, and (eventually) code under `app/platforms/{id}/`.
 - High-traffic wiki (`architecture`, `conventions`, `WEB_FOLDER_STANDARDS`) must stay aligned with the registry.
-- Follow-ups completed in-repo: logo (`gbs_logo.svg`), favicon wiring, `/api/wave_glider` alias middleware + first-party JS prefix, Slocum core under `app/platforms/slocum/`. Remaining ops: live GitHub rename, production path `mv` (see wiki how-tos).
+- Follow-ups completed in-repo: logo (`gbs_logo.svg`), favicon wiring, `/api/wave_glider` alias middleware + first-party JS prefix, Slocum package under `app/platforms/slocum/`, live GitHub rename to `Glider-Buddy-System`. Remaining ops: production path `mv` to `/home/cove/Glider-Buddy-System` (see [PROD_PATH_RENAME.md](../wiki/how-tos/PROD_PATH_RENAME.md)).

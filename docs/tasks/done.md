@@ -3,6 +3,7 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-03 — Ops GitHub rename to `Glider-Buddy-System` (tag `pre-gbs-rename-20260803`, mirror under `%USERPROFILE%\backups\`, local origin updated; old URL 301s). Prod path cutover still open — use `docs/wiki/how-tos/gbs_prod_path_cutover.sh` on host
 - [x] 2026-08-03 — Platform packages Now/Soon: scaffold `app/platforms/wave_glider/`; move Slocum summaries/reports/masterdata/checklist_definitions/cli into `app/platforms/slocum/` (thin CLI shim at `app.cli.slocum_cli`)
 - [x] 2026-08-03 — Favicon wiring (`PRODUCT_FAVICON_*`, interim `gbs_favicon.svg`); remove transitional `wgbs_logo`; move `app/core/slocum_*.py` → `app/platforms/slocum/` (routers stay put)
 - [x] 2026-08-02 — Rebrand follow-ups Phases 1–6 in-repo: `gbs_logo.svg` + placeholder; GitHub/prod how-tos; archive note; `/api/wave_glider` alias + JS prefix; `app/platforms/` scaffold (live GitHub rename + prod `mv` remain ops)

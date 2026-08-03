@@ -4,6 +4,15 @@ Canonical tree: **`/home/cove/Glider-Buddy-System`** (was `Wave-Glider-Buddy-Sys
 
 Service unit name stays **`gliderbuddy.service`**.
 
+Helper script (on the app host, after deploy/pull): [`gbs_prod_path_cutover.sh`](./gbs_prod_path_cutover.sh)
+
+```bash
+chmod +x docs/wiki/how-tos/gbs_prod_path_cutover.sh
+./docs/wiki/how-tos/gbs_prod_path_cutover.sh --execute
+# then edit unit WorkingDirectory + .env as printed
+# rollback mv/symlink only: ./docs/wiki/how-tos/gbs_prod_path_cutover.sh --rollback
+```
+
 ## Cutover (maintenance window)
 
 ```bash
@@ -31,6 +40,18 @@ sudo journalctl -u gliderbuddy --since "5 min ago" | grep -E 'STARTUP:|APSchedul
 ```
 
 Expect one leader: single sync + single APScheduler start.
+
+## Rollback (path)
+
+```bash
+sudo systemctl stop gliderbuddy.service
+# If old path is the soak symlink:
+sudo rm /home/cove/Wave-Glider-Buddy-System
+sudo mv /home/cove/Glider-Buddy-System /home/cove/Wave-Glider-Buddy-System
+# Restore unit WorkingDirectory + .env to the old path, then:
+sudo systemctl daemon-reload
+sudo systemctl start gliderbuddy.service
+```
 
 ## After soak
 

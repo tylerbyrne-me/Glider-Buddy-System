@@ -19,8 +19,8 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 - [ ] Slocum weekly report polish Phase 2+: landscape multi-panel sensors, checklist-bundle charts, end-of-mission mode, persist `weekly_report_url` — [Report polish Phase 1](b8a79301-0344-450e-99c7-0d8d67d64032)
 - [ ] Chart platform follow-ups: ERDDAP/narrow bulk API (drop client `rowsToSeries`), server-owned chart config registry, optional spectrum/doughnut/mini-trends/forecast into declarative system, WG↔Slocum schema convergence, JS test harness — [WG declarative rewrite](bcc8cb49-ec97-49b6-b793-8a04926f4140)
-- [ ] Ops: rename GitHub repo to `Glider-Buddy-System` (UI or `gh repo rename`); then `git remote set-url` on clones — [GITHUB_RENAME.md](../wiki/how-tos/GITHUB_RENAME.md)
-- [ ] Ops: prod path cutover to `/home/cove/Glider-Buddy-System` with symlink soak — [PROD_PATH_RENAME.md](../wiki/how-tos/PROD_PATH_RENAME.md)
+- [x] Ops: rename GitHub repo to `Glider-Buddy-System`; remotes updated; backup tag + mirror — [GITHUB_RENAME.md](../wiki/how-tos/GITHUB_RENAME.md) — 2026-08-03
+- [ ] Ops (manual on app host): prod path cutover to `/home/cove/Glider-Buddy-System` with symlink soak — no remote access from this workstation; run [`gbs_prod_path_cutover.sh`](../wiki/how-tos/gbs_prod_path_cutover.sh) during a maintenance window — [PROD_PATH_RENAME.md](../wiki/how-tos/PROD_PATH_RENAME.md)
 
 ### Platform packages (`app/platforms/`)
 
