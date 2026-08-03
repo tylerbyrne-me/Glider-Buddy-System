@@ -14,9 +14,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 import numpy as np
 import pandas as pd
 
-from .processors import preprocess_slocum_ctd_df
-from .summaries import _generate_mini_trend, _get_common_status_data
-from ..slocum_mirror_service import load_mirror_df
+from app.core.data.processors import preprocess_slocum_ctd_df
+from app.core.data.summaries import _generate_mini_trend, _get_common_status_data
+from .mirror_service import load_mirror_df
 
 logger = logging.getLogger(__name__)
 

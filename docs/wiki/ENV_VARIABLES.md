@@ -37,7 +37,7 @@ These vary by environment (dev, staging, production) and should be configured pe
 
 ```bash
 # Data Paths (vary by server/environment)
-LOCAL_DATA_BASE_PATH=/home/cove/Wave-Glider-Buddy-System/data
+LOCAL_DATA_BASE_PATH=/home/cove/Glider-Buddy-System/data
 LOG_FILE_PATH=/var/log/wave-glider-buddy/app.log
 
 # Remote Data Configuration
@@ -138,7 +138,7 @@ MAIL_SSL_TLS=False
 # ============================================================================
 # DATA PATHS (Deployment-Specific)
 # ============================================================================
-LOCAL_DATA_BASE_PATH=/home/cove/Wave-Glider-Buddy-System/data
+LOCAL_DATA_BASE_PATH=/home/cove/Glider-Buddy-System/data
 LOG_FILE_PATH=/var/log/wave-glider-buddy/app.log
 
 # ============================================================================
@@ -331,7 +331,7 @@ LOG_FILE_PATH=/var/log/wave-glider-buddy/app.log
 
 These are currently hardcoded in `config.py` and should be reviewed:
 
-1. **`local_data_base_path`**: `/home/cove/Wave-Glider-Buddy-System/data` - Linux path, may need Windows equivalent
+1. **`local_data_base_path`**: `/home/cove/Glider-Buddy-System/data` - Linux path, may need Windows equivalent
 2. **`log_file_path`**: Windows path hardcoded - should be environment-specific
 3. **`remote_data_url`**: Production URL hardcoded
 4. **`sensor_tracker_host`**: Production URL hardcoded

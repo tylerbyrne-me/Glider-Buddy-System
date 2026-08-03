@@ -3,6 +3,9 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-03 — Platform packages Now/Soon: scaffold `app/platforms/wave_glider/`; move Slocum summaries/reports/masterdata/checklist_definitions/cli into `app/platforms/slocum/` (thin CLI shim at `app.cli.slocum_cli`)
+- [x] 2026-08-03 — Favicon wiring (`PRODUCT_FAVICON_*`, interim `gbs_favicon.svg`); remove transitional `wgbs_logo`; move `app/core/slocum_*.py` → `app/platforms/slocum/` (routers stay put)
+- [x] 2026-08-02 — Rebrand follow-ups Phases 1–6 in-repo: `gbs_logo.svg` + placeholder; GitHub/prod how-tos; archive note; `/api/wave_glider` alias + JS prefix; `app/platforms/` scaffold (live GitHub rename + prod `mv` remain ops)
 - [x] 2026-08-02 — Glider Buddy System rebrand: platform registry, GBS brand titles, `gbs-*` CSS, WG HTML under `/wave-glider/` with redirects, high-traffic wiki + ADR 0003
 - [x] 2026-07-31 — Slocum DMON sensor card + checklist: admin `dmon` toggle; ERDDAP `sci_dmon_msg_byte_count` dashboard/checklist; SFMC `from-glider` `*.asc` last-48h listing with >16h gap highlight; left-nav green/red ASC gap status dot (Waves ESS style); Science checklist items gated on DMON; `BUNDLE_SCHEMA_VERSION` **12**
 - [x] 2026-07-31 — Slocum checklist Plot-it expansions: water depth, BMS currents, leak channels (+ digifin on y3), thruster_val autofill + plot; multi-series series API; checklist ERDDAP vars; schema bumped through digifin/thruster work (now **11**)

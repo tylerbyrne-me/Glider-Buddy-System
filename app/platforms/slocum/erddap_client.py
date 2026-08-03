@@ -16,7 +16,7 @@ import httpx
 import pandas as pd
 from erddapy import ERDDAP
 
-from ..config import settings
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 

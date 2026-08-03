@@ -1337,9 +1337,9 @@ async def load_checklist_autofill_values(
     is not performed here — callers own fetch timing.
     ``u_alt_min_depth_val`` is never filled from SFMC (pilot / prior submission).
     """
-    from ..core.geo.forecast import get_general_meteo_forecast, get_marine_meteo_forecast
-    from ..core.slocum_cache_service import get_cached_or_fetch_bundle_df
-    from ..core.slocum_mirror_service import is_historical_dataset
+    from app.core.geo.forecast import get_general_meteo_forecast, get_marine_meteo_forecast
+    from .cache_service import get_cached_or_fetch_bundle_df
+    from .mirror_service import is_historical_dataset
 
     if not is_historical and is_historical_dataset(dataset_id):
         is_historical = True
@@ -1394,7 +1394,7 @@ async def load_checklist_autofill_values(
         math.isnan(approx_lat) or math.isnan(approx_lon)
     ):
         try:
-            from ..core.geo.bathymetry import fetch_etopo_depth_at
+            from app.core.geo.bathymetry import fetch_etopo_depth_at
 
             approx_water_depth_m = await asyncio.to_thread(
                 fetch_etopo_depth_at, approx_lat, approx_lon
@@ -1453,7 +1453,7 @@ def apply_dmon_science_checklist_items(
     When DMON is disabled, remove ``asc_gap_check_val``.
     When enabled, inject plottable byte-count + ASC file list before the gap dropdown.
     """
-    from . import models as _models
+    from app.core import models as _models
 
     is_dmon = "dmon" in {str(c).strip().lower() for c in (enabled_sensor_cards or [])}
     asc_payload = dmon_asc_payload if isinstance(dmon_asc_payload, dict) else {}

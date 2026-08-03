@@ -15,15 +15,15 @@ from typing import Any, Literal, Optional
 
 import pandas as pd
 
-from ..config import settings
-from ..core.infra.feature_toggles import is_feature_enabled
-from ..core.slocum_erddap_client import fetch_dataset_time_extent
-from ..core.slocum_mirror_service import (
+from app.config import settings
+from app.core.infra.feature_toggles import is_feature_enabled
+from .erddap_client import fetch_dataset_time_extent
+from .mirror_service import (
     ensure_mirror_synced,
     load_mirror_df,
     sync_dataset_mirror,
 )
-from ..core.slocum_overage_cache import (
+from .overage_cache import (
     OverageRangeError,
     OverageRequest,
     OverageResult,
@@ -88,7 +88,7 @@ def parse_slocum_time_window(
 
     All modes return explicit bounded ISO timestamps (never unbounded ERDDAP pulls).
     """
-    from ..core.slocum_mirror_service import is_historical_dataset
+    from .mirror_service import is_historical_dataset
 
     if not is_historical and is_historical_dataset(dataset_id):
         is_historical = True

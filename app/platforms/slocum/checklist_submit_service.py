@@ -13,8 +13,8 @@ from typing import Any, Optional
 
 from sqlmodel import Session, select
 
-from . import models, utils
-from .slocum_checklist_autofill import (
+from app.core import models, utils
+from .checklist_autofill import (
     CHECKLIST_FORM_TITLE,
     CHECKLIST_FORM_TYPE,
     apply_dmon_science_checklist_items,
@@ -22,11 +22,11 @@ from .slocum_checklist_autofill import (
     parse_checklist_reference_values,
     parse_enabled_sensor_cards,
 )
-from .slocum_deployment_service import resolve_deployment_for_dataset
-from .slocum_mirror_service import is_historical_dataset
-from .sfmc_cache_service import get_cached_sfmc_values, refresh_sfmc_snapshot
-from .sfmc_client import sfmc_is_configured
-from ..forms.slocum_checklist_definitions import get_slocum_daily_checklist_schema
+from .deployment_service import resolve_deployment_for_dataset
+from .mirror_service import is_historical_dataset
+from app.core.sfmc_cache_service import get_cached_sfmc_values, refresh_sfmc_snapshot
+from app.core.sfmc_client import sfmc_is_configured
+from .checklist_definitions import get_slocum_daily_checklist_schema
 
 logger = logging.getLogger(__name__)
 

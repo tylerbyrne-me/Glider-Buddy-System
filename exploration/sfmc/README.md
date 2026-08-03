@@ -111,7 +111,7 @@ After auth works and samples exist:
 
 - Add optional `sfmc_*` settings to `app/config.py`
 - Implement `app/core/sfmc_client.py`
-- Merge into `load_checklist_autofill_values()` in `app/core/slocum_checklist_autofill.py`
+- Merge into `load_checklist_autofill_values()` in `app/platforms/slocum/checklist_autofill.py`
 - Map glider host name on `SlocumDeployment` (new `sfmc_glider_name` field)
 
 See project plan: SFMC API Exploration and Checklist Autofill Groundwork.

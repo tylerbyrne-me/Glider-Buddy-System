@@ -1,4 +1,4 @@
-# Wave Glider Buddy System — application settings (app/config.py)
+# Glider Buddy System — application settings (app/config.py)
 import json
 import logging
 from typing import Any, Optional  # Import Any and Optional
@@ -11,7 +11,7 @@ _settings_log = logging.getLogger(__name__)
 
 class Settings(BaseSettings):
     local_data_base_path: Path = Path(
-        "/home/cove/Wave-Glider-Buddy-System/data"
+        "/home/cove/Glider-Buddy-System/data"
     )
     remote_data_url: str = (
         "http://129.173.20.180:8086/"  # Base URL before specific output folders

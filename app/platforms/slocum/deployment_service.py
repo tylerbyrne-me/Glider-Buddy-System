@@ -15,8 +15,8 @@ from typing import Optional
 
 from sqlmodel import select
 
-from . import models, utils
-from .infra.db import SQLModelSession
+from app.core import models, utils
+from app.core.infra.db import SQLModelSession
 
 logger = logging.getLogger(__name__)
 

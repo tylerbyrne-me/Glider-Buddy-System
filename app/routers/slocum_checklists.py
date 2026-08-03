@@ -21,7 +21,7 @@ from ..core import models, utils
 from ..core.auth import get_current_active_user, get_optional_current_user, require_platform_access
 from ..core.infra.db import SQLModelSession, get_db_session
 from ..core.infra.feature_toggles import is_feature_enabled
-from ..core.slocum_checklist_autofill import (
+from app.platforms.slocum.checklist_autofill import (
     CHECKLIST_FORM_TITLE,
     CHECKLIST_FORM_TYPE,
     CHECKLIST_HOURS_BACK,
@@ -30,14 +30,14 @@ from ..core.slocum_checklist_autofill import (
     get_plottable_spec,
     parse_checklist_reference_values,
 )
-from ..core.slocum_checklist_compare import build_compare_result
-from ..core.slocum_checklist_submit_service import (
+from app.platforms.slocum.checklist_compare import build_compare_result
+from app.platforms.slocum.checklist_submit_service import (
     build_checklist_autofilled_schema,
     persist_checklist_submission,
 )
-from ..core.slocum_deployment_service import resolve_deployment_for_dataset
-from ..core.slocum_mirror_service import is_historical_dataset
-from ..core.slocum_overage_cache import OverageResult
+from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
+from app.platforms.slocum.mirror_service import is_historical_dataset
+from app.platforms.slocum.overage_cache import OverageResult
 from ..core.template_context import get_template_context
 from ..core.templates import templates
 
@@ -191,7 +191,7 @@ async def get_checklist_series(
             detail=f"Checklist item '{item_id}' is not plottable",
         )
 
-    from ..core.slocum_cache_service import get_cached_or_fetch_bundle_df
+    from app.platforms.slocum.cache_service import get_cached_or_fetch_bundle_df
 
     deployment = resolve_deployment_for_dataset(session, dataset_id)
     references = parse_checklist_reference_values(

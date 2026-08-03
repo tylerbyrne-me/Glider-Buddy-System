@@ -17,15 +17,15 @@ from typing import Any, Optional
 
 import pandas as pd
 
-from ..config import settings
-from ..core.slocum_bundle_registry import (
+from app.config import settings
+from .bundle_registry import (
     DEFAULT_MIRROR_BUNDLES,
     get_bundle_spec,
     list_bundle_names,
     preprocess_bundle_df,
 )
-from ..core.slocum_erddap_client import fetch_dataset_time_extent, fetch_slocum_data
-from ..core.utils import (
+from .erddap_client import fetch_dataset_time_extent, fetch_slocum_data
+from app.core.utils import (
     cleanup_stale_sibling_tmp_files,
     promote_orphan_tmp_file,
     replace_path_with_retries,
@@ -34,7 +34,7 @@ from ..core.utils import (
     unique_sibling_tmp_path,
     write_parquet_file_atomic,
 )
-from .geo.coordinates import mask_null_island_coordinates
+from app.core.geo.coordinates import mask_null_island_coordinates
 
 logger = logging.getLogger(__name__)
 
@@ -422,7 +422,7 @@ def inspect_mirror_dataset(dataset_id: str, *, hours_back: int = 72) -> dict[str
     Admin diagnostics for mirror parquet bundles: row counts, column non-nulls,
     sliced time ranges, and CTD science/profile availability.
     """
-    from ..core.slocum_cache_service import slice_processed_df
+    from .cache_service import slice_processed_df
 
     meta = _read_meta(dataset_id)
     hours = max(1, min(8760, int(hours_back or 72)))

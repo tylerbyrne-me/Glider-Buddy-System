@@ -22,15 +22,15 @@ from ..core.geo.map_utils import prepare_track_points, generate_kml_from_track_p
 from ..core.geo import weather_map_cache, iridium_tle_cache
 from ..core.data.processors import preprocess_telemetry_df
 from ..core.data.data_service import get_data_service
-from ..core.slocum_cache_service import (
+from app.platforms.slocum.cache_service import (
     get_cached_or_fetch_dashboard_df,
     get_cached_or_fetch_bundle_df,
     parse_slocum_time_window,
     slice_processed_df,
 )
-from ..core.slocum_mirror_service import dashboard_df_to_track_df
-from ..core.slocum_checklist_autofill import latest_valid_waypoint
-from ..core.slocum_overage_cache import OverageRangeError
+from app.platforms.slocum.mirror_service import dashboard_df_to_track_df
+from app.platforms.slocum.checklist_autofill import latest_valid_waypoint
+from app.platforms.slocum.overage_cache import OverageRangeError
 from ..core.infra.feature_toggles import is_feature_enabled
 from ..core.infra.error_handlers import handle_processing_error, handle_data_not_found, ErrorContext
 

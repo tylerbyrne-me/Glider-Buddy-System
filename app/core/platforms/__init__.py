@@ -6,9 +6,13 @@ kebab-case. Import helpers from here rather than scattering string literals.
 """
 
 from .registry import (
+    PLATFORM_PLACEHOLDER_LOGO,
     PLATFORM_SLOCUM,
     PLATFORM_WAVE_GLIDER,
     PLATFORMS,
+    PRODUCT_FAVICON_PATH,
+    PRODUCT_FAVICON_SVG_PATH,
+    PRODUCT_LOGO_PATH,
     PRODUCT_NAME_FULL,
     PRODUCT_NAME_SHORT,
     PlatformSpec,
@@ -26,9 +30,13 @@ from .registry import (
 )
 
 __all__ = [
+    "PLATFORM_PLACEHOLDER_LOGO",
     "PLATFORM_SLOCUM",
     "PLATFORM_WAVE_GLIDER",
     "PLATFORMS",
+    "PRODUCT_FAVICON_PATH",
+    "PRODUCT_FAVICON_SVG_PATH",
+    "PRODUCT_LOGO_PATH",
     "PRODUCT_NAME_FULL",
     "PRODUCT_NAME_SHORT",
     "PlatformSpec",

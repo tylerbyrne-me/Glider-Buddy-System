@@ -102,7 +102,7 @@ def get_static_form_schema(form_type: str) -> models.MissionFormSchema:
             ]
         )
     elif form_type == "slocum_daily_checklist":
-        from .slocum_checklist_definitions import get_slocum_daily_checklist_schema
+        from app.platforms.slocum.checklist_definitions import get_slocum_daily_checklist_schema
         return get_slocum_daily_checklist_schema()
 
     logger.error(f"Static form schema definition not found for form_type: {form_type}")

@@ -16,7 +16,7 @@ The application grew from a Wave Glider–only product into a multi-platform sys
 2. **Central registry** in `app/core/platforms/` owns platform IDs, URL/home/API prefixes, buddy titles, feature/KB toggle names, and ACL attribute names. Callers import helpers/constants instead of hardcoding strings.
 3. **URL contract:** HTML under `/{kebab(platform_id)}/...`; legacy Wave Glider root HTML redirects to `/wave-glider/...`. New APIs prefer `/api/{platform_id}/...`; existing WG `/api/...` paths stay for compatibility.
 4. **CSS product prefix:** `gbs-*` (not `wgbs-*`). Logo asset filenames remain a follow-up.
-5. **New platform modules:** document target layout `app/platforms/{id}/`; do not require moving existing `slocum_*.py` in the same change.
+5. **Platform modules:** prefer `app/platforms/{id}/` for platform-only logic. Slocum core modules live under `app/platforms/slocum/` (routers remain in `app/routers/`).
 
 ## Alternatives considered
 
@@ -28,4 +28,4 @@ The application grew from a Wave Glider–only product into a multi-platform sys
 
 - Adding a platform means: register a `PlatformSpec`, add routes under its URL prefix, optional `{id}_platform` toggle, and (eventually) code under `app/platforms/{id}/`.
 - High-traffic wiki (`architecture`, `conventions`, `WEB_FOLDER_STANDARDS`) must stay aligned with the registry.
-- Follow-ups: logo/favicon rename, GitHub repo rename, production path rename, archive-doc sweep, optional full WG API prefix migration.
+- Follow-ups completed in-repo: logo (`gbs_logo.svg`), favicon wiring, `/api/wave_glider` alias middleware + first-party JS prefix, Slocum core under `app/platforms/slocum/`. Remaining ops: live GitHub rename, production path `mv` (see wiki how-tos).

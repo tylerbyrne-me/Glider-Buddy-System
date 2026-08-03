@@ -23,8 +23,8 @@ from ..core.auth import get_current_active_user, get_current_admin_user, require
 from ..core.infra.db import get_db_session, SQLModelSession
 from ..core import models, utils
 from ..core.infra.feature_toggles import is_feature_enabled
-from ..core.slocum_checklist_autofill import list_checklist_presets
-from ..core.slocum_deployment_service import (
+from app.platforms.slocum.checklist_autofill import list_checklist_presets
+from app.platforms.slocum.deployment_service import (
     get_or_create_deployment_for_dataset,
     resolve_deployment_for_dataset,
 )

@@ -4,12 +4,14 @@ Start here. This folder is the source of truth for "how does this work."
 
 ## Pages
 
-- [Architecture](./architecture.md) — how the pieces fit together
+- [Architecture](./architecture.md) — how the pieces fit together (includes platforms)
 - [Setup](./setup.md) — getting a dev environment running
 - [Conventions](./conventions.md) — coding/naming rules (links to detailed standards)
 - [Environment variables](./ENV_VARIABLES.md) — config reference
 - [Glossary template](./GLOSSARY_TEMPLATE.md) — RAG/glossary authoring
 - [Module templates](./MODULE_TEMPLATES_README.md) — module scaffolding notes
+
+Rebrand ops how-tos: [BRAND_ASSETS](./how-tos/BRAND_ASSETS.md), [GITHUB_RENAME](./how-tos/GITHUB_RENAME.md), [PROD_PATH_RENAME](./how-tos/PROD_PATH_RENAME.md).
 
 ## How-tos
 

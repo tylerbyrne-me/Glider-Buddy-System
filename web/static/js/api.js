@@ -46,6 +46,40 @@ export const showToast = (message, type = 'success') => {
 export const getPlatform = () => (typeof window !== 'undefined' && window.APP_PLATFORM) ? window.APP_PLATFORM : 'wave_glider';
 
 /**
+ * Canonical API prefix for the current platform (Slocum already uses /api/slocum).
+ * Wave Glider: /api/wave_glider (aliased server-side to legacy /api/...).
+ * @returns {string}
+ */
+export const getPlatformApiPrefix = () => {
+    const platform = getPlatform();
+    if (platform === 'slocum') return '/api/slocum';
+    if (platform === 'wave_glider') return '/api/wave_glider';
+    return '/api';
+};
+
+/**
+ * Prefer platform-prefixed APIs for Wave Glider first-party calls.
+ * Leaves /api/slocum, /api/wave_glider, /api/admin, /api/auth, /api/token unchanged.
+ * @param {string} url
+ * @returns {string}
+ */
+export const withPlatformApiPrefix = (url) => {
+    if (typeof url !== 'string' || !url.startsWith('/api/')) return url;
+    if (
+        url.startsWith('/api/slocum') ||
+        url.startsWith('/api/wave_glider') ||
+        url.startsWith('/api/admin') ||
+        url.startsWith('/api/auth') ||
+        url.startsWith('/api/token') ||
+        url.startsWith('/api/users')
+    ) {
+        return url;
+    }
+    if (getPlatform() !== 'wave_glider') return url;
+    return `/api/wave_glider${url.slice(4)}`;
+};
+
+/**
  * Appends platform query parameter to a URL for KB API calls.
  * @param {string} url - Base URL (may already have query params).
  * @returns {string}
@@ -65,6 +99,7 @@ export const appendPlatformParam = (url) => {
  * @throws {Error} Throws an error if the request fails, with the message from the server.
  */
 export const apiRequest = async (url, method, body = null) => {
+    url = withPlatformApiPrefix(url);
     const token = localStorage.getItem('accessToken');
     const headers = {
         'Content-Type': 'application/json',
@@ -139,6 +174,7 @@ export const getAuthHeaders = () => {
  * @returns {Promise<Response>} The fetch response promise (caller should check response.ok and handle 401 only if not redirected).
  */
 export const fetchWithAuth = async (url, options = {}) => {
+    url = withPlatformApiPrefix(url);
     const token = localStorage.getItem('accessToken');
     const headers = new Headers(options.headers || {});
     if (token && !headers.has('Authorization')) {

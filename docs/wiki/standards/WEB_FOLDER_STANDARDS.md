@@ -431,7 +431,7 @@ import { checkAuth } from '/static/js/auth.js';
 
 **Location:** `web/static/images/`
 
-**Naming:** Use descriptive names (e.g., `login_splash.jpg`, `wgbs_logo.svg` — logo rename is a backlog follow-up). Product CSS classes use the `gbs-` prefix (e.g. `.gbs-navbar`).
+**Naming:** Use descriptive names (e.g., `login_splash.jpg`, `gbs_logo.svg`, `gbs_favicon.svg`). Product CSS classes use the `gbs-` prefix (e.g. `.gbs-navbar`). Favicon: `/static/favicon.ico` plus optional `/static/images/gbs_favicon.svg` (see [BRAND_ASSETS.md](../how-tos/BRAND_ASSETS.md)).
 
 **Usage in Templates:**
 ```jinja2

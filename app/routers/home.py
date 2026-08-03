@@ -21,8 +21,8 @@ from ..core.platforms import (
     home_url_for,
     platform_labels_map,
 )
-from ..core.slocum_deployment_service import get_or_create_deployment_for_dataset
-from ..core.data.slocum_summaries import build_slocum_sensor_summaries
+from app.platforms.slocum.deployment_service import get_or_create_deployment_for_dataset
+from app.platforms.slocum.summaries import build_slocum_sensor_summaries
 from sqlmodel import select
 from sqlalchemy import or_
 import logging
@@ -83,7 +83,7 @@ def _merge_slocum_summary_context(
     if session is not None and "dmon" in enabled_cards:
         try:
             from ..core.sfmc_cache_service import get_cached_dmon_asc_files
-            from ..core.slocum_deployment_service import resolve_deployment_for_dataset
+            from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
 
             deployment = resolve_deployment_for_dataset(session, dataset_id)
             if deployment is not None:

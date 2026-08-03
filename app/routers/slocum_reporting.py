@@ -13,7 +13,7 @@ from ..core.auth import get_current_active_user, get_current_admin_user, require
 from ..core import models
 from ..core.infra.db import get_db_session
 from ..core.infra.feature_toggles import is_feature_enabled
-from ..core.reporting.slocum_reports import create_and_save_slocum_weekly_report, default_slocum_weekly_date_window
+from app.platforms.slocum.reports import create_and_save_slocum_weekly_report, default_slocum_weekly_date_window
 from ..core.utils import slocum_mission_key
 
 logger = logging.getLogger(__name__)

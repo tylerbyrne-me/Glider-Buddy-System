@@ -18,21 +18,20 @@ import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from pathlib import Path
 from typing import Any, Iterator, Literal, Optional
 
 import pandas as pd
 
-from ..config import settings
-from ..core.slocum_bundle_registry import get_bundle_spec
-from ..core.slocum_mirror_service import (
+from app.config import settings
+from .bundle_registry import get_bundle_spec
+from .mirror_service import (
     _fetch_raw_bundle,
     _last_timestamp,
     _merge_mirror_frames,
     ensure_mirror_synced,
     load_mirror_df,
 )
-from ..core.utils import (
+from app.core.utils import (
     cross_process_file_lock,
     replace_path_with_retries,
     resolve_data_path,
@@ -684,7 +683,7 @@ async def resolve_time_window_dataframe(
     context: RequestContext = "interactive",
 ) -> OverageResult:
     """Convenience wrapper used by routers: parse window then load via overage/mirror."""
-    from ..core.slocum_cache_service import parse_slocum_time_window
+    from .cache_service import parse_slocum_time_window
 
     time_start_str, time_end_str, use_date_range = parse_slocum_time_window(
         dataset_id, hours_back, is_historical, start_date, end_date

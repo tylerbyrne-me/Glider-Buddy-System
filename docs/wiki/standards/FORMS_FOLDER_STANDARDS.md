@@ -13,7 +13,7 @@ The forms folder **IS still needed** and serves an important purpose:
 - Wave Glider form types in `form_definitions.py`:
   - `pre_deployment_checklist` - Pre-deployment checklist
   - `pic_handoff_checklist` - PIC handoff checklist
-- Slocum daily checklist schema in `slocum_checklist_definitions.py` (`slocum_daily_checklist`)
+- Slocum daily checklist schema in `app/platforms/slocum/checklist_definitions.py` (`slocum_daily_checklist`); WG schemas stay in `form_definitions.py`
 - Provides `get_static_form_schema()` / checklist schema helpers used by routers
 
 ### Folder Structure
@@ -21,8 +21,10 @@ The forms folder **IS still needed** and serves an important purpose:
 ```
 app/forms/
 ├── __init__.py
-├── form_definitions.py                 # WG mission form schemas
-└── slocum_checklist_definitions.py     # Slocum daily pilot checklist schema
+└── form_definitions.py                 # WG mission form schemas (+ lazy import of Slocum checklist schema)
+
+app/platforms/slocum/
+└── checklist_definitions.py            # Slocum daily pilot checklist schema
 ```
 
 ## What Belongs in `app/forms/`

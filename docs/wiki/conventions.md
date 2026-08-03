@@ -20,11 +20,13 @@ Detailed standards live under [standards/](./standards/). Prefer this page for o
 | `platform_id` | snake_case | `wave_glider`, `slocum` |
 | URL prefix | `/{kebab(id)}` | `/wave-glider`, `/slocum` |
 | HTML pages | `{url_prefix}/{page}` | `/wave-glider/chatbot.html` |
-| API (new) | `/api/{platform_id}/...` | `/api/slocum/...`; WG legacy `/api/...` grandfathered |
+| API (new / preferred) | `/api/{platform_id}/...` | `/api/slocum/...`; WG also accepts `/api/wave_glider/...` (aliased to legacy `/api/...`) |
+| API (legacy WG) | `/api/...` | Grandfathered; first-party JS prefers `/api/wave_glider/...` via `withPlatformApiPrefix` |
 | Feature gate | `{platform_id}_platform` | `slocum_platform` (WG always on) |
 | KB toggle | `{platform_id}_knowledge_base` | |
 | CSS product | `gbs-*` | `.gbs-navbar` |
-| New platform code | `app/platforms/{id}/` (target) | register in `app/core/platforms/` first |
+| New platform code | `app/platforms/{id}/` | register in `app/core/platforms/` first |
+| New WG-only modules | `app/platforms/wave_glider/` | leave existing WG in `app/core` unless a focused peel |
 
 Import IDs and helpers from `app.core.platforms` instead of scattering string literals. Full decision record: [ADR 0003](../decisions/0003-platform-brand-naming.md).
 

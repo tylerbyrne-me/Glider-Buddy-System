@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 from . import models
 from .sfmc_client import load_sfmc_checklist_values, sfmc_is_configured
 from .sfmc_transforms import merge_connection_durations, normalize_dmon_asc_files
-from .slocum_mirror_service import is_historical_dataset
+from app.platforms.slocum.mirror_service import is_historical_dataset
 
 logger = logging.getLogger(__name__)
 

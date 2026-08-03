@@ -2,6 +2,9 @@
 
 Operational procedures, sensor guides, and admin quick starts.
 
+- [Brand assets (logo / favicon)](./BRAND_ASSETS.md)
+- [GitHub repository rename](./GITHUB_RENAME.md)
+- [Production path rename](./PROD_PATH_RENAME.md)
 - [Admin setup](./ADMIN_SETUP.md)
 - [Innovasea VM4 operations](./procedures_innovasea_vm4_operations.md)
 - [Seabird CTD/DO operations](./sensors_seabird_ctd_do_operations.md)

@@ -210,7 +210,7 @@ async def upload_document(
                 # If Slocum Masterdata, also load into slocum_masterdata collection
                 if (category or "").strip().lower() == "masterdata" and platform == "slocum":
                     try:
-                        from ..services.slocum_masterdata_service import load_and_vectorize_masterdata
+                        from app.platforms.slocum.masterdata_service import load_and_vectorize_masterdata
                         load_and_vectorize_masterdata(
                             searchable_content or "",
                             document_id=document.id,

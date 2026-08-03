@@ -9,6 +9,8 @@ import json
 from .infra.feature_toggles import get_feature_context
 from .platforms import (
     PLATFORM_WAVE_GLIDER,
+    PRODUCT_FAVICON_PATH,
+    PRODUCT_FAVICON_SVG_PATH,
     PRODUCT_NAME_FULL,
     PRODUCT_NAME_SHORT,
     buddy_title_for,
@@ -44,6 +46,8 @@ def _brand_context(platform: Optional[str] = None) -> Dict[str, Any]:
     return {
         "app_name": PRODUCT_NAME_FULL,
         "app_name_short": PRODUCT_NAME_SHORT,
+        "app_favicon": PRODUCT_FAVICON_PATH,
+        "app_favicon_svg": PRODUCT_FAVICON_SVG_PATH,
         "platform_buddy_title": buddy_title_for(platform),
         "platform_display_name": display,
         "platform_labels_json": json.dumps(platform_labels_map()),

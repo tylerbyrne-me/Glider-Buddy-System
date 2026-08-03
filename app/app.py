@@ -186,6 +186,19 @@ async def add_static_js_no_cache(request, call_next):
     return response
 
 
+@app.middleware("http")
+async def wave_glider_api_alias(request, call_next):
+    """Map /api/wave_glider/... → /api/... (legacy WG routes stay registered)."""
+    from .core.platforms.api_alias import rewrite_wave_glider_api_path
+
+    path = request.scope.get("path", "")
+    new_path = rewrite_wave_glider_api_path(path)
+    if new_path is not None:
+        request.scope["path"] = new_path
+        if "raw_path" in request.scope:
+            request.scope["raw_path"] = new_path.encode("utf-8")
+    return await call_next(request)
+
 # Slow-request and app 5xx instrumentation. Cheap; helps attribute 502/504 to either
 # the app (APP5XX) or upstream/client (silence here). SLOWREQ threshold is below the
 # gunicorn --timeout 200 so we see warnings before users see 5xx.
@@ -752,7 +765,7 @@ def _initialize_database_and_users():
                         logger.debug(f"Skipping password update for '{username}' - no password set in .env.")
 
             # Disabled System account for automated checklist attribution (no interactive login).
-            from .core.slocum_checklist_submit_service import SYSTEM_USERNAME
+            from app.platforms.slocum.checklist_submit_service import SYSTEM_USERNAME
             import secrets
 
             existing_system = auth.get_user_from_db(session, SYSTEM_USERNAME)
@@ -1524,7 +1537,7 @@ async def run_slocum_warm_cache_job():
     if not feature_toggles.is_feature_enabled("slocum_platform"):
         record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
-    from .core.slocum_cache_service import warm_active_slocum_datasets
+    from app.platforms.slocum.cache_service import warm_active_slocum_datasets
 
     try:
         warmed = await warm_active_slocum_datasets()
@@ -1546,7 +1559,7 @@ async def run_slocum_weekly_reports_job():
     if not feature_toggles.is_feature_enabled("slocum_platform"):
         record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
-    from .core.reporting.slocum_reports import create_and_save_slocum_weekly_report
+    from app.platforms.slocum.reports import create_and_save_slocum_weekly_report
 
     try:
         dataset_ids = [d.strip() for d in settings.active_slocum_datasets if d and d.strip()]
@@ -1691,8 +1704,8 @@ async def run_slocum_overage_cleanup_job():
         record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
     try:
-        from .core.slocum_overage_cache import purge_overage_entries
-        from .core.slocum_mirror_service import cleanup_mirror_stale_tmp_files, purge_orphan_mirrors
+        from app.platforms.slocum.overage_cache import purge_overage_entries
+        from app.platforms.slocum.mirror_service import cleanup_mirror_stale_tmp_files, purge_orphan_mirrors
 
         summary = purge_overage_entries(force_all=False)
         logger.info(
@@ -1784,8 +1797,8 @@ async def run_slocum_auto_checklist_submit_job():
         )
         return
 
-    from .core.slocum_checklist_submit_service import auto_submit_checklist_for_dataset
-    from .core.slocum_mirror_service import is_historical_dataset
+    from app.platforms.slocum.checklist_submit_service import auto_submit_checklist_for_dataset
+    from app.platforms.slocum.mirror_service import is_historical_dataset
 
     dataset_ids = [
         d.strip()
@@ -1899,8 +1912,8 @@ async def startup_event():
         if feature_toggles.is_feature_enabled("slocum_platform"):
             logger.info("STARTUP: Warming Slocum mirror cache for active datasets...")
             try:
-                from .core.slocum_cache_service import warm_active_slocum_datasets
-                from .core.slocum_mirror_service import sync_active_slocum_mirrors
+                from app.platforms.slocum.cache_service import warm_active_slocum_datasets
+                from app.platforms.slocum.mirror_service import sync_active_slocum_mirrors
                 slocum_warmed = await warm_active_slocum_datasets()
                 historical_synced = await sync_active_slocum_mirrors()
                 logger.info(

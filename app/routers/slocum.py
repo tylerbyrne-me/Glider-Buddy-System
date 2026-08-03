@@ -28,8 +28,8 @@ from ..config import settings
 from ..core.auth import get_current_active_user, get_current_admin_user, require_platform_access
 from ..core import models
 from ..core.infra.feature_toggles import is_feature_enabled
-from ..core.slocum_erddap_client import fetch_slocum_ctd_data, fetch_slocum_dashboard_data, list_slocum_datasets
-from ..core.slocum_cache_service import (
+from app.platforms.slocum.erddap_client import fetch_slocum_ctd_data, fetch_slocum_dashboard_data, list_slocum_datasets
+from app.platforms.slocum.cache_service import (
     datasets_cache_ttl_seconds,
     get_cached_or_fetch_bundle_df,
     get_cached_or_fetch_ctd_df,
@@ -39,21 +39,21 @@ from ..core.slocum_cache_service import (
     set_datasets_cache,
     slice_processed_df,
 )
-from ..core.slocum_mirror_service import (
+from app.platforms.slocum.mirror_service import (
     dashboard_df_to_track_df,
     get_mirror_cache_status,
     inspect_mirror_dataset,
     load_mirror_df,
     sync_dataset_mirror,
 )
-from ..core.slocum_overage_cache import (
+from app.platforms.slocum.overage_cache import (
     OverageRangeError,
     OverageResult,
     get_overage_cache_status,
     purge_overage_entries,
 )
 from ..core.data import processors
-from ..core.data.slocum_summaries import build_slocum_sensor_summaries
+from app.platforms.slocum.summaries import build_slocum_sensor_summaries
 from ..core.infra.db import get_db_session, SQLModelSession
 
 logger = logging.getLogger(__name__)
@@ -471,7 +471,7 @@ def _derive_coulomb_amphr_daily(
     emit ``(v_now - v_prior) * (24 / hours_elapsed)``. Points without a lookback
     sample in [12h, 36h] are null. Negative deltas (counter reset) are null.
     """
-    from ..core.slocum_checklist_autofill import compute_amphr_usage_rate
+    from app.platforms.slocum.checklist_autofill import compute_amphr_usage_rate
 
     if processed.empty or "Timestamp" not in processed.columns:
         return []
@@ -630,7 +630,7 @@ async def get_slocum_sfmc_connection_durations(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
 
     from ..core.sfmc_cache_service import get_cached_connection_durations
-    from ..core.slocum_deployment_service import resolve_deployment_for_dataset
+    from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
 
     deployment = resolve_deployment_for_dataset(session, dataset_id)
     if deployment is None:
@@ -667,7 +667,7 @@ async def get_slocum_sfmc_dmon_asc_files(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
 
     from ..core.sfmc_cache_service import get_cached_dmon_asc_files
-    from ..core.slocum_deployment_service import resolve_deployment_for_dataset
+    from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
 
     deployment = resolve_deployment_for_dataset(session, dataset_id)
     if deployment is None:
@@ -711,7 +711,7 @@ async def get_slocum_sensor_summaries(
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
 
-    # Import here to avoid circular import at module load (home imports slocum_summaries only).
+    # Import here to avoid circular import at module load (home imports summaries only).
     from .home import _resolve_slocum_enabled_sensor_cards
 
     enabled_cards = _resolve_slocum_enabled_sensor_cards(

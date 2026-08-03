@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ..core import models
-from ..core.slocum_checklist_autofill import CHECKLIST_FORM_TITLE, CHECKLIST_FORM_TYPE
+from app.core import models
+from .checklist_autofill import CHECKLIST_FORM_TITLE, CHECKLIST_FORM_TYPE
 
 
 def get_slocum_daily_checklist_schema() -> models.MissionFormSchema:

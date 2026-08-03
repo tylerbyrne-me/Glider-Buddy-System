@@ -78,7 +78,7 @@ StartLimitBurst=5
 Type=simple
 User=cove
 Group=cove
-WorkingDirectory=/home/cove/Wave-Glider-Buddy-System
+WorkingDirectory=/home/cove/Glider-Buddy-System
 
 Environment="PYTHONUNBUFFERED=1"
 Environment="TORCH_DISABLE_MKLDNN=1"
@@ -178,23 +178,23 @@ Leader jobs that reclaim disk: `system_weather_map_cleanup_job` (daily :15 UTC),
 
 ```bash
 # Size by top-level cache
-du -h --max-depth=1 /home/cove/Wave-Glider-Buddy-System/data_store | sort -h
+du -h --max-depth=1 /home/cove/Glider-Buddy-System/data_store | sort -h
 
 # Weather map Open-Meteo responses (common multi-GB culprit)
-du -h --max-depth=1 /home/cove/Wave-Glider-Buddy-System/data_store/weather_cache 2>/dev/null | sort -h | tail
-find /home/cove/Wave-Glider-Buddy-System/data_store/weather_cache -name '*.body' 2>/dev/null | wc -l
+du -h --max-depth=1 /home/cove/Glider-Buddy-System/data_store/weather_cache 2>/dev/null | sort -h | tail
+find /home/cove/Glider-Buddy-System/data_store/weather_cache -name '*.body' 2>/dev/null | wc -l
 
 # Bathymetry grids (usually small; 90d TTL / 512MB cap)
-du -sh /home/cove/Wave-Glider-Buddy-System/data_store/bathy_cache 2>/dev/null
-ls /home/cove/Wave-Glider-Buddy-System/data_store/bathy_cache 2>/dev/null | wc -l
+du -sh /home/cove/Glider-Buddy-System/data_store/bathy_cache 2>/dev/null
+ls /home/cove/Glider-Buddy-System/data_store/bathy_cache 2>/dev/null | wc -l
 
 # Iridium TLE cache (small: tles.json + upstream_rate_limit.json; CelesTrak ≤1 contact / 2h)
-du -sh /home/cove/Wave-Glider-Buddy-System/data_store/iridium_cache 2>/dev/null
-ls -la /home/cove/Wave-Glider-Buddy-System/data_store/iridium_cache 2>/dev/null
+du -sh /home/cove/Glider-Buddy-System/data_store/iridium_cache 2>/dev/null
+ls -la /home/cove/Glider-Buddy-System/data_store/iridium_cache 2>/dev/null
 
 # Slocum mirror parquets (dashboard/ctd/checklist per dataset)
-du -sh /home/cove/Wave-Glider-Buddy-System/data_store/slocum_cache 2>/dev/null
-find /home/cove/Wave-Glider-Buddy-System/data_store/slocum_cache -name '*.tmp' 2>/dev/null | wc -l
+du -sh /home/cove/Glider-Buddy-System/data_store/slocum_cache 2>/dev/null
+find /home/cove/Glider-Buddy-System/data_store/slocum_cache -name '*.tmp' 2>/dev/null | wc -l
 
 # Confirm feature toggle / cleanup jobs on leader
 # FEATURE_TOGGLES_JSON weather_map_layers / iridium_map_layer; admin scheduler UI or:

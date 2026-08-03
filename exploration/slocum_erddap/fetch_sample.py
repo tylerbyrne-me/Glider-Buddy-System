@@ -1,7 +1,7 @@
 """
 Slocum Glider ERDDAP sample fetch (exploration only).
 
-Uses app.core.slocum_erddap_client for fetch logic. Run from project root with
+Uses app.platforms.slocum.erddap_client for fetch logic. Run from project root with
 WorkPython conda env so that the app package is importable.
 
   conda activate WorkPython
@@ -17,7 +17,7 @@ _project_root = Path(__file__).resolve().parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from app.core.slocum_erddap_client import (
+from app.platforms.slocum.erddap_client import (
     DEFAULT_VARIABLES,
     fetch_slocum_data,
 )

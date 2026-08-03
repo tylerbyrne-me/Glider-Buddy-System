@@ -13,8 +13,8 @@ from typing import Callable, Iterable, Optional
 
 import pandas as pd
 
-from ..core.data import processors
-from ..core.slocum_erddap_client import (
+from app.core.data import processors
+from .erddap_client import (
     SLOCUM_CHECKLIST_VARIABLES,
     SLOCUM_CTD_VARIABLES,
     SLOCUM_DASHBOARD_VARIABLES,

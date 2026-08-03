@@ -16,24 +16,24 @@ from reportlab.lib.units import mm
 from reportlab.platypus import Image, NextPageTemplate, PageBreak, Paragraph, Spacer
 from sqlmodel import Session as SQLModelSession, select
 
-from .. import models, utils
-from ..geo.coordinates import drop_null_island_rows
-from ..plotting import report_pdf_rc_context
-from ..slocum_cache_service import get_cached_or_fetch_bundle_df, slice_processed_df
-from ..slocum_deployment_service import get_or_create_deployment_for_dataset
-from ..slocum_mirror_service import dashboard_df_to_track_df
-from ..slocum_overage_cache import OverageResult
-from ..utils import slocum_mission_key
-from . import sections
-from .builder import (
+from app.core import models, utils
+from app.core.geo.coordinates import drop_null_island_rows
+from app.core.plotting import report_pdf_rc_context
+from .cache_service import get_cached_or_fetch_bundle_df, slice_processed_df
+from .deployment_service import get_or_create_deployment_for_dataset
+from .mirror_service import dashboard_df_to_track_df
+from .overage_cache import OverageResult
+from app.core.utils import slocum_mission_key
+from app.core.reporting import sections
+from app.core.reporting.builder import (
     build_mission_note_annotations,
     calculate_telemetry_summary,
     load_instrument_blocks,
     mission_blocks_from_deployment,
 )
-from .common import build_platform_cover_flowables, get_report_logo_path, get_report_paragraph_styles
-from .constants import REPORTS_ROOT
-from .styling import WeeklyReportDocTemplate
+from app.core.reporting.common import build_platform_cover_flowables, get_report_logo_path, get_report_paragraph_styles
+from app.core.reporting.constants import REPORTS_ROOT
+from app.core.reporting.styling import WeeklyReportDocTemplate
 
 logger = logging.getLogger(__name__)
 

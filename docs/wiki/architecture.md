@@ -1,6 +1,6 @@
 # Architecture
 
-_Last updated: 2026-08-02_
+_Last updated: 2026-08-03_
 
 ## One-paragraph summary
 
@@ -12,15 +12,16 @@ _Last updated: 2026-08-02_
 - **Brand** — Product: *Glider Buddy System* / *GBS*. In-platform chrome: *{Display} Glider Buddy System* (e.g. *Wave Glider Buddy System*).
 - **HTML** — Platform pages live under `/{url_prefix}/...`; legacy Wave Glider root HTML paths redirect to `/wave-glider/...`.
 - **APIs** — Prefer `/api/{platform_id}/...` for new work; existing Wave Glider `/api/...` paths remain supported (grandfathered).
-- **New platforms** — Prefer new code under `app/platforms/{id}/` (documented target); register the platform in the registry first. Do not scatter new string literals.
+- **Platform packages** — Slocum business logic lives under `app/platforms/slocum/`; routers stay in `app/routers/`. Register new platforms in the registry first; put platform-only code under `app/platforms/{id}/`.
 
 See [conventions](./conventions.md#product--platform-naming) and [ADR 0003](../decisions/0003-platform-brand-naming.md).
 
 ## Components
 
 - **App entry / lifespan** — FastAPI app, middleware, startup leader lock, router mounts (`app/app.py`)
-- **Core** — business logic, data loading, auth, models, platforms registry, infra (logging, feature toggles, caching helpers) (`app/core/`)
-- **Routers** — HTTP endpoints only; depend on core/services, never the reverse (`app/routers/`)
+- **Core** — shared business logic, data loading, auth, models, platforms registry, infra (logging, feature toggles, caching helpers) (`app/core/`)
+- **Platforms** — vehicle-specific packages (e.g. Slocum ERDDAP/mirrors/checklists) (`app/platforms/`)
+- **Routers** — HTTP endpoints only; depend on core/platforms/services, never the reverse (`app/routers/`)
 - **Services** — higher-level orchestration (knowledge base, reporting, sensor tracker, etc.) (`app/services/`)
 - **Web assets** — Jinja templates in `web/templates/` and static files in `web/static/` (wired in `app/core/templates.py` / `app/app.py`); Python form helpers in `app/forms/`
 - **CLI** — admin/ops scripts such as station CSV import (`app/cli/`)
@@ -48,6 +49,7 @@ Slocum mirror and overage fetches store **full ERDDAP resolution** by default (a
 | `app/app.py` | App factory, lifespan, router includes, startup sync/cache |
 | `app/config.py` | Settings / env-backed configuration |
 | `app/core/platforms/` | Product brand + platform registry |
+| `app/platforms/slocum/` | Slocum ERDDAP, mirrors, checklists, deployments |
 | `app/core/infra/logging_config.py` | Root logging, request IDs |
 | `app/core/data/` | Data service / telemetry loading |
 | `AGENTS.md` | Ops runbook (gunicorn, logging, cache inventory) |

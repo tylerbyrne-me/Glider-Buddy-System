@@ -25,11 +25,11 @@ Active/historical mission dashboards (`/slocum/...`) show overview plus optional
 
 Dashboard charts load from the rolling **dashboard** mirror under `data_store/slocum_cache/` (with overage cache for windows the mirror does not fully cover). Variables must be present in:
 
-1. `SLOCUM_DASHBOARD_VARIABLES` ([`app/core/slocum_erddap_client.py`](../../app/core/slocum_erddap_client.py))
+1. `SLOCUM_DASHBOARD_VARIABLES` ([`app/platforms/slocum/erddap_client.py`](../../app/platforms/slocum/erddap_client.py))
 2. Dashboard rename/stems + `preprocess_slocum_dashboard_df` std columns ([`app/core/data/processors.py`](../../app/core/data/processors.py))
 3. Chart allowlists in [`app/routers/slocum.py`](../../app/routers/slocum.py) (`_SLOCUM_VARIABLE_TO_COLUMN`, `_SLOCUM_CHART_VARIABLES`, CSV header)
 
-When preprocess/schema columns change, bump `BUNDLE_SCHEMA_VERSION` in [`app/core/slocum_bundle_registry.py`](../../app/core/slocum_bundle_registry.py) so mirrors rebuild. Current schema is **12** (includes digifin leak detect + thruster + DMON byte count). After deploy, wait for leader sync or force an admin mirror rebuild if new series stay empty.
+When preprocess/schema columns change, bump `BUNDLE_SCHEMA_VERSION` in [`app/platforms/slocum/bundle_registry.py`](../../app/platforms/slocum/bundle_registry.py) so mirrors rebuild. Current schema is **12** (includes digifin leak detect + thruster + DMON byte count). After deploy, wait for leader sync or force an admin mirror rebuild if new series stay empty.
 
 Shared chart UI helpers: `web/static/js/chart_*_utils.js`, `_chart_plot_controls.html`, `_chart_zoom_scripts.html`.
 
@@ -39,12 +39,12 @@ Per-mission daily checklist (`/slocum/dataset/{dataset_id}/checklist.html`, also
 
 ### Autofill and Plot-it
 
-- Schema: [`app/forms/slocum_checklist_definitions.py`](../../app/forms/slocum_checklist_definitions.py)
-- Autofill / Plot-it registry: [`app/core/slocum_checklist_autofill.py`](../../app/core/slocum_checklist_autofill.py) (`CHECKLIST_PLOTTABLE_ITEMS`, `build_checklist_series_payload`)
+- Schema: [`app/platforms/slocum/checklist_definitions.py`](../../app/platforms/slocum/checklist_definitions.py)
+- Autofill / Plot-it registry: [`app/platforms/slocum/checklist_autofill.py`](../../app/platforms/slocum/checklist_autofill.py) (`CHECKLIST_PLOTTABLE_ITEMS`, `build_checklist_series_payload`)
 - Checklist ERDDAP wishlist includes digifin leak detect, thruster, and `sci_dmon_msg_byte_count`; preprocess via checklist rename/std columns
 - Plot modal (`web/static/js/slocum_checklist_form.js`): depth on left (`y`); value series on `y2`; digifin / thruster % on `y3` when needed
 - Plottable autofill rows include vacuum/attitude/buoyancy (legacy), plus **water depth**, **BMS currents**, **leak channels** (main/forward/science/digifin), combined **thruster** (`m_thruster_power` / `c_thruster_on`), and **DMON** `sci_dmon_msg_byte_count` when the DMON sensor card is enabled
-- **DMON gating:** Science items `dmon_msg_byte_count_val`, `dmon_asc_files_val`, and `asc_gap_check_val` appear only when `dmon` is in `SlocumDeployment.enabled_sensor_cards` (Manage Slocum Mission Overviews). The ASC list comes from the SFMC snapshot (`from-glider` `*.asc`, last 48h) and highlights gaps >16h since the newest file (and inter-file gaps >16h). Runtime injection: `apply_dmon_science_checklist_items` in [`slocum_checklist_autofill.py`](../../app/core/slocum_checklist_autofill.py)
+- **DMON gating:** Science items `dmon_msg_byte_count_val`, `dmon_asc_files_val`, and `asc_gap_check_val` appear only when `dmon` is in `SlocumDeployment.enabled_sensor_cards` (Manage Slocum Mission Overviews). The ASC list comes from the SFMC snapshot (`from-glider` `*.asc`, last 48h) and highlights gaps >16h since the newest file (and inter-file gaps >16h). Runtime injection: `apply_dmon_science_checklist_items` in [`checklist_autofill.py`](../../app/platforms/slocum/checklist_autofill.py)
 - Series API: `GET /api/slocum/checklists/{dataset_id}/series?item_id=...`
 
 ### Side-by-side compare
@@ -52,7 +52,7 @@ Per-mission daily checklist (`/slocum/dataset/{dataset_id}/checklist.html`, also
 - Dashboard Checklist tab → **Compare** (needs ≥2 submissions)
 - Locked **reference** on the right; navigable prior submission on the left (past → present)
 - Value diffs via `GET /api/slocum/checklists/compare`; toggles for changed-only (default on) and include notes
-- Core: [`app/core/slocum_checklist_compare.py`](../../app/core/slocum_checklist_compare.py); UI: `web/static/js/slocum_checklist_compare.js`
+- Core: [`app/platforms/slocum/checklist_compare.py`](../../app/platforms/slocum/checklist_compare.py); UI: `web/static/js/slocum_checklist_compare.js`
 
 ## API
 
@@ -77,25 +77,27 @@ From project root with WorkPython:
 
 ```bash
 conda activate WorkPython
-python -m app.cli.slocum_cli --dataset peggy_20250522_206_delayed --start 2025-08-01 --end 2025-08-31 --output my_slocum.csv
-python -m app.cli.slocum_cli --summary-only
+python -m app.platforms.slocum.cli --dataset peggy_20250522_206_delayed --start 2025-08-01 --end 2025-08-31 --output my_slocum.csv
+python -m app.platforms.slocum.cli --summary-only
+# Thin shim still works: python -m app.cli.slocum_cli --summary-only
 ```
 
 The exploration script `exploration/slocum_erddap/fetch_sample.py` also uses the same app client; run it from project root so `app` is importable.
 
 ## Code layout
 
-- **`app/core/slocum_erddap_client.py`**: ERDDAP fetch (sync). Used by routers and CLI. Reads server URL from config. Bundle variable wishlists (`SLOCUM_DASHBOARD_VARIABLES`, CTD, checklist).
+- **`app/platforms/slocum/erddap_client.py`**: ERDDAP fetch (sync). Used by routers and CLI. Reads server URL from config. Bundle variable wishlists (`SLOCUM_DASHBOARD_VARIABLES`, CTD, checklist).
 - **`app/core/data/processors.py`**: `preprocess_slocum_dashboard_df` / CTD / track / checklist normalize ERDDAP columns for parquet and charts.
-- **`app/core/slocum_bundle_registry.py`**: Bundle specs + `BUNDLE_SCHEMA_VERSION`.
-- **`app/core/slocum_mirror_service.py`** / **`slocum_overage_cache.py`**: Rolling mirror and temporary overage windows.
+- **`app/platforms/slocum/bundle_registry.py`**: Bundle specs + `BUNDLE_SCHEMA_VERSION`.
+- **`app/platforms/slocum/mirror_service.py`** / **`overage_cache.py`**: Rolling mirror and temporary overage windows.
 - **`app/routers/slocum.py`**: Mission dashboard chart/CSV/profile APIs; SFMC connection-durations + DMON ASC listing endpoints.
 - **`app/routers/slocum_checklists.py`**: Daily checklist template/submit/series/compare APIs and form page.
-- **`app/core/slocum_checklist_autofill.py`** / **`slocum_checklist_compare.py`**: Autofill, Plot-it payloads, DMON Science-item gating, form-to-form diff.
+- **`app/platforms/slocum/checklist_autofill.py`** / **`checklist_compare.py`** / **`checklist_definitions.py`**: Autofill, Plot-it payloads, DMON Science-item gating, form-to-form diff, static checklist schema.
 - **`app/core/sfmc_client.py`** / **`sfmc_transforms.py`** / **`sfmc_cache_service.py`**: SFMC HTTP, `*.asc` listing + gap helpers, snapshot cache (includes `dmon_asc_files`).
 - **`app/routers/exploration_slocum.py`**: Exploration data endpoint (testing).
 - **`app/routers/map_router.py`**: Slocum map telemetry endpoint; uses same `prepare_track_points` / `get_track_bounds` as Wave Glider.
-- **`app/cli/slocum_cli.py`**: Official CLI for fetching Slocum data.
+- **`app/platforms/slocum/summaries.py`** / **`reports.py`** / **`masterdata_service.py`**: Sensor-card summaries, weekly PDF reports, KB masterdata vectorization.
+- **`app/platforms/slocum/cli.py`**: Official CLI for fetching Slocum data (`python -m app.platforms.slocum.cli`; thin shim at `app.cli.slocum_cli`).
 - **`web/static/js/slocum_dashboard.js`**: Declarative sensor-card chart configs (incl. DMON ASC panel + left-nav ASC gap status indicator), checklist tab, compare entry.
 - **`web/static/js/slocum_checklist_form.js`** / **`slocum_checklist_compare.js`**: Checklist fill/Plot-it and side-by-side compare UI.
 

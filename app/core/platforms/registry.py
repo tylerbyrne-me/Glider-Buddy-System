@@ -18,6 +18,10 @@ from typing import Dict, List, Optional
 
 PRODUCT_NAME_FULL = "Glider Buddy System"
 PRODUCT_NAME_SHORT = "GBS"
+PRODUCT_LOGO_PATH = "/static/images/gbs_logo.svg"
+PRODUCT_FAVICON_PATH = "/static/favicon.ico"
+PRODUCT_FAVICON_SVG_PATH = "/static/images/gbs_favicon.svg"
+PLATFORM_PLACEHOLDER_LOGO = "/static/images/platforms/placeholder.svg"
 
 PLATFORM_WAVE_GLIDER = "wave_glider"
 PLATFORM_SLOCUM = "slocum"
@@ -36,6 +40,7 @@ class PlatformSpec:
     feature_toggle: Optional[str]
     kb_toggle: str
     access_attr: str
+    logo_path: str = PLATFORM_PLACEHOLDER_LOGO
 
 
 def _buddy_title(display_name: str) -> str:
@@ -50,6 +55,7 @@ def _spec(
     display_name: str,
     *,
     feature_toggle: Optional[str] = None,
+    logo_path: str = PLATFORM_PLACEHOLDER_LOGO,
 ) -> PlatformSpec:
     url_prefix = "/" + platform_id.replace("_", "-")
     return PlatformSpec(
@@ -62,11 +68,16 @@ def _spec(
         feature_toggle=feature_toggle,
         kb_toggle=f"{platform_id}_knowledge_base",
         access_attr=f"can_access_{platform_id}",
+        logo_path=logo_path,
     )
 
 
 PLATFORMS: Dict[str, PlatformSpec] = {
-    PLATFORM_WAVE_GLIDER: _spec(PLATFORM_WAVE_GLIDER, "Wave Glider"),
+    PLATFORM_WAVE_GLIDER: _spec(
+        PLATFORM_WAVE_GLIDER,
+        "Wave Glider",
+        logo_path=PRODUCT_LOGO_PATH,
+    ),
     PLATFORM_SLOCUM: _spec(
         PLATFORM_SLOCUM,
         "Slocum",

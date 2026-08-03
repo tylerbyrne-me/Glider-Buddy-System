@@ -19,10 +19,23 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 - [ ] Slocum weekly report polish Phase 2+: landscape multi-panel sensors, checklist-bundle charts, end-of-mission mode, persist `weekly_report_url` — [Report polish Phase 1](b8a79301-0344-450e-99c7-0d8d67d64032)
 - [ ] Chart platform follow-ups: ERDDAP/narrow bulk API (drop client `rowsToSeries`), server-owned chart config registry, optional spectrum/doughnut/mini-trends/forecast into declarative system, WG↔Slocum schema convergence, JS test harness — [WG declarative rewrite](bcc8cb49-ec97-49b6-b793-8a04926f4140)
+- [ ] Ops: rename GitHub repo to `Glider-Buddy-System` (UI or `gh repo rename`); then `git remote set-url` on clones — [GITHUB_RENAME.md](../wiki/how-tos/GITHUB_RENAME.md)
+- [ ] Ops: prod path cutover to `/home/cove/Glider-Buddy-System` with symlink soak — [PROD_PATH_RENAME.md](../wiki/how-tos/PROD_PATH_RENAME.md)
+
+### Platform packages (`app/platforms/`)
+
+Convention after Slocum core move (see [platforms README](../../app/platforms/README.md), ADR 0003). WG is still mostly in `app/core` by design — do not mirror Slocum’s big relocate.
+
+- [x] **Now:** Put new Wave Glider–only business logic under `app/platforms/wave_glider/`; keep HTTP in `app/routers/`; leave existing WG core in place (no mandatory move) — scaffold + docs 2026-08-03
+- [x] **Soon:** Move remaining Slocum stragglers into `app/platforms/slocum/` — summaries, reports, masterdata, checklist schema, CLI (routers stay; thin `app.cli.slocum_cli` shim) — 2026-08-03
+
+Notes (not scheduled work):
+
+- **Later:** If the package boundary is paying off, peel one clear WG island (e.g. `app/core/stations/wg_vm4_*`, or WG-only PIC/offload helpers) into `app/platforms/wave_glider/` in a focused PR — not a wholesale core evacuate
+- **Avoid:** Big-bang “move all Wave Glider out of `app/core`”; keep shared pipelines (`data_service`/loaders/processors/sync), map/weather/bathy/iridium, models, and auth in core. Don’t couple module moves to a full `/api/wave_glider/` URL cutover
 
 ## Low priority / someday
 
 - [ ] Slocum checklist history follow-ups (multi-day matrix / sparklines); side-by-side compare shipped 2026-07-29 — [Checklist history ideas](378f5e79-578b-4f7a-99cd-ca202e222768)
 - [ ] Dockerize app for a more stable host — [Docker migration options](3357a043-5fd2-46e6-bfb5-fd14329e8c7e)
-- [ ] Rebrand follow-ups (post GBS registry + HTML URL hardening): rename `wgbs_logo.svg` / favicon assets; GitHub repo `Wave-Glider-Buddy-System` → `Glider-Buddy-System`; prod path `/home/cove/Wave-Glider-Buddy-System`; archive-doc naming sweep; optional full WG API under `/api/wave_glider/`; optional move of `slocum_*.py` into `app/platforms/slocum/` — [ADR 0003](../decisions/0003-platform-brand-naming.md)
 - [ ] Optionally standardize complex error handling in `app/routers/forms.py` and `app/routers/live_kml_router.py` (acceptable as-is; see `docs/archive/reviews/HIGH_PRIORITY_COMPLETION_SUMMARY.md`)

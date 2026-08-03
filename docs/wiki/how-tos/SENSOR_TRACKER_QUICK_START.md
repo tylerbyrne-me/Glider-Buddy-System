@@ -1,7 +1,7 @@
 # Sensor Tracker Integration - Quick Start Guide
 
 ## Overview
-This guide will help you get started with integrating Sensor Tracker data into the Wave Glider Buddy System.
+This guide will help you get started with integrating Sensor Tracker data into the Glider Buddy System.
 
 ## Prerequisites
 1. Access to Sensor Tracker instance
