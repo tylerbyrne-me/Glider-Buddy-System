@@ -24,10 +24,7 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 ### Platform packages (`app/platforms/`)
 
-Convention after Slocum core move (see [platforms README](../../app/platforms/README.md), ADR 0003). WG is still mostly in `app/core` by design — do not mirror Slocum’s big relocate.
-
-- [x] **Now:** Put new Wave Glider–only business logic under `app/platforms/wave_glider/`; keep HTTP in `app/routers/`; leave existing WG core in place (no mandatory move) — scaffold + docs 2026-08-03
-- [x] **Soon:** Move remaining Slocum stragglers into `app/platforms/slocum/` — summaries, reports, masterdata, checklist schema, CLI (routers stay; thin `app.cli.slocum_cli` shim) — 2026-08-03
+This rebrand round is closed for Slocum packaging: core + stragglers live under `app/platforms/slocum/`; CLI is `python -m app.platforms.slocum.cli` (deprecated `app.cli.slocum_cli` shim removed). WG scaffold is at `app/platforms/wave_glider/` for new WG-only code. See [platforms README](../../app/platforms/README.md), ADR 0003.
 
 Notes (not scheduled work):
 

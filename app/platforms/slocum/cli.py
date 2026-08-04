@@ -5,7 +5,6 @@ Run from project root with WorkPython:
   python -m app.platforms.slocum.cli --dataset peggy_20250522_206_delayed
   python -m app.platforms.slocum.cli --dataset cabot_20240901_198_realtime --start 2024-09-01 --end 2024-09-19
   python -m app.platforms.slocum.cli --summary-only
-  python -m app.cli.slocum_cli --summary-only  # thin shim
 """
 import argparse
 import sys

@@ -20,7 +20,7 @@ Scaffold only. Put **new** Wave Glider–only business logic here. Existing WG p
 
 ## Slocum (`app/platforms/slocum/`)
 
-Import as `app.platforms.slocum.*`. Includes ERDDAP/mirrors/checklists/deployments plus summaries, weekly reports, masterdata, checklist schema, and CLI (`cli.py`; thin shim at `app.cli.slocum_cli`).
+Import as `app.platforms.slocum.*`. Includes ERDDAP/mirrors/checklists/deployments plus summaries, weekly reports, masterdata, checklist schema, and CLI (`python -m app.platforms.slocum.cli`).
 
 HTTP routers stay under `app/routers/slocum*.py`.
 

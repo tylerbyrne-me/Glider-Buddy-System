@@ -79,7 +79,6 @@ From project root with WorkPython:
 conda activate WorkPython
 python -m app.platforms.slocum.cli --dataset peggy_20250522_206_delayed --start 2025-08-01 --end 2025-08-31 --output my_slocum.csv
 python -m app.platforms.slocum.cli --summary-only
-# Thin shim still works: python -m app.cli.slocum_cli --summary-only
 ```
 
 The exploration script `exploration/slocum_erddap/fetch_sample.py` also uses the same app client; run it from project root so `app` is importable.
@@ -97,7 +96,7 @@ The exploration script `exploration/slocum_erddap/fetch_sample.py` also uses the
 - **`app/routers/exploration_slocum.py`**: Exploration data endpoint (testing).
 - **`app/routers/map_router.py`**: Slocum map telemetry endpoint; uses same `prepare_track_points` / `get_track_bounds` as Wave Glider.
 - **`app/platforms/slocum/summaries.py`** / **`reports.py`** / **`masterdata_service.py`**: Sensor-card summaries, weekly PDF reports, KB masterdata vectorization.
-- **`app/platforms/slocum/cli.py`**: Official CLI for fetching Slocum data (`python -m app.platforms.slocum.cli`; thin shim at `app.cli.slocum_cli`).
+- **`app/platforms/slocum/cli.py`**: Official CLI for fetching Slocum data (`python -m app.platforms.slocum.cli`).
 - **`web/static/js/slocum_dashboard.js`**: Declarative sensor-card chart configs (incl. DMON ASC panel + left-nav ASC gap status indicator), checklist tab, compare entry.
 - **`web/static/js/slocum_checklist_form.js`** / **`slocum_checklist_compare.js`**: Checklist fill/Plot-it and side-by-side compare UI.
 

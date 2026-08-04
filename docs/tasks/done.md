@@ -3,8 +3,24 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+## Rebrand round summary (2026-08-02 → 2026-08-03)
+
+Closed in-repo for **Glider Buddy System (GBS)** multi-platform rebrand:
+
+| Area | Outcome |
+|------|---------|
+| Brand / registry | Product GBS; platform buddy titles; `gbs-*` CSS; favicon wiring + interim SVG |
+| URLs | WG HTML under `/wave-glider/` with redirects; `/api/wave_glider` alias |
+| Packages | `app/platforms/slocum/` (full Slocum package); `app/platforms/wave_glider/` scaffold |
+| CLI | `python -m app.platforms.slocum.cli` only (`app.cli.slocum_cli` shim removed) |
+| GitHub | Repo renamed to `Glider-Buddy-System`; tag `pre-gbs-rename-20260803`; mirror under `%USERPROFILE%\backups\` |
+| Local folder | Clone dir renamed to `Glider Buddy System` (safe; independent of remotes) |
+
+Still open (not this round): **manual** prod path cutover ([PROD_PATH_RENAME.md](../wiki/how-tos/PROD_PATH_RENAME.md)); optional later WG peel ([backlog](backlog.md) Later note); product backlog (theme UI, prod verify, reports polish).
+
+- [x] 2026-08-03 — Rebrand closeout: removed deprecated `app.cli.slocum_cli` shim; canonical CLI is `python -m app.platforms.slocum.cli`
 - [x] 2026-08-03 — Ops GitHub rename to `Glider-Buddy-System` (tag `pre-gbs-rename-20260803`, mirror under `%USERPROFILE%\backups\`, local origin updated; old URL 301s). Prod path cutover still open — use `docs/wiki/how-tos/gbs_prod_path_cutover.sh` on host
-- [x] 2026-08-03 — Platform packages Now/Soon: scaffold `app/platforms/wave_glider/`; move Slocum summaries/reports/masterdata/checklist_definitions/cli into `app/platforms/slocum/` (thin CLI shim at `app.cli.slocum_cli`)
+- [x] 2026-08-03 — Platform packages Now/Soon: scaffold `app/platforms/wave_glider/`; move Slocum summaries/reports/masterdata/checklist_definitions/cli into `app/platforms/slocum/`
 - [x] 2026-08-03 — Favicon wiring (`PRODUCT_FAVICON_*`, interim `gbs_favicon.svg`); remove transitional `wgbs_logo`; move `app/core/slocum_*.py` → `app/platforms/slocum/` (routers stay put)
 - [x] 2026-08-02 — Rebrand follow-ups Phases 1–6 in-repo: `gbs_logo.svg` + placeholder; GitHub/prod how-tos; archive note; `/api/wave_glider` alias + JS prefix; `app/platforms/` scaffold (live GitHub rename + prod `mv` remain ops)
 - [x] 2026-08-02 — Glider Buddy System rebrand: platform registry, GBS brand titles, `gbs-*` CSS, WG HTML under `/wave-glider/` with redirects, high-traffic wiki + ADR 0003
