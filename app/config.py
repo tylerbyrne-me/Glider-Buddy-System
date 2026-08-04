@@ -143,6 +143,13 @@ class Settings(BaseSettings):
     iridium_tle_cleanup_max_age_days: int = 7
     iridium_tle_cleanup_cron_hour: int = 7  # UTC
 
+    # --- DMON Robots4Whales analyst-review cache ---
+    # Scraped HTML from dcs.whoi.edu; leader job only (no live scrape on dashboard).
+    dmon_review_cache_dir: Path = Path("data_store/dmon_review_cache")
+    dmon_review_prefetch_interval_hours: int = 12
+    dmon_review_prefetch_enabled: bool = True
+    dmon_review_http_timeout_seconds: float = 30.0
+
     # --- Sensor Tracker Settings ---
     # SECURITY: Credentials MUST be configured in .env file
     sensor_tracker_host: str = "https://prod.ceotr.ca/sensor_tracker"

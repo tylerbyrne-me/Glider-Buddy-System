@@ -1218,6 +1218,133 @@ async function refreshDmonAscPanel() {
     }
 }
 
+const DMON_REVIEW_STATUS_DOT = {
+    Detected: '#DC2626',
+    'Possibly detected': '#D97706',
+    'Not detected': '#D1D5DB',
+};
+
+function formatDmonReviewStatusCell(status) {
+    const label = status || '—';
+    const color = DMON_REVIEW_STATUS_DOT[status] || '#6B7280';
+    return `<span class="d-inline-flex align-items-center gap-1"><span style="width:7px;height:7px;border-radius:50%;background:${color};flex-shrink:0;"></span>${label}</span>`;
+}
+
+function renderDmonReviewTable(headEl, bodyEl, species, days) {
+    if (!headEl || !bodyEl) return;
+    const cols = Array.isArray(species) ? species : [];
+    headEl.innerHTML = `<tr><th scope="col">Date</th>${cols.map((s) => `<th scope="col">${s}</th>`).join('')}</tr>`;
+    if (!Array.isArray(days) || !days.length) {
+        bodyEl.innerHTML = `<tr><td colspan="${Math.max(1, cols.length + 1)}" class="text-muted small">No review rows in this window.</td></tr>`;
+        return;
+    }
+    bodyEl.innerHTML = days.map((day) => {
+        const statuses = day.statuses || {};
+        const cells = cols.map((sp) => `<td class="small">${formatDmonReviewStatusCell(statuses[sp])}</td>`).join('');
+        return `<tr><td class="small text-muted text-nowrap">${day.date || '—'}</td>${cells}</tr>`;
+    }).join('');
+}
+
+function renderDmonReviewPanel(payload) {
+    const noteEl = document.getElementById('slocumDmonReviewNote');
+    const attrEl = document.getElementById('slocumDmonReviewAttribution');
+    const linkEl = document.getElementById('slocumDmonReviewSourceLink');
+    const recentHead = document.getElementById('slocumDmonReviewRecentHead');
+    const recentBody = document.getElementById('slocumDmonReviewRecentBody');
+    const allHead = document.getElementById('slocumDmonReviewAllHead');
+    const allBody = document.getElementById('slocumDmonReviewAllBody');
+
+    const configured = Boolean(payload?.configured);
+    const sourceUrl = payload?.source_url || payload?.attribution?.source_url || '';
+    const species = payload?.species || [];
+    const recent = payload?.recent || [];
+    const all = payload?.all || [];
+    const message = payload?.meta?.message || '';
+
+    if (linkEl) {
+        if (sourceUrl) {
+            linkEl.href = sourceUrl;
+            linkEl.style.display = 'inline';
+        } else {
+            linkEl.removeAttribute('href');
+            linkEl.style.display = 'none';
+        }
+    }
+
+    if (noteEl) {
+        if (!configured) {
+            noteEl.style.display = 'block';
+            noteEl.textContent = message || 'Configure Robots4Whales URL in Mission Overviews.';
+        } else if (!payload?.fetched_at_utc && !all.length) {
+            noteEl.style.display = 'block';
+            noteEl.textContent = message || 'Waiting for first sync.';
+        } else {
+            noteEl.style.display = message && !all.length ? 'block' : 'none';
+            noteEl.textContent = message || '';
+        }
+    }
+
+    renderDmonReviewTable(recentHead, recentBody, species, recent);
+    renderDmonReviewTable(allHead, allBody, species, all);
+
+    // Site/program attribution only on dashboard (no Analysts / PIs).
+    if (attrEl) {
+        const program = payload?.attribution?.program_name || 'Robots4Whales';
+        const institution = payload?.attribution?.institution || 'Woods Hole Oceanographic Institution';
+        const programUrl = payload?.attribution?.program_url || 'https://robots4whales.whoi.edu/';
+        const parts = [
+            `Derived from ${program} (${institution})`,
+            sourceUrl ? `<a href="${sourceUrl}" target="_blank" rel="noopener noreferrer">deployment page</a>` : null,
+            `<a href="${programUrl}" target="_blank" rel="noopener noreferrer">${programUrl.replace(/^https?:\/\//, '')}</a>`,
+            'Occurrence is not an indication of whale abundance.',
+        ].filter(Boolean);
+        attrEl.innerHTML = parts.join(' · ');
+    }
+}
+
+async function refreshDmonReviewPanel() {
+    const datasetId = getDatasetId();
+    if (!datasetId) return;
+    const recentBody = document.getElementById('slocumDmonReviewRecentBody');
+    if (recentBody) {
+        recentBody.innerHTML = '<tr><td class="text-muted small">Loading…</td></tr>';
+    }
+    try {
+        const payload = await apiRequest(
+            `/api/slocum/dmon/review/${encodeURIComponent(datasetId)}?recent_hours=48`,
+            'GET',
+        );
+        renderDmonReviewPanel(payload);
+    } catch (err) {
+        console.error('DMON review failed:', err);
+        renderDmonReviewPanel({
+            configured: false,
+            species: [],
+            recent: [],
+            all: [],
+            attribution: {},
+            meta: { message: `Failed to load review data: ${err?.message || err}` },
+        });
+    }
+}
+
+function initDmonReviewCollapseChevron() {
+    const button = document.querySelector('[data-bs-target="#slocumDmonReviewAllCollapse"]');
+    const chevron = document.getElementById('slocumDmonReviewAllChevron');
+    if (!button || !chevron || button.dataset.chevronBound) return;
+    button.dataset.chevronBound = '1';
+    button.addEventListener('click', function () {
+        const isExpanded = this.getAttribute('aria-expanded') === 'true';
+        if (isExpanded) {
+            chevron.classList.remove('fa-chevron-up');
+            chevron.classList.add('fa-chevron-down');
+        } else {
+            chevron.classList.remove('fa-chevron-down');
+            chevron.classList.add('fa-chevron-up');
+        }
+    });
+}
+
 function reRenderCategoryFromCache(category) {
     const cfg = TIME_SERIES_CARD_CONFIGS[category];
     if (!cfg) return;
@@ -1283,6 +1410,8 @@ async function refreshTimeSeriesCategory(category) {
         }
         if (category === 'dmon') {
             await refreshDmonAscPanel();
+            await refreshDmonReviewPanel();
+            initDmonReviewCollapseChevron();
         }
     } catch (err) {
         console.error(`Failed to load ${category} charts:`, err);
@@ -1552,6 +1681,11 @@ async function refreshSlocumSummaryCards() {
             refreshDmonAscPanel().catch((err) => {
                 console.debug('DMON ASC indicator refresh failed:', err);
             });
+            if (document.getElementById('detail-dmon')?.style.display !== 'none') {
+                refreshDmonReviewPanel().catch((err) => {
+                    console.debug('DMON review refresh failed:', err);
+                });
+            }
         }
     } catch (err) {
         console.debug('Slocum summary card refresh failed:', err);
@@ -2429,5 +2563,6 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshDmonAscPanel().catch((err) => {
             console.debug('DMON ASC indicator warm-up failed:', err);
         });
+        initDmonReviewCollapseChevron();
     }
 });

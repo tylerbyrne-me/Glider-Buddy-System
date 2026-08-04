@@ -19,7 +19,7 @@ Active/historical mission dashboards (`/slocum/...`) show overview plus optional
 | Navigation | Heading, depth rate, depth/altimeter, speed, depth-averaged currents |
 | Vehicle Health | Vacuum; leak detect channels (main / forward / science) with **digifin** on a secondary Y axis; SFMC call length |
 | Dissolved Oxygen | Placeholder charts (data wiring TBD) |
-| DMON | `sci_dmon_msg_byte_count` over time; SFMC `from-glider` `*.asc` files (last 48h) with >16h gap highlight; left-nav green/red status dot (same style as Wave Glider Waves ESS) |
+| DMON | `sci_dmon_msg_byte_count` over time; SFMC `from-glider` `*.asc` files (last 48h) with >16h gap highlight; left-nav green/red status dot (same style as Wave Glider Waves ESS); **Robots4Whales daily analyst review** (last 48h table + full-history collapse) when `robots4whales_url` is set on the deployment |
 
 ### Data path
 
@@ -45,6 +45,7 @@ Per-mission daily checklist (`/slocum/dataset/{dataset_id}/checklist.html`, also
 - Plot modal (`web/static/js/slocum_checklist_form.js`): depth on left (`y`); value series on `y2`; digifin / thruster % on `y3` when needed
 - Plottable autofill rows include vacuum/attitude/buoyancy (legacy), plus **water depth**, **BMS currents**, **leak channels** (main/forward/science/digifin), combined **thruster** (`m_thruster_power` / `c_thruster_on`), and **DMON** `sci_dmon_msg_byte_count` when the DMON sensor card is enabled
 - **DMON gating:** Science items `dmon_msg_byte_count_val`, `dmon_asc_files_val`, and `asc_gap_check_val` appear only when `dmon` is in `SlocumDeployment.enabled_sensor_cards` (Manage Slocum Mission Overviews). The ASC list comes from the SFMC snapshot (`from-glider` `*.asc`, last 48h) and highlights gaps >16h since the newest file (and inter-file gaps >16h). Runtime injection: `apply_dmon_science_checklist_items` in [`checklist_autofill.py`](../../app/platforms/slocum/checklist_autofill.py)
+- **Robots4Whales detections:** Set `robots4whales_url` on the same admin page (must be a `dcs.whoi.edu` `*.shtml` deployment page). Leader job `system_dmon_review_prefetch_job` refreshes every 12h into `data_store/dmon_review_cache/`. Dashboard shows last-48h review + full history collapse with site attribution; weekly PDFs include a date-filtered analyst-review table (`styled_data_table`, Detected/Possibly color fills) and Analysts in the footnote ([ADR 0004](../../decisions/0004-dmon-robots4whales-review-cache.md)).
 - Series API: `GET /api/slocum/checklists/{dataset_id}/series?item_id=...`
 
 ### Side-by-side compare
@@ -66,6 +67,8 @@ All Slocum endpoints require authentication (same as Wave Glider). When `slocum_
 | `GET /api/slocum/profile-data/{dataset_id}` | CTD depth-vs-time profile points (+ optional `depth_overlay` from dashboard `m_depth`). |
 | `GET /api/slocum/sfmc/connection-durations/{dataset_id}` | Cached SFMC surface-call durations (Vehicle Health). |
 | `GET /api/slocum/sfmc/dmon-asc-files/{dataset_id}` | Cached SFMC `from-glider` `*.asc` listing + gap flags (DMON card). |
+| `GET /api/slocum/dmon/review/{dataset_id}?recent_hours=48` | Cached Robots4Whales daily analyst-review detections (`recent` / `all`, site attribution; optional `start_date`/`end_date` ISO for reports). |
+| `PUT /api/slocum/deployments/{id}/robots4whales-url` | Admin: set/clear deployment page URL (`dcs.whoi.edu` `*.shtml`). |
 | `GET /api/slocum/checklists/{dataset_id}/series?item_id=...` | Checklist Plot-it time series (depth + value / multi-series). |
 | `GET /api/slocum/checklists/compare?reference_id=&other_id=` | Form-to-form checklist diff (`changed_item_ids`). |
 

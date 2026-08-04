@@ -38,6 +38,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const currentPlanLink = document.getElementById('currentPlanLink');
     const removePlanBtn = document.getElementById('removePlanBtn');
     const documentUpload = document.getElementById('documentUpload');
+    const robots4whalesUrlInput = document.getElementById('robots4whalesUrlInput');
+    const saveRobots4WhalesUrlBtn = document.getElementById('saveRobots4WhalesUrlBtn');
+    const robots4whalesUrlStatus = document.getElementById('robots4whalesUrlStatus');
     const uploadPlanBtn = document.getElementById('uploadPlanBtn');
     const planUploadStatus = document.getElementById('planUploadStatus');
     const saveSensorCardsBtn = document.getElementById('saveSensorCardsBtn');
@@ -240,6 +243,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             cb.disabled = !isEnabled;
         });
         if (saveSensorCardsBtn) saveSensorCardsBtn.disabled = !isEnabled;
+        if (robots4whalesUrlInput) robots4whalesUrlInput.disabled = !isEnabled;
+        if (saveRobots4WhalesUrlBtn) saveRobots4WhalesUrlBtn.disabled = !isEnabled;
         document.querySelectorAll('.checklist-ref-input').forEach((input) => {
             input.disabled = !isEnabled;
         });
@@ -269,6 +274,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
         setSelectedSensorCards(cards);
         if (sensorCardsStatus) sensorCardsStatus.innerHTML = '';
+    }
+
+    function renderRobots4WhalesUrl(url) {
+        if (robots4whalesUrlInput) {
+            robots4whalesUrlInput.value = url || '';
+        }
+        if (robots4whalesUrlStatus) robots4whalesUrlStatus.innerHTML = '';
     }
 
     function renderChecklistReferences(rawJson) {
@@ -390,6 +402,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         setPlanActionsEnabled(hasDeployment);
         renderSensorCards(info.deployment?.enabled_sensor_cards || null);
         renderChecklistReferences(info.deployment?.checklist_reference_values || null);
+        renderRobots4WhalesUrl(info.deployment?.robots4whales_url || null);
         renderPlanDocument(info.deployment?.document_url || null);
         renderMissionNotes(info.notes);
         renderMissionGoals(info.goals);
@@ -569,6 +582,38 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showToast(`Failed to save sensor cards: ${error.message}`, 'danger');
                 if (sensorCardsStatus) {
                     sensorCardsStatus.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(error.message)}</div>`;
+                }
+            } finally {
+                setPlanActionsEnabled(Boolean(currentInfo?.deployment));
+            }
+        });
+    }
+
+    if (saveRobots4WhalesUrlBtn) {
+        saveRobots4WhalesUrlBtn.addEventListener('click', async () => {
+            const deploymentId = currentInfo?.deployment?.id;
+            if (!deploymentId) {
+                showToast('Deployment metadata unavailable for this dataset.', 'warning');
+                return;
+            }
+            saveRobots4WhalesUrlBtn.disabled = true;
+            if (robots4whalesUrlStatus) {
+                robots4whalesUrlStatus.innerHTML = '<div class="alert alert-info py-2 mb-0">Saving...</div>';
+            }
+            try {
+                const raw = (robots4whalesUrlInput?.value || '').trim();
+                await apiRequest(`/api/slocum/deployments/${deploymentId}/robots4whales-url`, 'PUT', {
+                    robots4whales_url: raw || null,
+                });
+                showToast('Robots4Whales URL saved.', 'success');
+                if (robots4whalesUrlStatus) {
+                    robots4whalesUrlStatus.innerHTML = '<div class="alert alert-success py-2 mb-0">Saved.</div>';
+                }
+                await loadDatasetInfo(currentDatasetId);
+            } catch (error) {
+                showToast(`Failed to save Robots4Whales URL: ${error.message}`, 'danger');
+                if (robots4whalesUrlStatus) {
+                    robots4whalesUrlStatus.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(error.message)}</div>`;
                 }
             } finally {
                 setPlanActionsEnabled(Boolean(currentInfo?.deployment));

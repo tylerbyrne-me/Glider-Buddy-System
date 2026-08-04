@@ -1097,6 +1097,7 @@ class SlocumDeploymentRead(BaseModel):
     mission_key: Optional[str] = None
     erddap_dataset_id: Optional[str] = None
     document_url: Optional[str] = None
+    robots4whales_url: Optional[str] = None
     enabled_sensor_cards: Optional[str] = None
     checklist_reference_values: Optional[str] = None
 
@@ -1107,6 +1108,11 @@ class SlocumDeploymentRead(BaseModel):
 class SlocumSensorCardsUpdate(BaseModel):
     """Body for updating Slocum deployment enabled sensor cards."""
     enabled_sensor_cards: List[str]
+
+
+class SlocumRobots4WhalesUrlUpdate(BaseModel):
+    """Body for updating Slocum deployment Robots4Whales page URL."""
+    robots4whales_url: Optional[str] = None
 
 
 class SlocumChecklistReferencesUpdate(BaseModel):

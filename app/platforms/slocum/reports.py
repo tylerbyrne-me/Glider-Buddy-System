@@ -448,6 +448,46 @@ def write_slocum_weekly_pdf(
         story.append(Paragraph("CTD sensors", styles["Heading1"]))
         story.extend(ctd_charts)
 
+    # Robots4Whales DMON analyst-review detections (date-filtered to report window).
+    try:
+        from app.platforms.slocum.checklist_autofill import parse_enabled_sensor_cards
+        from app.platforms.slocum.dmon_review import (
+            filter_dmon_review,
+            get_cached_dmon_review,
+        )
+
+        cards = parse_enabled_sensor_cards(
+            deployment.enabled_sensor_cards if deployment else None
+        )
+        mission_key = (
+            (deployment.mission_key if deployment else None)
+            or slocum_mission_key(dataset_id)
+            or ""
+        )
+        if "dmon" in {c.lower() for c in cards} and mission_key:
+            cached = get_cached_dmon_review(mission_key)
+            if cached:
+                filtered = filter_dmon_review(
+                    cached,
+                    start_date=start_date,
+                    end_date=end_date,
+                    recent_hours=None,
+                )
+                if deployment and deployment.robots4whales_url:
+                    filtered["source_url"] = deployment.robots4whales_url
+                    if isinstance(filtered.get("attribution"), dict):
+                        filtered["attribution"]["source_url"] = deployment.robots4whales_url
+                dmon_flow = sections.build_dmon_review_section(
+                    filtered,
+                    period_label=f"Report window · {date_range}",
+                )
+                if dmon_flow:
+                    if dash_charts or ctd_charts:
+                        story.append(PageBreak())
+                    story.extend(dmon_flow)
+    except Exception as exc:
+        logger.warning("Slocum weekly PDF: DMON review section skipped: %s", exc)
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     doc.multiBuild(story)
     return output_path

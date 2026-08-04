@@ -167,6 +167,7 @@ With gunicorn `-w 2`, only the **leader** worker (fcntl lock on `data_store/.app
   - `system_bathy_cache_cleanup_job`
   - `system_iridium_tle_prefetch_job` (every 2h when `iridium_map_layer` is on)
   - `system_iridium_tle_cleanup_job` (daily :25 UTC; runs even if the feature is off)
+  - `system_dmon_review_prefetch_job` (every 12h; Robots4Whales DMON analyst-review cache for deployments with `dmon` card + `robots4whales_url`)
 
 The other worker serves HTTP; cache warms on demand. Admin **scheduler status** API returns an empty job list on non-leader workers (scheduler lives on the leader only).
 
@@ -191,6 +192,10 @@ ls /home/cove/Glider-Buddy-System/data_store/bathy_cache 2>/dev/null | wc -l
 # Iridium TLE cache (small: tles.json + upstream_rate_limit.json; CelesTrak ≤1 contact / 2h)
 du -sh /home/cove/Glider-Buddy-System/data_store/iridium_cache 2>/dev/null
 ls -la /home/cove/Glider-Buddy-System/data_store/iridium_cache 2>/dev/null
+
+# DMON Robots4Whales review cache (one JSON per mission_key)
+du -sh /home/cove/Glider-Buddy-System/data_store/dmon_review_cache 2>/dev/null
+ls /home/cove/Glider-Buddy-System/data_store/dmon_review_cache 2>/dev/null | wc -l
 
 # Slocum mirror parquets (dashboard/ctd/checklist per dataset)
 du -sh /home/cove/Glider-Buddy-System/data_store/slocum_cache 2>/dev/null

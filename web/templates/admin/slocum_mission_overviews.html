@@ -171,6 +171,24 @@
                     <div id="sensorCardsStatus" class="mt-2"></div>
                 </div>
 
+                <!-- Robots4Whales DMON review page -->
+                <div class="mb-4" id="robots4whalesSection">
+                    <label class="form-label" for="robots4whalesUrlInput">Robots4Whales page (DMON detections)</label>
+                    <p class="text-muted small mb-2">
+                        Link this deployment to its WHOI Robots4Whales daily analyst-review page
+                        (e.g. <code>https://dcs.whoi.edu/dal2607/dal2607_sambro.shtml</code>).
+                        Used when the DMON sensor card is enabled.
+                    </p>
+                    <div class="input-group" style="max-width: 48rem;">
+                        <input type="url" class="form-control form-control-sm" id="robots4whalesUrlInput"
+                               placeholder="https://dcs.whoi.edu/.../*.shtml" disabled>
+                        <button type="button" class="btn btn-sm btn-primary" id="saveRobots4WhalesUrlBtn" disabled>
+                            <i class="fas fa-save"></i> Save URL
+                        </button>
+                    </div>
+                    <div id="robots4whalesUrlStatus" class="mt-2"></div>
+                </div>
+
                 <!-- Checklist Reference Values -->
                 <div class="mb-4" id="checklistReferencesSection">
                     <label class="form-label">Daily Checklist Reference Values</label>

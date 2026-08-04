@@ -18,6 +18,7 @@ Closed in-repo for **Glider Buddy System (GBS)** multi-platform rebrand:
 
 Still open (not this round): **manual** prod path cutover ([PROD_PATH_RENAME.md](../wiki/how-tos/PROD_PATH_RENAME.md)); optional later WG peel ([backlog](backlog.md) Later note); product backlog (theme UI, prod verify, reports polish).
 
+- [x] 2026-08-04 — Slocum DMON Robots4Whales analyst-review detections: `robots4whales_url` on deployment + admin UI; 12h leader cache under `data_store/dmon_review_cache/`; `GET /api/slocum/dmon/review/{dataset_id}`; DMON dashboard 48h table + full-history collapse (site attribution); weekly PDF section with Analysts footnote + `styled_data_table` status colors (Detected / Possibly detected) ([ADR 0004](../decisions/0004-dmon-robots4whales-review-cache.md))
 - [x] 2026-08-03 — Rebrand closeout: removed deprecated `app.cli.slocum_cli` shim; canonical CLI is `python -m app.platforms.slocum.cli`
 - [x] 2026-08-03 — Ops GitHub rename to `Glider-Buddy-System` (tag `pre-gbs-rename-20260803`, mirror under `%USERPROFILE%\backups\`, local origin updated; old URL 301s). Prod path cutover still open — use `docs/wiki/how-tos/gbs_prod_path_cutover.sh` on host
 - [x] 2026-08-03 — Platform packages Now/Soon: scaffold `app/platforms/wave_glider/`; move Slocum summaries/reports/masterdata/checklist_definitions/cli into `app/platforms/slocum/`

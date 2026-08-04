@@ -698,6 +698,103 @@ async def get_slocum_sfmc_dmon_asc_files(
     }
 
 
+@router.get("/dmon/review/{dataset_id}")
+async def get_slocum_dmon_review(
+    dataset_id: str,
+    recent_hours: float = Query(48.0, ge=0, description="Recent window in hours for dashboard table"),
+    start_date: Optional[str] = Query(None, description="ISO date (inclusive) for report filtering"),
+    end_date: Optional[str] = Query(None, description="ISO date (inclusive) for report filtering"),
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """
+    Cached Robots4Whales daily analyst-review detections for a Slocum dataset.
+
+    Reads disk cache only (leader job refreshes). Attribution includes Analysts for
+    reporting consumers; dashboard UI should show site/program credit only.
+    """
+    if not is_feature_enabled("slocum_platform"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
+
+    from datetime import date as date_cls
+
+    from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
+    from app.platforms.slocum.dmon_review import (
+        default_attribution,
+        filter_dmon_review,
+        get_cached_dmon_review,
+    )
+    from app.core.utils import slocum_mission_key
+
+    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    source_url = (deployment.robots4whales_url if deployment else None) or None
+    configured = bool(source_url and str(source_url).strip())
+    empty_attr = default_attribution(source_url=source_url)
+    if deployment is None:
+        return {
+            "configured": False,
+            "source_url": None,
+            "fetched_at_utc": None,
+            "attribution": empty_attr,
+            "species": [],
+            "recent": [],
+            "all": [],
+            "summary": {"detected_species_recent": []},
+            "meta": {"message": "No deployment found for dataset"},
+        }
+
+    mission_key = deployment.mission_key or slocum_mission_key(dataset_id) or ""
+    cached = get_cached_dmon_review(mission_key) if mission_key else None
+
+    parsed_start = None
+    parsed_end = None
+    if start_date:
+        try:
+            parsed_start = date_cls.fromisoformat(start_date[:10])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid start_date; use YYYY-MM-DD") from exc
+    if end_date:
+        try:
+            parsed_end = date_cls.fromisoformat(end_date[:10])
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Invalid end_date; use YYYY-MM-DD") from exc
+
+    filtered = filter_dmon_review(
+        cached,
+        start_date=parsed_start,
+        end_date=parsed_end,
+        recent_hours=recent_hours if recent_hours > 0 else None,
+    )
+    if not configured:
+        filtered["attribution"] = empty_attr
+        filtered["meta"] = {
+            **(filtered.get("meta") or {}),
+            "message": "Configure Robots4Whales URL in Mission Overviews",
+        }
+    elif cached is None:
+        filtered["meta"] = {
+            **(filtered.get("meta") or {}),
+            "message": "Waiting for first sync",
+        }
+    # Prefer live deployment URL over stale cache URL
+    if source_url:
+        filtered["source_url"] = source_url
+        if isinstance(filtered.get("attribution"), dict):
+            filtered["attribution"]["source_url"] = source_url
+
+    return {
+        "configured": configured,
+        "source_url": filtered.get("source_url") or source_url,
+        "fetched_at_utc": filtered.get("fetched_at_utc"),
+        "attribution": filtered.get("attribution") or empty_attr,
+        "species": filtered.get("species") or [],
+        "recent": filtered.get("recent") or [],
+        "all": filtered.get("all") or [],
+        "summary": filtered.get("summary") or {"detected_species_recent": []},
+        "meta": filtered.get("meta") or {},
+    }
+
+
 @router.get("/sensor-summaries/{dataset_id}")
 async def get_slocum_sensor_summaries(
     dataset_id: str,

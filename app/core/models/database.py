@@ -1042,6 +1042,13 @@ class SlocumDeployment(SQLModel, table=True):
         ),
     )
     document_url: Optional[str] = SQLModelField(default=None, description="URL to formal mission plan document (PDF/DOC/DOCX)")
+    robots4whales_url: Optional[str] = SQLModelField(
+        default=None,
+        description=(
+            "Robots4Whales / dcs.whoi.edu deployment page URL for DMON analyst-review detections "
+            "(e.g. https://dcs.whoi.edu/dal2607/dal2607_sambro.shtml)."
+        ),
+    )
     enabled_sensor_cards: Optional[str] = SQLModelField(
         default=None,
         sa_column=Column(Text),

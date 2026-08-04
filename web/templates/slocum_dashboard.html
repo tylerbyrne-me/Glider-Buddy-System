@@ -615,6 +615,43 @@
                 </tbody>
               </table>
             </div>
+            <hr class="my-4">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+              <h5 class="mb-0">Daily analyst review (last 48h)</h5>
+              <a href="#" id="slocumDmonReviewSourceLink" class="small" target="_blank" rel="noopener noreferrer" style="display: none;">View on Robots4Whales</a>
+            </div>
+            <p class="text-muted small mb-2" id="slocumDmonReviewNote" style="display: none;"></p>
+            <div class="table-responsive mb-3">
+              <table class="table table-sm table-hover align-middle mb-0" id="slocumDmonReviewRecentTable">
+                <thead id="slocumDmonReviewRecentHead">
+                  <tr><th scope="col">Date</th></tr>
+                </thead>
+                <tbody id="slocumDmonReviewRecentBody">
+                  <tr><td class="text-muted small">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-2">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0">Full detection history</h6>
+                <button class="btn btn-outline-secondary btn-sm" type="button" data-bs-toggle="collapse" data-bs-target="#slocumDmonReviewAllCollapse" aria-expanded="false" aria-controls="slocumDmonReviewAllCollapse">
+                  <i class="fas fa-chevron-down" id="slocumDmonReviewAllChevron"></i> Toggle full detection history
+                </button>
+              </div>
+              <div class="collapse" id="slocumDmonReviewAllCollapse">
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                  <table class="table table-sm table-hover align-middle mb-0" id="slocumDmonReviewAllTable">
+                    <thead class="sticky-top bg-body-secondary" id="slocumDmonReviewAllHead">
+                      <tr><th scope="col">Date</th></tr>
+                    </thead>
+                    <tbody id="slocumDmonReviewAllBody">
+                      <tr><td class="text-muted small">Loading…</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <p class="text-muted small mt-3 mb-0" id="slocumDmonReviewAttribution"></p>
           </div>
           <div class="card-footer text-muted small" id="slocumDmonLastDataFooter">
             {% if dmon_info and dmon_info.latest_timestamp_str and dmon_info.latest_timestamp_str != "N/A" %}

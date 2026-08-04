@@ -43,6 +43,7 @@ from ..core.models.schemas import (
     SlocumDeploymentRead,
     SlocumDeploymentUpdate,
     SlocumParsedDataset,
+    SlocumRobots4WhalesUrlUpdate,
     SlocumSensorCardsUpdate,
 )
 
@@ -519,6 +520,36 @@ def update_deployment_sensor_cards(
         current_admin.username,
         deployment_id,
         deployment.enabled_sensor_cards,
+    )
+    return deployment
+
+
+@router.put("/deployments/{deployment_id}/robots4whales-url", response_model=SlocumDeploymentRead)
+def update_deployment_robots4whales_url(
+    deployment_id: int,
+    body: SlocumRobots4WhalesUrlUpdate,
+    current_admin: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """Update Robots4Whales deployment page URL for DMON review cache (admin only)."""
+    _require_slocum_platform()
+    from app.platforms.slocum.dmon_review import validate_robots4whales_url
+
+    deployment = _get_deployment_or_404(deployment_id, session)
+    try:
+        normalized = validate_robots4whales_url(body.robots4whales_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    deployment.robots4whales_url = normalized
+    deployment.updated_at_utc = datetime.now(timezone.utc)
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+    logger.info(
+        "Admin '%s' updated robots4whales_url for deployment %s: %s",
+        current_admin.username,
+        deployment_id,
+        deployment.robots4whales_url,
     )
     return deployment
 

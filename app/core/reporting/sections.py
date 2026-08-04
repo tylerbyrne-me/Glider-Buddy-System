@@ -22,6 +22,8 @@ from ..geo.coordinates import drop_null_island_rows
 from . import charts
 from .styling import (
     A4_PORTRAIT,
+    COLOR_BODY,
+    COLOR_MUTED,
     COLOR_RULE,
     COLOR_ZEBRA,
     DataPeriodBanner,
@@ -948,4 +950,99 @@ def build_ais_section(
             hazard_col_index=3,
         )
     )
+    return out
+
+
+def build_dmon_review_section(
+    review_payload: Dict[str, Any],
+    *,
+    period_label: str,
+) -> List[Any]:
+    """Whale detections (analyst review) table + required site/Analysts attribution."""
+    if not isinstance(review_payload, dict):
+        return []
+    days = review_payload.get("all") or review_payload.get("recent") or []
+    if not days:
+        return []
+
+    from reportlab.lib.enums import TA_CENTER
+
+    from app.platforms.slocum.dmon_review import format_report_attribution_lines
+
+    # Align with Robots4Whales / dashboard status colors (Detect / Possible / Not).
+    status_text_colors = {
+        "Detected": rl_colors.HexColor("#B91C1C"),
+        "Possibly detected": rl_colors.HexColor("#B45309"),
+        "Not detected": COLOR_MUTED,
+    }
+    status_fill_colors = {
+        "Detected": rl_colors.HexColor("#FEE2E2"),
+        "Possibly detected": rl_colors.HexColor("#FEF3C7"),
+    }
+
+    styles = build_paragraph_styles()
+    species = list(review_payload.get("species") or [])
+    if not species:
+        species = sorted(
+            {
+                sp
+                for day in days
+                for sp in (day.get("statuses") or {})
+            }
+        )
+    headers = ["Date"] + [str(s) for s in species]
+
+    def _status_cell(status: Optional[str]) -> Paragraph:
+        label = (status or "—").strip() or "—"
+        text_color = status_text_colors.get(label, COLOR_BODY)
+        cell_style = ParagraphStyle(
+            name=f"DmonReviewStatus_{label.replace(' ', '_')}",
+            parent=styles["TableCell"],
+            textColor=text_color,
+            alignment=TA_CENTER,
+        )
+        return Paragraph(_escape_xml_text(label), cell_style)
+
+    table_rows: List[List[Any]] = []
+    for day in days:
+        statuses = day.get("statuses") or {}
+        table_rows.append(
+            [str(day.get("date") or "")]
+            + [_status_cell(statuses.get(sp)) for sp in species]
+        )
+
+    out: List[Any] = [
+        Paragraph("Whale detections (analyst review)", styles["Heading1"]),
+        DataPeriodBanner(period_label, styles),
+        Spacer(1, 8),
+    ]
+    pw = _pw()
+    date_w = 72.0
+    n_sp = max(1, len(species))
+    sp_w = max(48.0, (pw - date_w) / n_sp)
+    col_widths = [date_w] + [sp_w] * n_sp
+    t = styled_data_table(
+        headers,
+        table_rows,
+        styles=styles,
+        col_widths=col_widths,
+    )
+    # Soft fills for Detected / Possibly detected (Not detected stays zebra/white).
+    fill_cmds: List[Tuple[Any, ...]] = []
+    for row_idx, day in enumerate(days, start=1):
+        statuses = day.get("statuses") or {}
+        for col_idx, sp in enumerate(species, start=1):
+            fill = status_fill_colors.get(str(statuses.get(sp) or ""))
+            if fill is not None:
+                fill_cmds.append(("BACKGROUND", (col_idx, row_idx), (col_idx, row_idx), fill))
+    if fill_cmds:
+        t.setStyle(TableStyle(fill_cmds))
+    out.append(t)
+    out.append(Spacer(1, 10))
+    attribution = review_payload.get("attribution") if isinstance(review_payload.get("attribution"), dict) else {}
+    for line in format_report_attribution_lines(
+        attribution,
+        fetched_at_utc=review_payload.get("fetched_at_utc"),
+    ):
+        out.append(Paragraph(_escape_xml_text(line), styles["Caption"]))
     return out

@@ -1670,6 +1670,27 @@ async def run_iridium_tle_cleanup_job():
         record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
+async def run_dmon_review_prefetch_job():
+    """Leader job: refresh Robots4Whales DMON analyst-review cache for eligible deployments."""
+    job_id = "system_dmon_review_prefetch_job"
+    logger.info("AUTOMATED: Prefetching DMON Robots4Whales review cache...")
+    try:
+        from app.platforms.slocum.dmon_review import prefetch_all_dmon_reviews
+
+        with SQLModelSession(sqlite_engine) as session:
+            summary = await prefetch_all_dmon_reviews(session)
+        logger.info("AUTOMATED: DMON review prefetch finished: %s", summary)
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            str(summary) if summary is not None else "Prefetch finished",
+            counts=summary if isinstance(summary, dict) else None,
+        )
+    except Exception as exc:
+        logger.error("AUTOMATED: DMON review prefetch failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
+
+
 async def run_bathy_cache_cleanup_job():
     """Leader job: purge stale ETOPO bathymetry .npz cache entries and enforce size quota.
 
@@ -2024,6 +2045,19 @@ async def startup_event():
             "Iridium TLE cache cleanup scheduled daily at %02d:25 UTC",
             iridium_cleanup_hour,
         )
+        dmon_review_hours = max(
+            1, int(getattr(settings, "dmon_review_prefetch_interval_hours", 12) or 12)
+        )
+        scheduler.add_job(
+            run_dmon_review_prefetch_job,
+            "interval",
+            hours=dmon_review_hours,
+            id="system_dmon_review_prefetch_job",
+        )
+        logger.info(
+            "DMON Robots4Whales review prefetch scheduled every %s hours",
+            dmon_review_hours,
+        )
         overage_cleanup_hours = max(1, int(getattr(settings, "slocum_overage_cleanup_interval_hours", 6)))
         scheduler.add_job(
             run_slocum_overage_cleanup_job,
@@ -2081,6 +2115,8 @@ async def startup_event():
         # Warm Iridium TLEs in background if stale (respects disk TTL / rate gate).
         asyncio.create_task(run_iridium_tle_prefetch_job())
         logger.info("STARTUP: Iridium TLE prefetch scheduled in background")
+        asyncio.create_task(run_dmon_review_prefetch_job())
+        logger.info("STARTUP: DMON Robots4Whales review prefetch scheduled in background")
         try:
             await run_slocum_overage_cleanup_job()
         except Exception as exc:
