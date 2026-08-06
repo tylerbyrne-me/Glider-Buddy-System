@@ -5,11 +5,54 @@
  * way to handle authenticated requests and display user feedback.
  */
 
+const LOGIN_PATH = '/login.html';
+
+const isLoginPath = (pathWithQuery) => {
+    const qIdx = pathWithQuery.indexOf('?');
+    const pathname = qIdx >= 0 ? pathWithQuery.slice(0, qIdx) : pathWithQuery;
+    return pathname === LOGIN_PATH || pathname.endsWith('/login.html');
+};
+
+/**
+ * Safe post-login return path. Rejects external URLs and unwraps nested login redirect chains.
+ * @param {string|null|undefined} rawNext
+ * @returns {string|null}
+ */
+export const sanitizeLoginNextPath = (rawNext) => {
+    if (rawNext == null || typeof rawNext !== 'string') return null;
+    let candidate = rawNext.trim();
+    for (let depth = 0; depth < 20; depth += 1) {
+        if (!candidate.startsWith('/') || candidate.startsWith('//')) return null;
+        if (!isLoginPath(candidate)) return candidate;
+        const qIdx = candidate.indexOf('?');
+        if (qIdx < 0) return null;
+        const inner = new URLSearchParams(candidate.slice(qIdx + 1)).get('next');
+        if (!inner) return null;
+        try {
+            candidate = decodeURIComponent(inner);
+        } catch {
+            return null;
+        }
+    }
+    return null;
+};
+
 /** Redirects to login with session_expired and next params. Used by apiRequest and fetchWithAuth. */
 const redirectToLoginOn401 = () => {
     localStorage.removeItem('accessToken');
-    const nextParam = encodeURIComponent(window.location.pathname + window.location.search);
-    window.location.href = `/login.html?session_expired=true&next=${nextParam}`;
+    const onLoginPage = isLoginPath(window.location.pathname);
+    if (onLoginPage) {
+        // #region agent log
+        fetch('http://127.0.0.1:7650/ingest/4c770a18-5d45-4257-8f2a-77da070675ea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a1bfbb'},body:JSON.stringify({sessionId:'a1bfbb',hypothesisId:'H-login-loop',location:'api.js:redirectToLoginOn401',message:'401 on login page — skip redirect',data:{pathname:window.location.pathname},timestamp:Date.now(),runId:'login-loop'})}).catch(()=>{});
+        // #endregion
+        return;
+    }
+    const current = window.location.pathname + window.location.search;
+    const nextPath = sanitizeLoginNextPath(current) ?? '/platform';
+    // #region agent log
+    fetch('http://127.0.0.1:7650/ingest/4c770a18-5d45-4257-8f2a-77da070675ea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a1bfbb'},body:JSON.stringify({sessionId:'a1bfbb',hypothesisId:'H-login-loop',location:'api.js:redirectToLoginOn401',message:'redirect to login',data:{from:current,nextPath},timestamp:Date.now(),runId:'login-loop'})}).catch(()=>{});
+    // #endregion
+    window.location.href = `${LOGIN_PATH}?session_expired=true&next=${encodeURIComponent(nextPath)}`;
 };
 
 /**
