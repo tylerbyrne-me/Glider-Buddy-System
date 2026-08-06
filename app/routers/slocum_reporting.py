@@ -13,8 +13,12 @@ from ..core.auth import get_current_active_user, get_current_admin_user, require
 from ..core import models
 from ..core.infra.db import get_db_session
 from ..core.infra.feature_toggles import is_feature_enabled
+from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
 from app.platforms.slocum.reports import create_and_save_slocum_weekly_report, default_slocum_weekly_date_window
-from ..core.utils import slocum_mission_key
+from ..core.mission_aliases import (
+    resolved_slocum_mission_key,
+    slocum_report_storage_dir_names,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,18 +45,31 @@ async def list_slocum_reports(
     """List generated Slocum reports for a dataset (readable by any authenticated Slocum user)."""
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=403, detail="Slocum platform is disabled.")
-    mission_key = slocum_mission_key(dataset_id) or dataset_id
-    safe_id = mission_key.replace("/", "_").replace("\\", "_")
-    report_dir = Path(__file__).resolve().parent.parent.parent / "web" / "static" / "mission_reports" / "slocum" / safe_id
+    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    mission_key = resolved_slocum_mission_key(dataset_id)
+    dir_names = slocum_report_storage_dir_names(
+        dataset_id,
+        deployment_mission_key=deployment.mission_key if deployment else None,
+        deployment_erddap_dataset_id=deployment.erddap_dataset_id if deployment else None,
+    )
+    reports_root = Path(__file__).resolve().parent.parent.parent / "web" / "static" / "mission_reports" / "slocum"
     reports = []
-    if report_dir.is_dir():
+    seen_files: set[str] = set()
+    for safe_id in dir_names:
+        report_dir = reports_root / safe_id
+        if not report_dir.is_dir():
+            continue
         for file_path in sorted(report_dir.glob("*.pdf"), key=lambda p: p.stat().st_mtime, reverse=True):
+            if file_path.name in seen_files:
+                continue
+            seen_files.add(file_path.name)
             reports.append({
                 "filename": file_path.name,
                 "url": f"/static/mission_reports/slocum/{safe_id}/{file_path.name}",
                 "report_type": _classify_report_type(file_path.name),
                 "timestamp": datetime.utcfromtimestamp(file_path.stat().st_mtime).isoformat(),
             })
+    reports.sort(key=lambda r: r["timestamp"], reverse=True)
     return {"dataset_id": dataset_id, "mission_key": mission_key, "reports": reports}
 
 

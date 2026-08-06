@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 from app.config import settings
+from app.core.utils import slocum_mission_key
 
 PLATFORM_SLOCUM = "slocum"
 
@@ -66,6 +67,72 @@ def reverse_slocum_alias(canonical_id: str) -> Optional[str]:
         if canonical.strip() == trimmed:
             return alias.strip()
     return None
+
+
+def equivalent_slocum_dataset_keys(canonical_id: str) -> set[str]:
+    """
+    All configured keys that refer to the same Slocum ERDDAP mission as ``canonical_id``.
+
+    Includes the resolved canonical id, suffix-agnostic mission_key, realtime/delayed
+    siblings, and every alias / active / historical list entry that resolves to it.
+    """
+    canonical = resolve_slocum_dataset_id(canonical_id).strip()
+    if not canonical:
+        return set()
+    keys: set[str] = {canonical}
+    mission_key = slocum_mission_key(canonical)
+    if mission_key:
+        keys.add(mission_key)
+        keys.add(f"{mission_key}_realtime")
+        keys.add(f"{mission_key}_delayed")
+    for alias, target in _alias_map_for(PLATFORM_SLOCUM).items():
+        if resolve_slocum_dataset_id(alias).strip() == canonical:
+            keys.add(alias.strip())
+    for configured in (
+        *(settings.active_slocum_datasets or []),
+        *(settings.historical_slocum_datasets or []),
+    ):
+        key = str(configured).strip()
+        if key and resolve_slocum_dataset_id(key).strip() == canonical:
+            keys.add(key)
+    return keys
+
+
+def resolved_slocum_mission_key(key: str) -> str:
+    """Resolve env alias, then compute suffix-agnostic Slocum mission_key."""
+    canonical = resolve_slocum_dataset_id(key)
+    return slocum_mission_key(canonical) or canonical.strip()
+
+
+def slocum_report_storage_dir_names(
+    dataset_id: str,
+    *,
+    deployment_mission_key: Optional[str] = None,
+    deployment_erddap_dataset_id: Optional[str] = None,
+) -> list[str]:
+    """
+    Directory names under ``mission_reports/slocum/`` to search, best match first.
+
+    Covers canonical mission_key dirs plus legacy alias-only names from before
+    alias renames.
+    """
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        safe = (raw or "").strip().replace("/", "_").replace("\\", "_")
+        if safe and safe not in seen:
+            seen.add(safe)
+            ordered.append(safe)
+
+    canonical = resolve_slocum_dataset_id(dataset_id)
+    add(resolved_slocum_mission_key(dataset_id))
+    for key in equivalent_slocum_dataset_keys(canonical):
+        add(slocum_mission_key(resolve_slocum_dataset_id(key)) or key)
+    for raw in (deployment_mission_key, deployment_erddap_dataset_id):
+        if raw:
+            add(slocum_mission_key(resolve_slocum_dataset_id(raw)) or raw)
+    return ordered
 
 
 def slocum_display_label(configured_key: str, *, fallback: Optional[str] = None) -> str:

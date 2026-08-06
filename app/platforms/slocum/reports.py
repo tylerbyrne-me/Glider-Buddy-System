@@ -18,6 +18,7 @@ from reportlab.platypus import Image, NextPageTemplate, PageBreak, Paragraph, Sp
 from sqlmodel import Session as SQLModelSession, select
 
 from app.core import models, utils
+from app.core.mission_aliases import resolve_slocum_dataset_id, resolved_slocum_mission_key
 from app.core.geo.bathymetry import fetch_etopo_bathymetry, sample_depth_m_from_grid
 from app.core.geo.coordinates import drop_null_island_rows
 from app.core.data.processors import filter_valid_water_depth_m
@@ -211,7 +212,7 @@ def load_slocum_notes_for_report(session: SQLModelSession, deployment_id: int) -
 
 def resolve_slocum_sensor_tracker_mission_code(dataset_id: str) -> Optional[str]:
     """Map ERDDAP dataset id to Sensor Tracker mission code ``m{N}``."""
-    parsed = utils.parse_slocum_dataset_id(dataset_id)
+    parsed = utils.parse_slocum_dataset_id(resolve_slocum_dataset_id(dataset_id))
     if not parsed:
         return None
     return f"m{parsed['deployment_number']}"
@@ -444,7 +445,7 @@ def load_dmon_review_for_report(
         return None
     mission_key = (
         (deployment.mission_key if deployment else None)
-        or slocum_mission_key(dataset_id)
+        or resolved_slocum_mission_key(dataset_id)
         or ""
     )
     if not mission_key:
@@ -722,6 +723,7 @@ def write_slocum_weekly_pdf(
 
 
 async def create_and_save_slocum_weekly_report(dataset_id: str, session: SQLModelSession) -> Optional[str]:
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     start_date, end_date = default_slocum_weekly_date_window()
     deployment = get_or_create_deployment_for_dataset(
         session,
@@ -770,7 +772,7 @@ async def create_and_save_slocum_weekly_report(dataset_id: str, session: SQLMode
         end_date=end_date,
     )
 
-    mission_key = slocum_mission_key(dataset_id) or dataset_id
+    mission_key = resolved_slocum_mission_key(dataset_id)
     safe_id = mission_key.replace("/", "_").replace("\\", "_")
     report_dir = REPORTS_ROOT / "slocum" / safe_id
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d_%H%M%S")

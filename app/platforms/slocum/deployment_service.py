@@ -11,15 +11,87 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
+from sqlalchemy import or_
 from sqlmodel import select
 
 from app.core import models, utils
 from app.core.infra.db import SQLModelSession
-from app.core.mission_aliases import resolve_slocum_dataset_id
+from app.core.mission_aliases import equivalent_slocum_dataset_keys, resolve_slocum_dataset_id
 
 logger = logging.getLogger(__name__)
+
+
+def _is_alias_only_identity(deployment: models.SlocumDeployment) -> bool:
+    """True when mission identity is an env alias string, not a parseable ERDDAP id."""
+    key = (deployment.mission_key or deployment.erddap_dataset_id or "").strip()
+    if not key:
+        return False
+    return utils.parse_slocum_dataset_id(key) is None
+
+
+def _find_alias_only_deployment(
+    session: SQLModelSession,
+    parsed: dict[str, Any],
+) -> Optional[models.SlocumDeployment]:
+    """
+    Match legacy rows that stored only the env alias as mission_key / erddap_dataset_id.
+
+    Used when an alias key is renamed or removed from SLOCUM_DATASET_ALIAS_MAP_JSON.
+    """
+    glider_name = parsed["glider_name"]
+    start_date = parsed["start_date"]
+    dep_number = str(parsed["deployment_number"])
+    candidates = session.exec(
+        select(models.SlocumDeployment).where(
+            models.SlocumDeployment.is_active == True,  # noqa: E712
+            models.SlocumDeployment.glider_name == glider_name,
+        )
+    ).all()
+    matches: list[models.SlocumDeployment] = []
+    for dep in candidates:
+        if not _is_alias_only_identity(dep):
+            continue
+        dep_date = dep.deployment_date.date() if dep.deployment_date else None
+        if dep_date == start_date:
+            matches.append(dep)
+            continue
+        hay = f"{dep.name}|{dep.erddap_dataset_id}|{dep.mission_key}|{dep.glider_name}"
+        if dep_number in hay:
+            matches.append(dep)
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        logger.warning(
+            "Multiple alias-only Slocum deployments match glider=%s start=%s; skipping auto-link",
+            glider_name,
+            start_date,
+        )
+    return None
+
+
+def _prefer_deployment(
+    candidates: list[models.SlocumDeployment],
+) -> Optional[models.SlocumDeployment]:
+    """Prefer the briefing row that already owns metadata when duplicates exist."""
+    if not candidates:
+        return None
+    unique: dict[int, models.SlocumDeployment] = {}
+    for dep in candidates:
+        if dep.id is not None:
+            unique[dep.id] = dep
+    if not unique:
+        return None
+    if len(unique) == 1:
+        return next(iter(unique.values()))
+
+    def sort_key(dep: models.SlocumDeployment) -> tuple:
+        has_doc = 0 if dep.document_url else 1
+        created = dep.created_at_utc or datetime.min.replace(tzinfo=timezone.utc)
+        return (has_doc, created, dep.id or 0)
+
+    return sorted(unique.values(), key=sort_key)[0]
 
 
 def resolve_deployment_for_dataset(
@@ -31,29 +103,35 @@ def resolve_deployment_for_dataset(
     if not mission_key:
         return None
 
+    candidates: list[models.SlocumDeployment] = []
+
     by_key = session.exec(
         select(models.SlocumDeployment).where(
             models.SlocumDeployment.mission_key == mission_key,
             models.SlocumDeployment.is_active == True,  # noqa: E712
         )
-    ).first()
-    if by_key:
-        return by_key
+    ).all()
+    candidates.extend(by_key)
 
-    # Legacy fallback: rows created before mission_key existed / was backfilled.
-    # Match exact dataset id or a realtime/delayed sibling for the same mission key.
-    candidate_ids = {
-        dataset_id,
-        mission_key,
-        f"{mission_key}_realtime",
-        f"{mission_key}_delayed",
-    }
-    return session.exec(
+    equivalent_keys = equivalent_slocum_dataset_keys(dataset_id)
+    by_equivalent = session.exec(
         select(models.SlocumDeployment).where(
-            models.SlocumDeployment.erddap_dataset_id.in_(candidate_ids),
             models.SlocumDeployment.is_active == True,  # noqa: E712
+            or_(
+                models.SlocumDeployment.mission_key.in_(equivalent_keys),
+                models.SlocumDeployment.erddap_dataset_id.in_(equivalent_keys),
+            ),
         )
-    ).first()
+    ).all()
+    candidates.extend(by_equivalent)
+
+    parsed = utils.parse_slocum_dataset_id(dataset_id)
+    if parsed:
+        by_alias_only = _find_alias_only_deployment(session, parsed)
+        if by_alias_only:
+            candidates.append(by_alias_only)
+
+    return _prefer_deployment(candidates)
 
 
 def get_or_create_deployment_for_dataset(
@@ -78,7 +156,13 @@ def get_or_create_deployment_for_dataset(
     if existing:
         changed = False
         mission_key = utils.slocum_mission_key(dataset_id)
-        if mission_key and not existing.mission_key:
+        if mission_key and (
+            not existing.mission_key
+            or (
+                existing.mission_key != mission_key
+                and utils.parse_slocum_dataset_id(existing.mission_key or "") is None
+            )
+        ):
             existing.mission_key = mission_key
             changed = True
         if dataset_id and existing.erddap_dataset_id != dataset_id:

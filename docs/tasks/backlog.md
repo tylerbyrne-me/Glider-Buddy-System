@@ -44,6 +44,7 @@ Notes (not scheduled work):
 
 ## Low priority / someday
 
+- [ ] Interactive `.env` generator script: prompt for required settings, auto-generate `JWT_SECRET_KEY` (and similar hash/secret keys), seed default feature-toggle options (from `config/feature_toggles.example.json`) for optional edits; expandable for more vars. **Security:** keep secrets only in private `.env` — use tempfile / no agent-chat persistence of secret values; never write secrets to docs, logs, or repo — idea inbox 2026-08-06
 - [ ] Admin UI to upload/replace brand & platform icons (product SVG/logo, favicon, main-page icons, splash/login art, per-platform SVGs under `web/static/images/` / `platforms/`); today is file-drop per [BRAND_ASSETS.md](../wiki/how-tos/BRAND_ASSETS.md) + `app/core/platforms/registry.py` paths — idea inbox 2026-08-05
 - [ ] Optional Robots4Whales-style detection maps in-app (may skip — maps already exist on WHOI); if pursued, present detections differently on home/mission map. Likely needs scraping per-day HTML detection tables beyond the current cached review status ([ADR 0004](../decisions/0004-dmon-robots4whales-review-cache.md)); keep leader cache / no on-request scrape — idea inbox 2026-08-05
 - [ ] More UI color themes beyond light/dark (`web/static/css/themes.css` + `data-theme`); persist choice per signed-in user (not only localStorage / system preference) — idea inbox 2026-08-05

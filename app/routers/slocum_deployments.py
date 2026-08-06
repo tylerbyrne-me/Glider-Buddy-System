@@ -9,7 +9,6 @@ ERDDAP identity are enough; no manual link step is required.
 
 from __future__ import annotations
 
-import json
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,7 +21,7 @@ from ..config import settings
 from ..core.auth import get_current_active_user, get_current_admin_user, require_platform_access
 from ..core.infra.db import get_db_session, SQLModelSession
 from ..core import models, utils
-from ..core.mission_aliases import resolve_slocum_dataset_ids
+from ..core.mission_aliases import resolve_slocum_dataset_id, resolve_slocum_dataset_ids
 from ..core.infra.feature_toggles import is_feature_enabled
 from app.platforms.slocum.checklist_autofill import list_checklist_presets
 from app.platforms.slocum.deployment_service import (
@@ -102,7 +101,10 @@ def _build_deployment_info(
     parsed_dataset: Optional[SlocumParsedDataset] = None
     sensor_tracker_deployment: Optional[models.SensorTrackerDeployment] = None
     sensor_tracker_instruments: List[models.MissionInstrument] = []
-    resolved_dataset_id = dataset_id or (deployment.erddap_dataset_id if deployment else None)
+    resolved_dataset_id = resolve_slocum_dataset_id(dataset_id or "") if dataset_id else None
+    if not resolved_dataset_id and deployment and deployment.erddap_dataset_id:
+        resolved_dataset_id = resolve_slocum_dataset_id(deployment.erddap_dataset_id)
+    mission_code: Optional[str] = None
     if resolved_dataset_id:
         raw_parsed = utils.parse_slocum_dataset_id(resolved_dataset_id)
         if raw_parsed:
@@ -200,7 +202,8 @@ def list_deployments(
         active_ids = set(resolve_slocum_dataset_ids(settings.active_slocum_datasets or []))
         deployments = [
             d for d in deployments
-            if d.erddap_dataset_id and d.erddap_dataset_id in active_ids
+            if d.erddap_dataset_id
+            and resolve_slocum_dataset_ids([d.erddap_dataset_id])[0] in active_ids
         ]
     return list(deployments)
 
@@ -309,7 +312,8 @@ async def sync_dataset_sensor_tracker(
 ):
     """Sync Sensor Tracker metadata for a Slocum dataset (mission id m{deployment_number})."""
     _require_slocum_platform()
-    parsed = utils.parse_slocum_dataset_id(dataset_id)
+    resolved_id = resolve_slocum_dataset_id(dataset_id)
+    parsed = utils.parse_slocum_dataset_id(resolved_id)
     if not parsed:
         raise HTTPException(status_code=400, detail="Invalid Slocum dataset id format.")
     mission_code = f"m{parsed['deployment_number']}"
