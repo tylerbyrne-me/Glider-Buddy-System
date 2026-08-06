@@ -16,6 +16,7 @@ from typing import Any, Literal, Optional
 import pandas as pd
 
 from app.config import settings
+from app.core.mission_aliases import resolve_slocum_dataset_id, resolve_slocum_dataset_ids
 from app.core.infra.feature_toggles import is_feature_enabled
 from .erddap_client import fetch_dataset_time_extent
 from .mirror_service import (
@@ -154,6 +155,7 @@ async def get_cached_or_fetch_bundle_df(
     When ``time_start_str``/``time_end_str`` are provided they define the window.
     Otherwise a hours_back window is computed from now (or historical extent).
     """
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     try:
         if time_start_str and time_end_str:
             start = datetime.fromisoformat(time_start_str.replace("Z", "+00:00"))
@@ -262,7 +264,7 @@ async def warm_active_slocum_datasets(hours_back: int | None = None) -> int:
         return 0
 
     warm_hours = hours_back if hours_back is not None else getattr(settings, "slocum_warm_hours", 24)
-    dataset_ids = [d.strip() for d in settings.active_slocum_datasets if d and d.strip()]
+    dataset_ids = resolve_slocum_dataset_ids(settings.active_slocum_datasets)
     if not dataset_ids:
         logger.info("SLOCUM WARM: No active Slocum datasets configured.")
         return 0

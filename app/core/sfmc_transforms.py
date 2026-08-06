@@ -7,8 +7,9 @@ No HTTP here — feed payloads from ``sfmc_client`` or saved exploration samples
 
 from __future__ import annotations
 
+import math
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import PurePosixPath
 from typing import Any, Optional
 
@@ -301,6 +302,126 @@ def dialog_values_for_checklist(parsed: dict[str, str]) -> dict[str, str]:
     }
 
 
+_MS_TO_KNOTS = 3600.0 / 1852.0
+
+
+def sfmc_dm_to_decimal_degrees(value: Any) -> Optional[float]:
+    """Convert SFMC GPS ``DDMM.mmm`` / ``DDDMM.mmm`` (signed) to decimal degrees."""
+    try:
+        raw = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(raw):
+        return None
+    sign = -1.0 if raw < 0 else 1.0
+    av = abs(raw)
+    degrees = int(av // 100.0)
+    minutes = av - degrees * 100.0
+    if minutes >= 60.0:
+        return None
+    return sign * (degrees + minutes / 60.0)
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2.0) ** 2
+        + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2.0) ** 2
+    )
+    return 2.0 * 6371.0 * math.asin(math.sqrt(a))
+
+
+def extract_surface_speed_events(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """Extract Surfacings Speed & Distance rows from an SFMC surface-events payload.
+
+    Expects DevTools / UI shape with ``surfaceEventsPage.content`` plus optional
+    ``speedMap`` / ``distanceTraveledMap`` / ``hoursSinceMap`` keyed by event id.
+    Speeds are m/s in SFMC; ``speed_kt`` is derived. When a map entry is missing,
+    speed/distance are recomputed from consecutive GPS fixes.
+
+    The public Bearer ``/sfmc/api/v1/active-deployment/{glider}`` path does **not**
+    currently return these maps — this helper is for captured UI payloads and a
+    future UI/API wire-up.
+    """
+    if not isinstance(payload, dict):
+        return []
+    page = payload.get("surfaceEventsPage") or {}
+    content = page.get("content") if isinstance(page, dict) else None
+    if not isinstance(content, list) or not content:
+        return []
+
+    speed_map = payload.get("speedMap") if isinstance(payload.get("speedMap"), dict) else {}
+    distance_map = (
+        payload.get("distanceTraveledMap")
+        if isinstance(payload.get("distanceTraveledMap"), dict)
+        else {}
+    )
+    hours_map = payload.get("hoursSinceMap") if isinstance(payload.get("hoursSinceMap"), dict) else {}
+
+    rows: list[dict[str, Any]] = []
+    for raw in content:
+        if not isinstance(raw, dict):
+            continue
+        event_id = raw.get("id")
+        lat = sfmc_dm_to_decimal_degrees(raw.get("gpsLat"))
+        lon = sfmc_dm_to_decimal_degrees(raw.get("gpsLon"))
+        when = _parse_sfmc_dt(raw.get("surfaceDateTime") or raw.get("gpsDateTime"))
+        if lat is None or lon is None or when is None:
+            continue
+        key = str(event_id) if event_id is not None else ""
+        speed_ms = None
+        distance_km = None
+        hours_since = None
+        if key and key in speed_map:
+            try:
+                speed_ms = float(speed_map[key])
+            except (TypeError, ValueError):
+                speed_ms = None
+        if key and key in distance_map:
+            try:
+                distance_km = float(distance_map[key])
+            except (TypeError, ValueError):
+                distance_km = None
+        if key and key in hours_map:
+            try:
+                hours_since = float(hours_map[key])
+            except (TypeError, ValueError):
+                hours_since = None
+        rows.append(
+            {
+                "id": event_id,
+                "surface_time": when,
+                "latitude": lat,
+                "longitude": lon,
+                "speed_m_s": speed_ms,
+                "speed_kt": (speed_ms * _MS_TO_KNOTS) if speed_ms is not None else None,
+                "distance_km": distance_km,
+                "hours_since": hours_since,
+            }
+        )
+
+    rows.sort(key=lambda row: row["surface_time"])
+    for i in range(1, len(rows)):
+        prev = rows[i - 1]
+        cur = rows[i]
+        if cur.get("distance_km") is not None and cur.get("speed_m_s") is not None:
+            continue
+        dist_km = _haversine_km(
+            prev["latitude"], prev["longitude"], cur["latitude"], cur["longitude"]
+        )
+        dt_h = (cur["surface_time"] - prev["surface_time"]).total_seconds() / 3600.0
+        if cur.get("distance_km") is None:
+            cur["distance_km"] = dist_km
+        if cur.get("hours_since") is None and dt_h > 0:
+            cur["hours_since"] = dt_h
+        if cur.get("speed_m_s") is None and dt_h > 0:
+            cur["speed_m_s"] = (dist_km * 1000.0) / (dt_h * 3600.0)
+            cur["speed_kt"] = cur["speed_m_s"] * _MS_TO_KNOTS
+    return rows
+
+
 def extract_from_surface_events_payload(payload: dict[str, Any]) -> dict[str, str]:
     """Map SFMC surface-events / deployment page JSON → checklist fields."""
     out: dict[str, str] = {}
@@ -479,6 +600,7 @@ def normalize_dmon_asc_files(
     *,
     now: Optional[datetime] = None,
     window_hours: float = DMON_ASC_WINDOW_HOURS,
+    window_start: Optional[datetime] = None,
     gap_hours: float = DMON_ASC_GAP_HOURS,
 ) -> dict[str, Any]:
     """
@@ -492,10 +614,18 @@ def normalize_dmon_asc_files(
           "file_count": int,
           "summary": str,
         }
+
+    When ``window_start`` is set, files are kept for ``[window_start, now]``.
+    Otherwise files are kept for the rolling ``window_hours`` ending at ``now``.
     """
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
+    start_bound: Optional[datetime] = None
+    if window_start is not None:
+        start_bound = window_start
+        if start_bound.tzinfo is None:
+            start_bound = start_bound.replace(tzinfo=timezone.utc)
 
     parsed: list[dict[str, Any]] = []
     if isinstance(entries, list):
@@ -538,8 +668,11 @@ def normalize_dmon_asc_files(
 
     parsed.sort(key=lambda row: row["_dt"])
 
-    window_cutoff = now - timedelta(hours=max(0.0, float(window_hours)))
-    in_window = [row for row in parsed if row["_dt"] >= window_cutoff]
+    if start_bound is not None:
+        in_window = [row for row in parsed if start_bound <= row["_dt"] <= now]
+    else:
+        window_cutoff = now - timedelta(hours=max(0.0, float(window_hours)))
+        in_window = [row for row in parsed if row["_dt"] >= window_cutoff]
     # If nothing in window but we have older files (fallback listing), keep newest only
     # so hours_since_last still works.
     using_fallback = not in_window and bool(parsed)
@@ -581,7 +714,14 @@ def normalize_dmon_asc_files(
         gap_note = f" - GAP >{gap_hours:.0f}h" if has_gap else ""
         if using_fallback:
             summary = (
-                f"No *.asc in last {window_hours:.0f}h; newest overall: {newest}, {age}{gap_note}"
+                f"No *.asc in report window; newest overall: {newest}, {age}{gap_note}"
+                if start_bound is not None
+                else f"No *.asc in last {window_hours:.0f}h; newest overall: {newest}, {age}{gap_note}"
+            )
+        elif start_bound is not None:
+            summary = (
+                f"{len(files_out)} *.asc in report window "
+                f"(newest: {newest}, {age}){gap_note}"
             )
         else:
             summary = (
@@ -596,6 +736,131 @@ def normalize_dmon_asc_files(
         "file_count": len(files_out),
         "summary": summary,
     }
+
+
+def _parse_dmon_asc_timestamps(entries: Any) -> list[datetime]:
+    """Extract sorted UTC timestamps from raw SFMC folder listing entries."""
+    parsed: list[datetime] = []
+    if not isinstance(entries, list):
+        return parsed
+    for item in entries:
+        if not isinstance(item, dict):
+            continue
+        name = (
+            item.get("fileName")
+            or item.get("filename")
+            or item.get("name")
+            or item.get("path")
+        )
+        if not name or not str(name).strip().lower().endswith(".asc"):
+            continue
+        modified_raw = (
+            item.get("dateTimeModified")
+            or item.get("lastModified")
+            or item.get("modified")
+            or item.get("mtime")
+        )
+        modified_dt = _parse_sfmc_dt(modified_raw)
+        if modified_dt is None:
+            continue
+        parsed.append(modified_dt)
+    parsed.sort()
+    return parsed
+
+
+def _utc_days_overlapping_interval(
+    start: datetime,
+    end: datetime,
+    *,
+    window_start: datetime,
+    window_end: datetime,
+) -> set[date]:
+    """Return UTC calendar dates in [window_start, window_end] overlapping [start, end)."""
+    if end <= start:
+        return set()
+    clip_start = max(start, window_start)
+    clip_end = min(end, window_end)
+    if clip_end <= clip_start:
+        return set()
+    days: set[date] = set()
+    cursor = clip_start.astimezone(timezone.utc).date()
+    last = (clip_end - timedelta(microseconds=1)).astimezone(timezone.utc).date()
+    while cursor <= last:
+        days.add(cursor)
+        cursor = cursor + timedelta(days=1)
+    return days
+
+
+def count_dmon_asc_gap_days(
+    entries: Any,
+    *,
+    window_start: datetime,
+    window_end: datetime,
+    gap_hours: float = DMON_ASC_GAP_HOURS,
+) -> int:
+    """
+    Count UTC calendar days in the report window that fall inside an ASC gap > ``gap_hours``.
+
+    Gaps are intervals between consecutive ``*.asc`` file timestamps (and a trailing gap
+    from the last file to ``window_end`` when that span exceeds the threshold). Days are
+    only counted when they overlap both the gap interval and ``[window_start, window_end]``.
+    """
+    if window_end <= window_start:
+        return 0
+    if window_start.tzinfo is None:
+        window_start = window_start.replace(tzinfo=timezone.utc)
+    else:
+        window_start = window_start.astimezone(timezone.utc)
+    if window_end.tzinfo is None:
+        window_end = window_end.replace(tzinfo=timezone.utc)
+    else:
+        window_end = window_end.astimezone(timezone.utc)
+
+    timestamps = _parse_dmon_asc_timestamps(entries)
+    if not timestamps:
+        # Entire window is an uncovered gap when no ASC files exist.
+        span_h = (window_end - window_start).total_seconds() / 3600.0
+        if span_h > gap_hours:
+            return len(
+                _utc_days_overlapping_interval(
+                    window_start,
+                    window_end,
+                    window_start=window_start,
+                    window_end=window_end,
+                )
+            )
+        return 0
+
+    gap_days: set[date] = set()
+    # Include a file just before the window so a gap that starts earlier is visible.
+    lookback = [t for t in timestamps if t < window_start]
+    in_or_after = [t for t in timestamps if t >= window_start]
+    sequence = (lookback[-1:] if lookback else []) + in_or_after
+
+    prev: Optional[datetime] = None
+    for ts in sequence:
+        if prev is not None:
+            gap_h = (ts - prev).total_seconds() / 3600.0
+            if gap_h > gap_hours:
+                gap_days |= _utc_days_overlapping_interval(
+                    prev,
+                    ts,
+                    window_start=window_start,
+                    window_end=window_end,
+                )
+        prev = ts
+
+    if sequence:
+        last_ts = sequence[-1]
+        trailing_h = (window_end - last_ts).total_seconds() / 3600.0
+        if trailing_h > gap_hours:
+            gap_days |= _utc_days_overlapping_interval(
+                last_ts,
+                window_end,
+                window_start=window_start,
+                window_end=window_end,
+            )
+    return len(gap_days)
 
 
 def extract_connection_durations(payload: dict[str, Any]) -> list[dict[str, Any]]:

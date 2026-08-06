@@ -27,6 +27,18 @@ MAIL_SSL_TLS=False
 SENSOR_TRACKER_TOKEN=your-api-token-here
 SENSOR_TRACKER_USERNAME=your-username
 SENSOR_TRACKER_PASSWORD=your-password
+
+# CLS Argos / Kinéis api-telemetry (optional; checklist Argos-vs-GPS)
+ARGOS_USERNAME=your-cls-username
+ARGOS_PASSWORD=your-cls-password
+# Optional overrides (defaults are production Group CLS URLs):
+# ARGOS_AUTH_URL=https://account.groupcls.com/auth/realms/cls/protocol/openid-connect/token
+# ARGOS_API_BASE_URL=https://api.groupcls.com/telemetry/api/v1
+# ARGOS_CLIENT_ID=api-telemetry
+# ARGOS_GPS_MAX_SEPARATION_KM=20
+# ARGOS_FIX_MAX_AGE_HOURS=48
+# ARGOS_CACHE_DIR=data_store/argos_cache
+# ARGOS_CACHE_TTL_MINUTES=30
 ```
 
 ---
@@ -47,6 +59,13 @@ REMOTE_MISSION_FOLDER_MAP_JSON={"m209": "output_realtime_missions/m209", "m211":
 # Active Missions (changes over time)
 ACTIVE_REALTIME_MISSIONS=["m209", "m211"]
 
+# Slocum ERDDAP datasets (aliases optional — see SLOCUM_DATASET_ALIAS_MAP_JSON)
+ACTIVE_SLOCUM_DATASETS=["fundy", "peggy"]
+HISTORICAL_SLOCUM_DATASETS=["sable_20260621_224_delayed"]
+SLOCUM_DATASET_ALIAS_MAP_JSON={"fundy": "fundy_20260724_229_realtime", "peggy": "peggy_20260621_226_realtime"}
+# Optional per-platform alias maps for future platforms:
+# MISSION_ALIAS_MAPS_JSON={"some_platform": {"alias": "canonical_mission_id"}}
+
 # Database Configuration
 SQLITE_DATABASE_URL=sqlite:///./data_store/app_data.sqlite
 SQLITE_ECHO_LOG=False
@@ -65,8 +84,11 @@ SENSOR_TRACKER_DEBUG_HOST=http://127.0.0.1:8000/
 These control application behavior and may need adjustment per environment.
 
 ```bash
-# Feature Toggles (JSON string)
-FEATURE_TOGGLES_JSON={"pic_management": true, "admin_management": true, "station_offloads": true}
+# Feature toggles — prefer a pretty JSON file (one flag per line):
+FEATURE_TOGGLES_FILE=config/feature_toggles.json
+# Copy config/feature_toggles.example.json to config/feature_toggles.json and edit.
+# Or use inline JSON (still valid if formatted with newlines inside quotes):
+# FEATURE_TOGGLES_JSON={"pic_management": true, "admin_management": true}
 
 # Background Tasks
 BACKGROUND_CACHE_REFRESH_INTERVAL_MINUTES=60
@@ -154,6 +176,14 @@ REMOTE_MISSION_FOLDER_MAP_JSON={"m209": "output_realtime_missions/m209", "m211":
 ACTIVE_REALTIME_MISSIONS=["m209", "m211"]
 
 # ============================================================================
+# SLOCUM DATASETS
+# ============================================================================
+# Use short aliases in ACTIVE/HISTORICAL lists when mapped via SLOCUM_DATASET_ALIAS_MAP_JSON
+ACTIVE_SLOCUM_DATASETS=["fundy", "peggy"]
+HISTORICAL_SLOCUM_DATASETS=[]
+SLOCUM_DATASET_ALIAS_MAP_JSON={"fundy": "fundy_20260724_229_realtime", "peggy": "peggy_20260621_226_realtime"}
+
+# ============================================================================
 # DATABASE CONFIGURATION
 # ============================================================================
 SQLITE_DATABASE_URL=sqlite:///./data_store/app_data.sqlite
@@ -171,10 +201,21 @@ SENSOR_TRACKER_DEBUG=False
 SENSOR_TRACKER_DEBUG_HOST=http://127.0.0.1:8000/
 
 # ============================================================================
+# CLS ARGOS / KINÉIS API-TELEMETRY (optional)
+# ============================================================================
+ARGOS_USERNAME=your-cls-username
+ARGOS_PASSWORD=your-cls-password
+# ARGOS_GPS_MAX_SEPARATION_KM=20
+# ARGOS_FIX_MAX_AGE_HOURS=48
+# ARGOS_CACHE_TTL_MINUTES=30
+
+# ============================================================================
 # FEATURE TOGGLES
 # ============================================================================
-# JSON object controlling which features are enabled
-FEATURE_TOGGLES_JSON={"pic_management": true, "admin_management": true, "station_offloads": true}
+# Recommended: pretty-printed JSON file (see config/feature_toggles.example.json)
+FEATURE_TOGGLES_FILE=config/feature_toggles.json
+# Alternative: single env var (must be valid JSON — newlines OK inside quoted value)
+# FEATURE_TOGGLES_JSON={"pic_management": true, "admin_management": true}
 
 # ============================================================================
 # BACKGROUND TASKS
@@ -272,7 +313,15 @@ LLM_MAX_CONTEXT_CHARS=6000
 Some settings use JSON strings:
 - `REMOTE_MISSION_FOLDER_MAP_JSON` - Must be valid JSON
 - `ACTIVE_REALTIME_MISSIONS` - Must be valid JSON array
-- `FEATURE_TOGGLES_JSON` - Must be valid JSON object
+- `FEATURE_TOGGLES_FILE` - Path to a JSON file (recommended; one toggle per line). Example: `config/feature_toggles.example.json`
+- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off.
+
+### Public login map
+- Kill switch: `public_login_map` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON`
+- Allowlist intersection: active env lists (`ACTIVE_REALTIME_MISSIONS`, `ACTIVE_SLOCUM_DATASETS`) ∩ admin `public_map_enabled`
+- Optional: `TRUSTED_PROXY_COUNT` (int; default `0`) — how many rightmost `X-Forwarded-For` hops to trust for rate-limit client IP
+- Cache dir / TTL defaults live in `app/config.py` (`public_map_cache_dir`, `public_map_cache_ttl_seconds`, `public_map_warm_interval_minutes`, `public_map_max_missions`)
+- Ops detail: [Public login map how-to](./how-tos/public_login_map.md)
 
 ### Path Values
 - Use forward slashes `/` even on Windows for `LOCAL_DATA_BASE_PATH`

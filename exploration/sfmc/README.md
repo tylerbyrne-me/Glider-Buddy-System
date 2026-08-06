@@ -78,6 +78,34 @@ python exploration/sfmc/probe_sfmc.py --v1-smoke --glider peggy --insecure
 
 **Live smoke (2026-07-20):** `https://gliderbak.ceotr.ca` — signin 200 + all v1 GETs 200 for `peggy`.
 
+### Deployment Log Notes probe (2026-08-05)
+
+Browser UI loads notes via **session cookie** on ``/sfmc/deployment-requests/*``; **Bearer tokens do not work** on that path on gliderbak (returns login HTML). Resolve ``gliderDeploymentId`` from ``GET /sfmc/api/v1/active-deployment/{glider}`` → ``data.id`` (also ``data.name`` slug e.g. ``peggy-2026-06-20T14:54``).
+
+```http
+GET /sfmc/deployment-requests/get-next-log-note-set-for-deployment/{gliderDeploymentId}
+GET ...?priorDeploymentLogNoteId={oldestIdFromPreviousPage}   # repeat until []
+```
+
+Each note: `id`, `userLogNoteText`, `gliderDeploymentId`, `creationDateTime`, `modificationDateTime`, `authorUsername`.
+
+```powershell
+python exploration/sfmc/probe_sfmc.py --log-notes-probe --glider peggy --insecure
+python exploration/sfmc/probe_sfmc.py --log-notes-probe --glider peggy --deployment-id 315 --insecure
+```
+
+Writes `samples/*_log_notes_probe_*` + appends `discovery_log.jsonl`. Resolves `gliderDeploymentId` from `GET /sfmc/api/v1/active-deployment/{glider}` → **`data.id`** (slug in **`data.name`**, e.g. `peggy-2026-06-20T14:54`) when `--deployment-id` is omitted.
+
+**Probe result (2026-08-05, gliderbak / peggy):**
+
+| Path | Bearer API token |
+|------|------------------|
+| `/sfmc/api/v1/active-deployment/{glider}` | Works — `data.id` = 315 |
+| `/sfmc/deployment-requests/get-next-log-note-set-for-deployment/315` | **Login HTML** (session cookie required) |
+| Guessed `/sfmc/api/v1/*log-notes*` paths | 404 |
+
+Buddy cannot import log notes with the current API credentials alone; options are ask SFMC admin/Teledyne for a Bearer-enabled endpoint, or a separate service account + session (not ideal).
+
 | Endpoint | Checklist use |
 |----------|---------------|
 | `/sfmc/api/v1/newest-mission-details/{glider}` | `mission_file_running_val` ← `data.missionName` |

@@ -23,6 +23,7 @@ from typing import Any, Iterator, Literal, Optional
 import pandas as pd
 
 from app.config import settings
+from app.core.mission_aliases import resolve_slocum_dataset_id
 from .bundle_registry import get_bundle_spec
 from .mirror_service import (
     _fetch_raw_bundle,
@@ -489,7 +490,7 @@ async def get_bundle_dataframe(
     requested_end = _ensure_utc(request.end_utc)
     norm_start, norm_end = validate_overage_request(request)
     bundle = get_bundle_spec(request.bundle).name
-    dataset_id = request.dataset_id
+    dataset_id = resolve_slocum_dataset_id(request.dataset_id)
 
     if ensure_mirror:
         try:

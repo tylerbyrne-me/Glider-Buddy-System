@@ -1031,6 +1031,17 @@ document.addEventListener('DOMContentLoaded', async function() {
             });
         });
 
+        const publicMapEnabledToggle = document.getElementById('publicMapEnabled');
+        const publicWeeklyReportEnabledToggle = document.getElementById('publicWeeklyReportEnabled');
+        if (publicMapEnabledToggle && publicWeeklyReportEnabledToggle) {
+            publicMapEnabledToggle.addEventListener('change', () => {
+                publicWeeklyReportEnabledToggle.disabled = !publicMapEnabledToggle.checked;
+                if (!publicMapEnabledToggle.checked) {
+                    publicWeeklyReportEnabledToggle.checked = false;
+                }
+            });
+        }
+
 
         /**
          * Load available missions (active + historical)
@@ -1173,6 +1184,18 @@ document.addEventListener('DOMContentLoaded', async function() {
                         ? missionInfo.overview.battery_apu_count
                         : '';
                     batteryApuInput.value = apu === '' ? '' : String(apu);
+                }
+
+                const publicMapEnabled = document.getElementById('publicMapEnabled');
+                const publicWeeklyReportEnabled = document.getElementById('publicWeeklyReportEnabled');
+                if (publicMapEnabled) {
+                    publicMapEnabled.checked = Boolean(missionInfo.overview && missionInfo.overview.public_map_enabled);
+                }
+                if (publicWeeklyReportEnabled) {
+                    publicWeeklyReportEnabled.checked = Boolean(
+                        missionInfo.overview && missionInfo.overview.public_weekly_report_enabled
+                    );
+                    publicWeeklyReportEnabled.disabled = !(publicMapEnabled && publicMapEnabled.checked);
                 }
                 
                 // Show the form container
@@ -1724,11 +1747,20 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
             }
 
+            const publicMapEnabledEl = document.getElementById('publicMapEnabled');
+            const publicWeeklyReportEnabledEl = document.getElementById('publicWeeklyReportEnabled');
+            const publicMapEnabled = Boolean(publicMapEnabledEl && publicMapEnabledEl.checked);
+            const publicWeeklyReportEnabled = Boolean(
+                publicMapEnabled && publicWeeklyReportEnabledEl && publicWeeklyReportEnabledEl.checked
+            );
+
             const payload = {
                 document_url: fileUrl || null, // Use the final URL, or null if removed
                 enabled_sensor_cards: enabledSensorCards.length > 0 ? JSON.stringify(enabledSensorCards) : null,
                 pic_handoff_optional_sensors: picHandoffOptionalSensors.length > 0 ? JSON.stringify(picHandoffOptionalSensors) : null,
-                battery_apu_count: batteryApuCount
+                battery_apu_count: batteryApuCount,
+                public_map_enabled: publicMapEnabled,
+                public_weekly_report_enabled: publicWeeklyReportEnabled,
             };
 
             try {

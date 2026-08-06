@@ -16,6 +16,7 @@ import pandas as pd
 
 from app.core.data.processors import preprocess_slocum_ctd_df
 from app.core.data.summaries import _generate_mini_trend, _get_common_status_data
+from app.core.mission_aliases import resolve_slocum_dataset_id
 from .mirror_service import load_mirror_df
 
 logger = logging.getLogger(__name__)
@@ -378,6 +379,7 @@ def build_slocum_sensor_summaries(
     Returns flat keys for SSR (ctd_info, ctd_values, ...) plus a nested
     ``sensors`` map keyed by card name for the JSON API.
     """
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     context: Dict[str, Any] = {"sensors": {}}
     enabled = {str(card) for card in (enabled_cards or [])}
 

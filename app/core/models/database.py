@@ -476,6 +476,15 @@ class MissionOverview(SQLModel, table=True):
         sa_column=Column(Text),
         description="JSON array of checklist-only PIC sensors (e.g. adcp) that may not have dashboard cards or telemetry.",
     )
+    public_map_enabled: bool = SQLModelField(
+        default=False,
+        index=True,
+        description="When true, this mission may appear on the unauthenticated login-page map (also must be in ACTIVE_REALTIME_MISSIONS).",
+    )
+    public_weekly_report_enabled: bool = SQLModelField(
+        default=False,
+        description="When true (and public_map_enabled), the latest weekly report PDF is linked on the public map.",
+    )
     created_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
     updated_at_utc: datetime = SQLModelField(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -1048,6 +1057,19 @@ class SlocumDeployment(SQLModel, table=True):
             "Robots4Whales / dcs.whoi.edu deployment page URL for DMON analyst-review detections "
             "(e.g. https://dcs.whoi.edu/dal2607/dal2607_sambro.shtml)."
         ),
+    )
+    weekly_report_url: Optional[str] = SQLModelField(
+        default=None,
+        description="URL to the latest generated Slocum weekly report PDF.",
+    )
+    public_map_enabled: bool = SQLModelField(
+        default=False,
+        index=True,
+        description="When true, this deployment may appear on the unauthenticated login-page map (also must be in ACTIVE_SLOCUM_DATASETS).",
+    )
+    public_weekly_report_enabled: bool = SQLModelField(
+        default=False,
+        description="When true (and public_map_enabled), the latest weekly report PDF is linked on the public map.",
     )
     enabled_sensor_cards: Optional[str] = SQLModelField(
         default=None,

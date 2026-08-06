@@ -8,6 +8,7 @@ Start here. This folder is the source of truth for "how does this work."
 - [Setup](./setup.md) — getting a dev environment running
 - [Conventions](./conventions.md) — coding/naming rules (links to detailed standards)
 - [Environment variables](./ENV_VARIABLES.md) — config reference
+- [Public login map](./how-tos/public_login_map.md) — unauthenticated login-page tracks / KML / labels
 - [Glossary template](./GLOSSARY_TEMPLATE.md) — RAG/glossary authoring
 - [Module templates](./MODULE_TEMPLATES_README.md) — module scaffolding notes
 

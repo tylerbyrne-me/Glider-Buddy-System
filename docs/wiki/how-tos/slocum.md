@@ -7,6 +7,18 @@ Slocum glider data is served via ERDDAP (Ocean Track). This document describes h
 - **`slocum_erddap_server`** (config / `.env`): ERDDAP base URL. Default: `https://erddap.oceantrack.org/erddap`. Override with `slocum_erddap_server` in `.env` if needed.
 - **Feature toggle** `slocum_platform`: In `feature_toggles_json` (or `.env`), set `"slocum_platform": true` to enable Slocum API and map endpoints. When `false`, Slocum endpoints return 403.
 
+## Public login map
+
+Shared for Wave Glider and Slocum — see **[Public login map](./public_login_map.md)**.
+
+Quick Slocum path:
+
+1. Ensure the dataset is in `ACTIVE_SLOCUM_DATASETS` (alias keys OK).
+2. On **Manage Slocum Mission Overviews**, enable **Show on public map** (optional: **Show latest weekly report**).
+3. Set `"public_login_map": true` in feature toggles.
+
+Public labels prefer Sensor Tracker platform name / mission title (not dataset aliases). Static KML is on the login map; live/network KML remains authenticated.
+
 ## Mission dashboard
 
 Active/historical mission dashboards (`/slocum/...`) show overview plus optional sensor cards (admin-configured per deployment). Chart cards share a time toolbar (hours / UTC range / resample / download) and per-chart toolkit: plot style, **Show depth** background overlay (`m_depth`), Ctrl+scroll zoom, pan, and Reset zoom.
@@ -45,6 +57,7 @@ Per-mission daily checklist (`/slocum/dataset/{dataset_id}/checklist.html`, also
 - Plot modal (`web/static/js/slocum_checklist_form.js`): depth on left (`y`); value series on `y2`; digifin / thruster % on `y3` when needed
 - Plottable autofill rows include vacuum/attitude/buoyancy (legacy), plus **water depth**, **BMS currents**, **leak channels** (main/forward/science/digifin), combined **thruster** (`m_thruster_power` / `c_thruster_on`), and **DMON** `sci_dmon_msg_byte_count` when the DMON sensor card is enabled
 - **DMON gating:** Science items `dmon_msg_byte_count_val`, `dmon_asc_files_val`, and `asc_gap_check_val` appear only when `dmon` is in `SlocumDeployment.enabled_sensor_cards` (Manage Slocum Mission Overviews). The ASC list comes from the SFMC snapshot (`from-glider` `*.asc`, last 48h) and highlights gaps >16h since the newest file (and inter-file gaps >16h). Runtime injection: `apply_dmon_science_checklist_items` in [`checklist_autofill.py`](../../app/platforms/slocum/checklist_autofill.py)
+- **Argos vs GPS:** Set admin checklist reference `argos_id` to the CLS api-telemetry `deviceRef`. With `ARGOS_USERNAME` / `ARGOS_PASSWORD` in `.env`, autofill loads the latest Doppler fix (cached under `data_store/argos_cache/`, 30 min TTL) and compares it to the latest glider GPS (`m_gps_*` preferred). Item `argos_gps_check_val` shows distance · OK/REVIEW (20 km default); `argos_monitor_val` is pre-suggested Yes / No / N/A. Access test: `python scripts/test_argos_access.py --device-ref <id>` (optional `--gps-lat` / `--gps-lon`). **Live verify pending** — blocked until CLS M2M login credentials are confirmed with an administrator (see backlog).
 - **Robots4Whales detections:** Set `robots4whales_url` on the same admin page (must be a `dcs.whoi.edu` `*.shtml` deployment page). Leader job `system_dmon_review_prefetch_job` refreshes every 12h into `data_store/dmon_review_cache/`. Dashboard shows last-48h review + full history collapse with site attribution; weekly PDFs include a date-filtered analyst-review table (`styled_data_table`, Detected/Possibly color fills) and Analysts in the footnote ([ADR 0004](../../decisions/0004-dmon-robots4whales-review-cache.md)).
 - Series API: `GET /api/slocum/checklists/{dataset_id}/series?item_id=...`
 
@@ -54,6 +67,21 @@ Per-mission daily checklist (`/slocum/dataset/{dataset_id}/checklist.html`, also
 - Locked **reference** on the right; navigable prior submission on the left (past → present)
 - Value diffs via `GET /api/slocum/checklists/compare`; toggles for changed-only (default on) and include notes
 - Core: [`app/platforms/slocum/checklist_compare.py`](../../app/platforms/slocum/checklist_compare.py); UI: `web/static/js/slocum_checklist_compare.js`
+
+## Weekly PDF reports
+
+Generated via [`app/platforms/slocum/reports.py`](../../app/platforms/slocum/reports.py) (default last-7-day window). Notable content polish:
+
+| Section | Behavior |
+|---------|----------|
+| Mission summary | Period + total distance; average water depth (`m_water_depth` / ETOPO); battery pack + V stats; CTD KPIs; DMON confirmed detection-day tallies |
+| Telemetry | Continuous track colored by SFMC-style surfacing SOG (0–1.1 kt); dynamic vmax still backlog |
+| Mission notes | Letter-keyed notes matched to the telemetry track (immediately after Telemetry) |
+| Battery | Daily Ah bars from `m_coulomb_amphr_total` (partial days rate-normalized / hatched); projections to 50/75/90/100% of checklist pack endurance |
+| CTD | Depth-vs-time cmocean profiles; optional filtered water-depth overlay |
+| DMON | Analyst-review table + ASC offloads for the **full report window** (SFMC listings paginated; inter-file gaps >16h highlighted; no live “hours since last” banner — [BUG-002](../../bugs/BUG-002-dmon-asc-gap-hours-since-last.md)) |
+
+Helpers: [`battery_report.py`](../../app/platforms/slocum/battery_report.py), [`sfmc_client.fetch_dmon_asc_files`](../../app/core/sfmc_client.py).
 
 ## API
 
@@ -95,10 +123,12 @@ The exploration script `exploration/slocum_erddap/fetch_sample.py` also uses the
 - **`app/routers/slocum.py`**: Mission dashboard chart/CSV/profile APIs; SFMC connection-durations + DMON ASC listing endpoints.
 - **`app/routers/slocum_checklists.py`**: Daily checklist template/submit/series/compare APIs and form page.
 - **`app/platforms/slocum/checklist_autofill.py`** / **`checklist_compare.py`** / **`checklist_definitions.py`**: Autofill, Plot-it payloads, DMON Science-item gating, form-to-form diff, static checklist schema.
-- **`app/core/sfmc_client.py`** / **`sfmc_transforms.py`** / **`sfmc_cache_service.py`**: SFMC HTTP, `*.asc` listing + gap helpers, snapshot cache (includes `dmon_asc_files`).
+- **`app/platforms/slocum/summaries.py`** / **`reports.py`** / **`battery_report.py`** / **`masterdata_service.py`**: Sensor-card summaries, weekly PDF reports (incl. Battery Ah page + SFMC-style SOG track), KB masterdata vectorization.
+- **`app/core/sfmc_client.py`** / **`sfmc_transforms.py`** / **`sfmc_cache_service.py`**: SFMC HTTP, paginated `*.asc` listing + gap helpers, snapshot cache (includes `dmon_asc_files`).
+- **`app/core/argos_client.py`** / **`argos_cache_service.py`**: CLS Argos/Kinéis api-telemetry OAuth + bulk Doppler fetch; on-demand cache for checklist Argos–GPS check.
+- **`scripts/test_argos_access.py`**: CLI auth / deviceRef / optional GPS distance check against CLS.
 - **`app/routers/exploration_slocum.py`**: Exploration data endpoint (testing).
 - **`app/routers/map_router.py`**: Slocum map telemetry endpoint; uses same `prepare_track_points` / `get_track_bounds` as Wave Glider.
-- **`app/platforms/slocum/summaries.py`** / **`reports.py`** / **`masterdata_service.py`**: Sensor-card summaries, weekly PDF reports, KB masterdata vectorization.
 - **`app/platforms/slocum/cli.py`**: Official CLI for fetching Slocum data (`python -m app.platforms.slocum.cli`).
 - **`web/static/js/slocum_dashboard.js`**: Declarative sensor-card chart configs (incl. DMON ASC panel + left-nav ASC gap status indicator), checklist tab, compare entry.
 - **`web/static/js/slocum_checklist_form.js`** / **`slocum_checklist_compare.js`**: Checklist fill/Plot-it and side-by-side compare UI.

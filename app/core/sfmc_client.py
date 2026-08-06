@@ -374,6 +374,68 @@ def _folder_entries_from_listing(payload: Any) -> list[dict[str, Any]]:
     return []
 
 
+def _listing_has_next_page(payload: Any) -> bool:
+    """True when SFMC folder listing JSON advertises another page (``links.next``)."""
+    if not isinstance(payload, dict):
+        return False
+    links = payload.get("links")
+    if isinstance(links, dict) and links.get("next"):
+        return True
+    data = payload.get("data")
+    if isinstance(data, dict):
+        nested = data.get("links")
+        if isinstance(nested, dict) and nested.get("next"):
+            return True
+    return False
+
+
+_FOLDER_LISTING_MAX_PAGES = 50
+
+
+async def fetch_folder_listing_all_pages(
+    glider_name: str,
+    folder: str,
+    *,
+    filter_glob: Optional[str] = "*",
+    last_modified_after: Optional[str] = None,
+    max_pages: int = _FOLDER_LISTING_MAX_PAGES,
+) -> list[dict[str, Any]]:
+    """Paginate SFMC folder listings (limit is typically 20 per page)."""
+    all_entries: list[dict[str, Any]] = []
+    seen_names: set[str] = set()
+    page_limit = max(1, int(max_pages))
+    for page in range(page_limit):
+        payload = await fetch_folder_listing(
+            glider_name,
+            folder,
+            page=page,
+            filter_glob=filter_glob,
+            last_modified_after=last_modified_after,
+        )
+        if payload is None:
+            break
+        batch = _folder_entries_from_listing(payload)
+        if not batch:
+            break
+        for entry in batch:
+            name = str(entry.get("fileName") or "").strip()
+            if not name or name in seen_names:
+                continue
+            seen_names.add(name)
+            all_entries.append(entry)
+        if not _listing_has_next_page(payload):
+            break
+    else:
+        logger.warning(
+            "SFMC folder listing hit max_pages=%s for %s/%s (filter=%s)",
+            page_limit,
+            glider_name,
+            folder,
+            filter_glob,
+        )
+    return all_entries
+
+
 def _extract_script_from_scripts_payload(payload: Any) -> Optional[str]:
     """Best-effort assigned/current script name from scripts-for-glider JSON."""
     if payload is None:
@@ -508,34 +570,32 @@ async def fetch_dmon_asc_files(
     glider_name: str,
     *,
     hours: float = 48.0,
+    last_modified_after: Optional[str] = None,
 ) -> list[dict[str, Any]]:
     """
     List ``from-glider`` ``*.asc`` files (with timestamps) for DMON diagnostics.
 
-    Uses ``lastModifiedAfter`` for the rolling window. When that window is empty
-    but SFMC responds, falls back to an unfiltered ``*.asc`` listing and returns
-    raw entries so callers can still compute hours-since-last.
+    Paginates SFMC listings (typically 20 files/page). Uses ``lastModifiedAfter``
+    for the rolling window (``hours`` back from now, or an explicit
+    ``yyyyMMddHHmm`` stamp). When that window is empty but SFMC responds, falls
+    back to an unfiltered ``*.asc`` listing so callers can still compute
+    hours-since-last.
     """
-    payload = await fetch_folder_listing(
+    after = last_modified_after or _last_modified_after_hours(hours)
+    entries = await fetch_folder_listing_all_pages(
         glider_name,
         "from-glider",
-        page=0,
         filter_glob="*.asc",
-        last_modified_after=_last_modified_after_hours(hours),
+        last_modified_after=after,
     )
-    entries = _folder_entries_from_listing(payload)
     if entries:
         return entries
-    if payload is None:
-        return []
-    # Empty 48h window — try newest overall so gap-since-last still works.
-    fallback = await fetch_folder_listing(
+    # Empty window — try newest overall so gap-since-last still works.
+    return await fetch_folder_listing_all_pages(
         glider_name,
         "from-glider",
-        page=0,
         filter_glob="*.asc",
     )
-    return _folder_entries_from_listing(fallback)
 
 
 async def fetch_surface_events_payload(glider_name: str) -> Optional[dict[str, Any]]:

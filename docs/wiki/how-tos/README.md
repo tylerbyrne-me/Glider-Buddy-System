@@ -15,4 +15,5 @@ Operational procedures, sensor guides, and admin quick starts.
 - [Knowledge base quick start](./KNOWLEDGE_BASE_QUICK_START.md)
 - [LLM chatbot troubleshooting example](./LLM_CHATBOT_TROUBLESHOOTING_EXAMPLE.md)
 - [Slocum integration (dashboard, ERDDAP, mirrors)](./slocum.md)
+- [Public login map](./public_login_map.md)
 - [RAG document template](./DOCUMENT_TEMPLATE.md)

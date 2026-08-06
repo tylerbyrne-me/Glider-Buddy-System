@@ -6,6 +6,8 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
+from app.feature_toggle_config import default_feature_toggles_json, load_feature_toggles
+
 _settings_log = logging.getLogger(__name__)
 
 
@@ -74,18 +76,25 @@ class Settings(BaseSettings):
     MAIL_STARTTLS: bool = True
     MAIL_SSL_TLS: bool = False
 
-    # Feature Toggles - JSON string in .env, parsed at startup. wave_glider_specific_nav: show Station Offloads/PIC/Admin only on Wave Glider. wave_glider_knowledge_base / slocum_knowledge_base: independent KB toggles per platform.
-    # iridium_map_layer: home Leaflet Iridium constellation overlay (CelesTrak Iridium-E TLEs).
-    feature_toggles_json: str = '{"pic_management": true, "admin_management": true, "station_offloads": true, "vm4_offload_parser": false, "local_data_loading": false, "slocum_platform": true, "wave_glider_specific_nav": true, "wave_glider_knowledge_base": true, "slocum_knowledge_base": true, "report_bathymetry_contours": true, "weather_map_layers": false, "iridium_map_layer": false, "slocum_auto_checklist_submit": false}'
+    # Feature Toggles — prefer FEATURE_TOGGLES_FILE (pretty JSON) over FEATURE_TOGGLES_JSON (inline).
+    # See config/feature_toggles.example.json. wave_glider_specific_nav: WG-only nav items.
+    # iridium_map_layer: home Leaflet Iridium overlay. public_login_map: unauthenticated /login map.
+    feature_toggles_file: Optional[Path] = None
+    feature_toggles_json: str = default_feature_toggles_json()
 
     # --- Slocum ERDDAP Settings ---
     # Ocean Track Slocum glider ERDDAP server; override in .env if needed
     slocum_erddap_server: str = "https://erddap.oceantrack.org/erddap"
     # Active (realtime/current) dataset IDs. Same format as ACTIVE_REALTIME_MISSIONS: JSON array in .env,
-    # e.g. ACTIVE_SLOCUM_DATASETS=["cabot_20240901_198_realtime"]
+    # e.g. ACTIVE_SLOCUM_DATASETS=["cabot_20240901_198_realtime"] or aliases via SLOCUM_DATASET_ALIAS_MAP_JSON
     active_slocum_datasets: list[str] = []
     # Historical (delayed/past) dataset IDs. JSON array in .env, e.g. HISTORICAL_SLOCUM_DATASETS=["peggy_20250522_206_delayed"]
     historical_slocum_datasets: list[str] = []
+    # Alias → ERDDAP dataset id (like REMOTE_MISSION_FOLDER_MAP_JSON for Wave Glider mission keys).
+    # e.g. SLOCUM_DATASET_ALIAS_MAP_JSON={"fundy": "fundy_20260724_229_realtime", "peggy": "peggy_20260621_226_realtime"}
+    slocum_dataset_alias_map_json: str = "{}"
+    # Optional per-platform alias maps for future platforms: {"some_platform": {"alias": "canonical_id"}}
+    mission_alias_maps_json: str = "{}"
     # Round time window to this many minutes for hours_back mode so cache key is stable (fewer ERDDAP refetches).
     slocum_cache_window_minutes: int = 15
     # Persistent parquet mirror for Slocum ERDDAP data (shared across gunicorn workers).
@@ -150,6 +159,16 @@ class Settings(BaseSettings):
     dmon_review_prefetch_enabled: bool = True
     dmon_review_http_timeout_seconds: float = 30.0
 
+    # --- Public login-page map (unauthenticated) ---
+    public_map_cache_dir: Path = Path("data_store/public_map_cache")
+    public_map_cache_ttl_seconds: int = 600  # 10 minutes
+    public_map_window_hours: int = 168  # fixed 7-day window
+    public_map_max_points_per_mission: int = 500
+    public_map_max_missions: int = 20
+    public_map_warm_interval_minutes: int = 10
+    # Client IP for rate limits: 0 = request.client.host; >0 = trust that many rightmost X-Forwarded-For hops.
+    trusted_proxy_count: int = 0
+
     # --- Sensor Tracker Settings ---
     # SECURITY: Credentials MUST be configured in .env file
     sensor_tracker_host: str = "https://prod.ceotr.ca/sensor_tracker"
@@ -169,6 +188,22 @@ class Settings(BaseSettings):
     sfmc_cache_refresh_interval_minutes: int = 60
     # SFMC hosts typically allow ~25 requests/minute; stay under that.
     sfmc_max_requests_per_minute: int = 20
+
+    # --- CLS Argos / Kinéis api-telemetry (optional) ---
+    # Password-grant Keycloak auth; checklist Argos-vs-GPS check skipped when unset.
+    # Per-glider deviceRef is SlocumDeployment.checklist_reference_values.argos_id.
+    argos_username: Optional[str] = None
+    argos_password: Optional[str] = None
+    argos_auth_url: str = (
+        "https://account.groupcls.com/auth/realms/cls/protocol/openid-connect/token"
+    )
+    argos_api_base_url: str = "https://api.groupcls.com/telemetry/api/v1"
+    argos_client_id: str = "api-telemetry"
+    argos_gps_max_separation_km: float = 20.0
+    argos_fix_max_age_hours: float = 48.0
+    argos_cache_dir: Path = Path("data_store/argos_cache")
+    argos_cache_ttl_minutes: int = 30
+    argos_http_timeout_seconds: float = 45.0
 
     # --- Automated Slocum daily checklist (leader cron; UTC only) ---
     # Fires at deadline; submits missing checklists as System using cached SFMC.
@@ -221,12 +256,20 @@ class Settings(BaseSettings):
     
     # Parsed values (not loaded directly from env)
     remote_mission_folder_map: dict[str, str] = {}
+    slocum_dataset_alias_map: dict[str, str] = {}
+    mission_alias_maps: dict[str, dict[str, str]] = {}
     feature_toggles: dict[str, bool] = {}
 
     def model_post_init(self, __context: Any) -> None:
         """Post-initialization hook to parse JSON strings."""
         self.remote_mission_folder_map = json.loads(self.remote_mission_folder_map_json)
-        self.feature_toggles = json.loads(self.feature_toggles_json)
+        self.slocum_dataset_alias_map = json.loads(self.slocum_dataset_alias_map_json)
+        raw_alias_maps = json.loads(self.mission_alias_maps_json)
+        self.mission_alias_maps = raw_alias_maps if isinstance(raw_alias_maps, dict) else {}
+        self.feature_toggles = load_feature_toggles(
+            json_str=self.feature_toggles_json,
+            file_path=self.feature_toggles_file,
+        )
         base = self.app_base_url.strip()
         base_l = base.lower()
         if self.app_use_https and not base_l.startswith("https://"):

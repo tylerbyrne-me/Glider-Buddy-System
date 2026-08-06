@@ -25,6 +25,7 @@ from .bundle_registry import (
     preprocess_bundle_df,
 )
 from .erddap_client import fetch_dataset_time_extent, fetch_slocum_data
+from app.core.mission_aliases import resolve_slocum_dataset_id, resolve_slocum_dataset_ids
 from app.core.utils import (
     cleanup_stale_sibling_tmp_files,
     promote_orphan_tmp_file,
@@ -80,9 +81,10 @@ def is_historical_dataset(dataset_id: str) -> bool:
     """
     if not dataset_id or not str(dataset_id).strip():
         return False
-    trimmed = str(dataset_id).strip()
-    historical_ids = {s.strip() for s in settings.historical_slocum_datasets if s and s.strip()}
-    if trimmed in historical_ids:
+    trimmed = resolve_slocum_dataset_id(dataset_id)
+    historical_ids = resolve_slocum_dataset_ids(settings.historical_slocum_datasets)
+    historical_id_set = set(historical_ids)
+    if trimmed in historical_id_set:
         return True
     key = slocum_mission_key(trimmed)
     if not key:
@@ -311,6 +313,7 @@ async def sync_dataset_mirror(
     When ``rebuild_ctd`` (or ``force``) is True, the CTD parquet is cleared and
     re-fetched for the full retention window without server-side decimation.
     """
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     warm_hours = hours_back if hours_back is not None else getattr(settings, "slocum_warm_hours", 24)
     is_historical = is_historical_dataset(dataset_id)
     meta = _read_meta(dataset_id)
@@ -422,6 +425,7 @@ def inspect_mirror_dataset(dataset_id: str, *, hours_back: int = 72) -> dict[str
     Admin diagnostics for mirror parquet bundles: row counts, column non-nulls,
     sliced time ranges, and CTD science/profile availability.
     """
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     from .cache_service import slice_processed_df
 
     meta = _read_meta(dataset_id)
@@ -483,6 +487,7 @@ async def ensure_mirror_synced(
     max_stale_seconds: int = 300,
 ) -> None:
     """Sync mirror when missing or stale (used on read path for cold starts)."""
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     meta = _read_meta(dataset_id)
     dashboard_path = _parquet_path(dataset_id, "dashboard")
     if not dashboard_path.is_file():
@@ -514,11 +519,9 @@ async def ensure_mirror_synced(
 
 async def sync_active_slocum_mirrors(hours_back: Optional[int] = None) -> int:
     """Sync all configured active + historical datasets (leader scheduler job)."""
-    dataset_ids = [
-        d.strip()
-        for d in (*settings.active_slocum_datasets, *settings.historical_slocum_datasets)
-        if d and d.strip()
-    ]
+    dataset_ids = resolve_slocum_dataset_ids(
+        (*settings.active_slocum_datasets, *settings.historical_slocum_datasets)
+    )
     synced = 0
     warm_hours = hours_back if hours_back is not None else getattr(settings, "slocum_warm_hours", 24)
     for dataset_id in dataset_ids:
@@ -532,6 +535,7 @@ async def sync_active_slocum_mirrors(hours_back: Optional[int] = None) -> int:
 
 def get_mirror_cache_status(dataset_id: str) -> dict[str, Any]:
     """Return cache status for registered mirror bundles."""
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     meta = _read_meta(dataset_id)
     status: dict[str, Any] = {}
     for bundle in list_bundle_names():
@@ -554,9 +558,13 @@ def _safe_dataset_id(dataset_id: str) -> str:
 
 def configured_mirror_dataset_ids() -> set[str]:
     """Safe directory names for datasets still listed in active/historical config."""
+    configured = (
+        *settings.active_slocum_datasets,
+        *settings.historical_slocum_datasets,
+    )
     return {
         _safe_dataset_id(dataset_id.strip())
-        for dataset_id in (*settings.active_slocum_datasets, *settings.historical_slocum_datasets)
+        for dataset_id in resolve_slocum_dataset_ids(configured)
         if dataset_id and dataset_id.strip()
     }
 

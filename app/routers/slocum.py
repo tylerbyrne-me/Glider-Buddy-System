@@ -27,6 +27,10 @@ from fastapi.responses import StreamingResponse
 from ..config import settings
 from ..core.auth import get_current_active_user, get_current_admin_user, require_platform_access
 from ..core import models
+from ..core.mission_aliases import (
+    configured_slocum_dataset_keys,
+    resolve_slocum_dataset_id,
+)
 from ..core.infra.feature_toggles import is_feature_enabled
 from app.platforms.slocum.erddap_client import fetch_slocum_ctd_data, fetch_slocum_dashboard_data, list_slocum_datasets
 from app.platforms.slocum.cache_service import (
@@ -96,10 +100,14 @@ def _build_datasets_response(df: pd.DataFrame | None, active_ids: list[str]) -> 
     if dataset_id_col not in df.columns and len(df.columns):
         dataset_id_col = df.columns[0]
     id_to_meta = {str(r.get(dataset_id_col, "")): r for r in records}
+    resolved_active_ids = {resolve_slocum_dataset_id(did) for did in active_ids}
     active_list = []
     for did in active_ids:
-        if did in id_to_meta:
-            active_list.append(_dataset_row_to_dict(pd.Series(id_to_meta[did])))
+        canonical = resolve_slocum_dataset_id(did)
+        if canonical in id_to_meta:
+            row = _dataset_row_to_dict(pd.Series(id_to_meta[canonical]))
+            row["datasetID"] = did
+            active_list.append(row)
         else:
             active_list.append({
                 "datasetID": did,
@@ -108,7 +116,11 @@ def _build_datasets_response(df: pd.DataFrame | None, active_ids: list[str]) -> 
                 "minTime": None,
                 "maxTime": None,
             })
-    available_only = [r for r in available if str(r.get("datasetID", "")) not in set(active_ids)]
+    available_only = [
+        r for r in available
+        if str(r.get("datasetID", "")) not in resolved_active_ids
+        and str(r.get("datasetID", "")) not in set(active_ids)
+    ]
     return {"active": active_list, "available": available_only}
 
 
@@ -126,7 +138,7 @@ async def get_slocum_datasets(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
         )
-    active_ids = [s.strip() for s in settings.active_slocum_datasets if s and s.strip()]
+    active_ids = configured_slocum_dataset_keys(settings.active_slocum_datasets)
     cached_response, cached_at = get_datasets_cache()
     now = time.monotonic()
     if cached_response is not None and (now - cached_at) < datasets_cache_ttl_seconds():
@@ -163,7 +175,7 @@ async def get_available_datasets(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
         )
-    return [m for m in settings.active_slocum_datasets if m and m.strip()]
+    return configured_slocum_dataset_keys(settings.active_slocum_datasets)
 
 
 @router.get("/available_historical_datasets", response_model=List[str])
@@ -176,7 +188,7 @@ async def get_available_historical_datasets(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
         )
-    return [m for m in settings.historical_slocum_datasets if m and m.strip()]
+    return configured_slocum_dataset_keys(settings.historical_slocum_datasets)
 
 
 @router.get("/datasets/search")

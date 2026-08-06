@@ -171,6 +171,27 @@
                     <div id="sensorCardsStatus" class="mt-2"></div>
                 </div>
 
+                <!-- Public visibility (login map) -->
+                <div class="mb-4" id="publicVisibilitySection">
+                    <label class="form-label">Public visibility</label>
+                    <p class="text-muted small mb-2">
+                        Anyone on the internet can view this without logging in when enabled.
+                        The dataset must also be listed in <code>ACTIVE_SLOCUM_DATASETS</code>.
+                    </p>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="publicMapEnabled" disabled>
+                        <label class="form-check-label" for="publicMapEnabled">Show on public map</label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="publicWeeklyReportEnabled" disabled>
+                        <label class="form-check-label" for="publicWeeklyReportEnabled">Show latest weekly report</label>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-primary" id="savePublicVisibilityBtn" disabled>
+                        <i class="fas fa-save"></i> Save Public Visibility
+                    </button>
+                    <div id="publicVisibilityStatus" class="mt-2"></div>
+                </div>
+
                 <!-- Robots4Whales DMON review page -->
                 <div class="mb-4" id="robots4whalesSection">
                     <label class="form-label" for="robots4whalesUrlInput">Robots4Whales page (DMON detections)</label>
@@ -248,8 +269,9 @@
                             <input type="text" class="form-control form-control-sm checklist-ref-input" id="refScript" data-ref-key="expected_script" placeholder="e.g. TC_safe_g3s.xml" disabled>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label small mb-0" for="refArgosId">Argos ID</label>
-                            <input type="text" class="form-control form-control-sm checklist-ref-input" id="refArgosId" data-ref-key="argos_id" disabled>
+                            <label class="form-label small mb-0" for="refArgosId">Argos ID (CLS deviceRef)</label>
+                            <input type="text" class="form-control form-control-sm checklist-ref-input" id="refArgosId" data-ref-key="argos_id" placeholder="CLS deviceRef / PTT" disabled>
+                            <div class="form-text">Must match CLS api-telemetry <code>deviceRef</code> for Argos–GPS checklist check.</div>
                         </div>
                         <div class="col-md-6">
                             <label class="form-label small mb-0" for="refAltMinDepth">u_alt_min_depth</label>

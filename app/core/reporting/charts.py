@@ -19,6 +19,7 @@ from ..plotting import (
     plot_c3_for_report,
     plot_ctd_for_report,
     plot_power_for_report,
+    plot_slocum_battery_for_report,
     plot_telemetry_page_with_notes,
     plot_wave_for_report,
     plot_weather_for_report,
@@ -153,4 +154,19 @@ def chart_c3_image(
         fig = plt.figure(figsize=(11.69, 8.27))
         plot_c3_for_report(fig, fluorometer_df, channel_map=channel_map)
         fig.tight_layout(rect=[0, 0.02, 1, 0.97])
+    return _fig_to_image(fig, dpi=dpi, max_width_pt=max_width_pt, max_height_pt=max_height_pt)
+
+
+def chart_slocum_battery_image(
+    daily_df: pd.DataFrame,
+    *,
+    max_width_pt: float,
+    max_height_pt: float | None = None,
+    dpi: int = DEFAULT_DPI,
+    title: str = "Daily amp-hour consumption",
+) -> Image:
+    with report_pdf_rc_context():
+        fig = plt.figure(figsize=(8.27, 4.8))
+        plot_slocum_battery_for_report(fig, daily_df, title=title)
+        fig.tight_layout(rect=[0, 0.02, 1, 0.96])
     return _fig_to_image(fig, dpi=dpi, max_width_pt=max_width_pt, max_height_pt=max_height_pt)

@@ -22,6 +22,7 @@ from ..config import settings
 from ..core.auth import get_current_active_user, get_current_admin_user, require_platform_access
 from ..core.infra.db import get_db_session, SQLModelSession
 from ..core import models, utils
+from ..core.mission_aliases import resolve_slocum_dataset_ids
 from ..core.infra.feature_toggles import is_feature_enabled
 from app.platforms.slocum.checklist_autofill import list_checklist_presets
 from app.platforms.slocum.deployment_service import (
@@ -43,6 +44,7 @@ from ..core.models.schemas import (
     SlocumDeploymentRead,
     SlocumDeploymentUpdate,
     SlocumParsedDataset,
+    SlocumPublicVisibilityUpdate,
     SlocumRobots4WhalesUrlUpdate,
     SlocumSensorCardsUpdate,
 )
@@ -195,7 +197,7 @@ def list_deployments(
     q = q.order_by(models.SlocumDeployment.updated_at_utc.desc())
     deployments = session.exec(q).all()
     if not include_all:
-        active_ids = set(settings.active_slocum_datasets or [])
+        active_ids = set(resolve_slocum_dataset_ids(settings.active_slocum_datasets or []))
         deployments = [
             d for d in deployments
             if d.erddap_dataset_id and d.erddap_dataset_id in active_ids
@@ -550,6 +552,34 @@ def update_deployment_robots4whales_url(
         current_admin.username,
         deployment_id,
         deployment.robots4whales_url,
+    )
+    return deployment
+
+
+@router.put("/deployments/{deployment_id}/public-visibility", response_model=SlocumDeploymentRead)
+def update_deployment_public_visibility(
+    deployment_id: int,
+    body: SlocumPublicVisibilityUpdate,
+    current_admin: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """Update public login-map visibility flags for a Slocum deployment (admin only)."""
+    _require_slocum_platform()
+    deployment = _get_deployment_or_404(deployment_id, session)
+    map_on = bool(body.public_map_enabled)
+    report_on = bool(body.public_weekly_report_enabled) if map_on else False
+    deployment.public_map_enabled = map_on
+    deployment.public_weekly_report_enabled = report_on
+    deployment.updated_at_utc = datetime.now(timezone.utc)
+    session.add(deployment)
+    session.commit()
+    session.refresh(deployment)
+    logger.info(
+        "Admin '%s' updated public visibility for deployment %s: map=%s report=%s",
+        current_admin.username,
+        deployment_id,
+        map_on,
+        report_on,
     )
     return deployment
 

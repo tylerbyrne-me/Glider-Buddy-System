@@ -958,6 +958,19 @@ async def create_or_update_mission_overview(
             json.dumps(deduped_optional_sensors) if deduped_optional_sensors else None
         )
 
+    if "public_map_enabled" in update_data or "public_weekly_report_enabled" in update_data:
+        map_on = bool(update_data.get("public_map_enabled", False))
+        if "public_map_enabled" not in update_data:
+            existing = session.get(models.MissionOverview, mission_id)
+            map_on = bool(getattr(existing, "public_map_enabled", False)) if existing else False
+            update_data["public_map_enabled"] = map_on
+        if not map_on:
+            update_data["public_weekly_report_enabled"] = False
+        elif "public_weekly_report_enabled" in update_data:
+            update_data["public_weekly_report_enabled"] = bool(
+                update_data.get("public_weekly_report_enabled")
+            )
+
     db_overview = session.get(models.MissionOverview, mission_id)
     if not db_overview:
         db_overview = models.MissionOverview(mission_id=mission_id, **update_data)

@@ -394,6 +394,39 @@ def filter_dmon_review(
     }
 
 
+def count_dmon_confirmed_detections(review_payload: Optional[dict[str, Any]]) -> dict[str, int]:
+    """Count report-window days with status ``Detected`` per species (confirmed only)."""
+    if not isinstance(review_payload, dict):
+        return {}
+    days = review_payload.get("all") or review_payload.get("recent") or []
+    if not isinstance(days, list) or not days:
+        return {}
+    species = list(review_payload.get("species") or [])
+    if not species:
+        species = order_species_columns(
+            sorted(
+                {
+                    sp
+                    for day in days
+                    if isinstance(day, dict)
+                    for sp in (day.get("statuses") or {})
+                }
+            )
+        )
+    counts: dict[str, int] = {str(sp): 0 for sp in species}
+    for day in days:
+        if not isinstance(day, dict):
+            continue
+        statuses = day.get("statuses") or {}
+        if not isinstance(statuses, dict):
+            continue
+        for sp, st in statuses.items():
+            if st == "Detected":
+                key = str(sp)
+                counts[key] = int(counts.get(key, 0)) + 1
+    return counts
+
+
 def deployment_is_dmon_review_eligible(deployment: models.SlocumDeployment) -> bool:
     if not deployment or not deployment.is_active:
         return False

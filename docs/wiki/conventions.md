@@ -62,7 +62,7 @@ Core → Routers → App
 ## Patterns to follow
 
 - Data loading through the data service layer (see CODE_STANDARDS).
-- Feature toggles via config / `FEATURE_TOGGLES_JSON` rather than hard-coding platform UI.
+- Feature toggles via `FEATURE_TOGGLES_FILE` (pretty JSON) or `FEATURE_TOGGLES_JSON` rather than hard-coding platform UI.
 - Weekly report visual style: [weekly_report_styleguide.md](./standards/weekly_report_styleguide.md).
 
 ## Patterns to avoid

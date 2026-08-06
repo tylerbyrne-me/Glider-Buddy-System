@@ -22,10 +22,19 @@ router = APIRouter(tags=["Authentication"])
 @router.post("/token")  # Removed response_model to allow setting cookies
 async def login_for_access_token(
     response: Response,  # Inject the Response object
+    request: Request,
     session: Annotated[SQLModelSession, Depends(get_db_session)],
     form_data: OAuth2PasswordRequestForm = Depends(),
 ):
     """Authenticates user and returns a token in the body and sets a secure cookie."""
+    from ..core.infra.rate_limit import enforce_rate_limit
+
+    enforce_rate_limit(
+        request,
+        bucket="login_token",
+        max_requests=10,
+        window_seconds=60,
+    )
     user_in_db = auth.get_user_from_db(session, form_data.username)
     if not user_in_db or not verify_password(
         form_data.password, user_in_db.hashed_password

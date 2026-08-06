@@ -234,9 +234,12 @@ def build_slocum_summary(
     *,
     period_label: str,
     telemetry_summary: dict,
-    depth_summary: Optional[dict] = None,
+    mission_telemetry_summary: Optional[dict] = None,
+    water_depth_summary: Optional[dict] = None,
     battery_summary: Optional[dict] = None,
+    battery_type: Optional[str] = None,
     ctd_summary: Optional[dict] = None,
+    dmon_detection_counts: Optional[dict[str, int]] = None,
     mission_goals: Optional[Sequence[Any]] = None,
     show_period_banner: bool = True,
 ) -> List[Any]:
@@ -246,11 +249,6 @@ def build_slocum_summary(
     if show_period_banner:
         out.append(DataPeriodBanner(period_label, styles))
         out.append(Spacer(1, 8))
-
-    out.append(Paragraph("Navigation and vehicle", styles["Heading2"]))
-    kpis: List[KPI] = [
-        KPI("Distance (period)", f"{telemetry_summary.get('total_distance_km', 0.0):.2f}", "km"),
-    ]
 
     def _stat_block(title: str, d: Optional[dict], unit: str) -> List[KPI]:
         if not d:
@@ -264,10 +262,33 @@ def build_slocum_summary(
             items.append(KPI(f"{title} max", f"{d['max']:.2f}", unit))
         return items
 
-    kpis.extend(_stat_block("Depth", depth_summary, "m"))
-    kpis.extend(_stat_block("Battery", battery_summary, "V"))
+    out.append(Paragraph("Navigation and vehicle", styles["Heading2"]))
+    kpis: List[KPI] = [
+        KPI("Distance (period)", f"{telemetry_summary.get('total_distance_km', 0.0):.2f}", "km"),
+    ]
+    mission_sum = mission_telemetry_summary or {}
+    kpis.append(
+        KPI("Distance (total)", f"{mission_sum.get('total_distance_km', 0.0):.2f}", "km")
+    )
+    if water_depth_summary and water_depth_summary.get("avg") is not None:
+        source = str(water_depth_summary.get("source") or "").strip()
+        unit = "m"
+        if source:
+            unit = f"m · {source}"
+        kpis.append(
+            KPI("Average water depth", f"{float(water_depth_summary['avg']):.1f}", unit)
+        )
     out.append(kpi_row_table(kpis[:12], styles))
     out.append(Spacer(1, 12))
+
+    batt_kpis: List[KPI] = []
+    if battery_type:
+        batt_kpis.append(KPI("Battery type", str(battery_type), ""))
+    batt_kpis.extend(_stat_block("Battery", battery_summary, "V"))
+    if batt_kpis:
+        out.append(Paragraph("Battery power", styles["Heading2"]))
+        out.append(kpi_row_table(batt_kpis[:12], styles))
+        out.append(Spacer(1, 12))
 
     ocean: List[KPI] = []
     ctd = ctd_summary or {}
@@ -283,6 +304,22 @@ def build_slocum_summary(
     if ocean:
         out.append(Paragraph("Oceanographic (CTD)", styles["Heading2"]))
         out.append(kpi_row_table(ocean, styles))
+        out.append(Spacer(1, 8))
+
+    if dmon_detection_counts:
+        dmon_kpis = [
+            KPI(f"{sp} confirmed", str(int(count)), "days")
+            for sp, count in dmon_detection_counts.items()
+        ]
+        out.append(Paragraph("DMON", styles["Heading2"]))
+        out.append(
+            Paragraph(
+                "Confirmed analyst-review detections in the report window (Detected days only).",
+                styles["Caption"],
+            )
+        )
+        out.append(Spacer(1, 4))
+        out.append(kpi_row_table(dmon_kpis[:12], styles))
         out.append(Spacer(1, 8))
 
     if mission_goals:
@@ -620,6 +657,16 @@ def build_telemetry_section(
     resolved_color_by = (color_by or "sog").strip().lower()
     if resolved_color_by == "depth":
         color_caption = "Track points are colored by measured depth (cmocean · deep)."
+    elif resolved_color_by in ("sfmc_sog", "sfmc", "surfacing_sog"):
+        color_caption = (
+            "Track is colored by SFMC-style surfacing speed (distance ÷ time between "
+            "surfacings) on a 0–1.1 kt scale (cmocean · speed)."
+        )
+    elif resolved_color_by in ("derived_sog", "derived"):
+        color_caption = (
+            "Track is colored by GPS-derived speed over ground on a 0–2 kt scale "
+            "(cmocean · speed; segments shorter than 5 min omitted to reduce GPS jitter)."
+        )
     else:
         color_caption = "Speed over ground is shown on a 0–4 kt scale (cmocean · speed)."
     out.append(Paragraph(color_caption, styles["Caption"]))
@@ -637,6 +684,108 @@ def build_telemetry_section(
     out.append(img)
     if keep_together and len(out) > 1:
         return [KeepTogether(out)]
+    return out
+
+
+def build_slocum_battery_section(
+    context: Dict[str, Any],
+    *,
+    period_label: str,
+) -> List[Any]:
+    """Dedicated Slocum battery page: KPIs, daily Ah chart, usage projections."""
+    styles = build_paragraph_styles()
+    daily = context.get("daily")
+    if not isinstance(daily, pd.DataFrame):
+        daily = pd.DataFrame()
+
+    out: List[Any] = [
+        Paragraph("Battery", styles["Heading2"]),
+        DataPeriodBanner(period_label, styles),
+        Spacer(1, 6),
+    ]
+
+    kpis: List[KPI] = []
+    pack_label = context.get("pack_label")
+    if pack_label:
+        kpis.append(KPI("Battery pack", str(pack_label), ""))
+    endurance = context.get("endurance_amphr_total")
+    if endurance is not None:
+        kpis.append(KPI("Endurance", f"{float(endurance):.0f}", "Ah"))
+    latest_v = context.get("latest_voltage")
+    if latest_v is not None:
+        kpis.append(KPI("Voltage (latest)", f"{float(latest_v):.2f}", "V"))
+    latest_ah = context.get("latest_ah")
+    if latest_ah is not None:
+        kpis.append(KPI("Coulomb total", f"{float(latest_ah):.1f}", "Ah"))
+    pct_used = context.get("pct_used")
+    if pct_used is not None:
+        kpis.append(KPI("Pack used", f"{float(pct_used):.1f}", "%"))
+    ah_per_day = context.get("ah_per_day")
+    if ah_per_day is not None:
+        kpis.append(KPI("Ah / day (proj.)", f"{float(ah_per_day):.2f}", "Ah/day"))
+    if kpis:
+        out.append(kpi_row_table(kpis[:12], styles))
+        out.append(Spacer(1, 6))
+
+    rate_source = str(context.get("ah_per_day_source") or "").strip()
+    caption_bits = [
+        "Solid bars are full UTC day-to-day Δ of m_coulomb_amphr_total; "
+        "hatched bars are partial days rate-normalized to Ah/day (ΔAh ÷ hours × 24)."
+    ]
+    if endurance is not None:
+        caption_bits.append(
+            f"Projections use pack endurance ({float(endurance):.0f} Ah) and "
+            f"{rate_source or 'Ah/day rate'} (complete days preferred)."
+        )
+    else:
+        caption_bits.append(
+            "Set battery pack on the deployment to enable 50/75/90/100% usage projections."
+        )
+    out.append(Paragraph(" ".join(caption_bits), styles["Caption"]))
+    out.append(Spacer(1, 6))
+
+    img = charts.chart_slocum_battery_image(
+        daily,
+        max_width_pt=_pw(),
+        max_height_pt=PORTRAIT_CONTENT_HEIGHT_PT * 0.42,
+    )
+    out.append(img)
+    out.append(Spacer(1, 10))
+
+    out.append(Paragraph("Usage projections", styles["Heading3"]))
+    projections = list(context.get("projections") or [])
+    headers = ["Threshold", "Target (Ah)", "Status"]
+    rows: List[List[Any]] = []
+    for row in projections:
+        target = row.get("target_ah")
+        target_txt = f"{float(target):.1f}" if target is not None else "—"
+        rows.append(
+            [
+                Paragraph(_escape_xml_text(str(row.get("label") or "")), styles["TableCell"]),
+                Paragraph(_escape_xml_text(target_txt), styles["TableCell"]),
+                Paragraph(
+                    _escape_xml_text(str(row.get("detail") or "N/A")),
+                    styles["TableCell"],
+                ),
+            ]
+        )
+    if not rows:
+        rows.append(
+            [
+                Paragraph("—", styles["TableCell"]),
+                Paragraph("—", styles["TableCell"]),
+                Paragraph("N/A", styles["TableCell"]),
+            ]
+        )
+    pw = _pw()
+    out.append(
+        styled_data_table(
+            headers,
+            rows,
+            styles=styles,
+            col_widths=[pw * 0.28, pw * 0.28, pw * 0.44],
+        )
+    )
     return out
 
 
@@ -957,8 +1106,9 @@ def build_dmon_review_section(
     review_payload: Dict[str, Any],
     *,
     period_label: str,
+    asc_payload: Optional[Dict[str, Any]] = None,
 ) -> List[Any]:
-    """Whale detections (analyst review) table + required site/Analysts attribution."""
+    """DMON Whale detections table, ASC offload/gap accounting, and attribution."""
     if not isinstance(review_payload, dict):
         return []
     days = review_payload.get("all") or review_payload.get("recent") or []
@@ -979,6 +1129,8 @@ def build_dmon_review_section(
         "Detected": rl_colors.HexColor("#FEE2E2"),
         "Possibly detected": rl_colors.HexColor("#FEF3C7"),
     }
+    gap_fill = rl_colors.HexColor("#FEF3C7")
+    gap_text = rl_colors.HexColor("#B91C1C")
 
     styles = build_paragraph_styles()
     species = list(review_payload.get("species") or [])
@@ -1012,7 +1164,7 @@ def build_dmon_review_section(
         )
 
     out: List[Any] = [
-        Paragraph("Whale detections (analyst review)", styles["Heading1"]),
+        Paragraph("DMON Whale detections (analyst review)", styles["Heading1"]),
         DataPeriodBanner(period_label, styles),
         Spacer(1, 8),
     ]
@@ -1039,6 +1191,112 @@ def build_dmon_review_section(
         t.setStyle(TableStyle(fill_cmds))
     out.append(t)
     out.append(Spacer(1, 10))
+
+    # ASC offload continuity (dashboard-style file list + gap highlighting).
+    # No live "hours since last" / staleness banner — reports are often read days later;
+    # inter-file gaps remain visible via table highlighting.
+    asc = asc_payload if isinstance(asc_payload, dict) else None
+    if asc is not None:
+        out.append(Paragraph("DMON ASC offloads", styles["Heading2"]))
+        files = asc.get("files") if isinstance(asc.get("files"), list) else []
+        if files:
+            file_count = len(files)
+            out.append(
+                Paragraph(
+                    _escape_xml_text(
+                        f"{file_count} *.asc file{'s' if file_count != 1 else ''} "
+                        "in the report window. Gaps greater than 16 hours are highlighted."
+                    ),
+                    styles["Caption"],
+                )
+            )
+            out.append(Spacer(1, 6))
+            # Newest first, matching dashboard pilot scanning order.
+            display_files = list(reversed(files))
+            asc_headers = ["File", "Modified (UTC)", "Size", "Gap after previous"]
+            asc_rows: List[List[Any]] = []
+            gap_row_indices: List[int] = []
+
+            def _size_label(size: Any) -> str:
+                try:
+                    n = int(size) if size is not None else None
+                except (TypeError, ValueError):
+                    n = None
+                if n is None:
+                    return "—"
+                if n < 1024:
+                    return f"{n} B"
+                if n < 1024 * 1024:
+                    return f"{n / 1024:.1f} KB"
+                return f"{n / (1024 * 1024):.1f} MB"
+
+            for idx, row in enumerate(display_files):
+                if not isinstance(row, dict):
+                    continue
+                gap = row.get("gap_after_prev_hours")
+                gap_over = bool(row.get("gap_over_threshold"))
+                if gap is None:
+                    gap_cell = Paragraph("—", styles["TableCell"])
+                else:
+                    gap_label = f"{float(gap):.1f}h"
+                    if gap_over:
+                        gap_style = ParagraphStyle(
+                            name="DmonAscGapCell",
+                            parent=styles["TableCell"],
+                            textColor=gap_text,
+                        )
+                        gap_cell = Paragraph(_escape_xml_text(gap_label), gap_style)
+                        gap_row_indices.append(idx + 1)  # +1 for header row
+                    else:
+                        gap_cell = Paragraph(_escape_xml_text(gap_label), styles["TableCell"])
+                asc_rows.append(
+                    [
+                        Paragraph(
+                            _escape_xml_text(str(row.get("fileName") or "—")),
+                            styles["TableCell"],
+                        ),
+                        Paragraph(
+                            _escape_xml_text(str(row.get("dateTimeModified") or "—")),
+                            styles["TableCell"],
+                        ),
+                        Paragraph(_escape_xml_text(_size_label(row.get("fileSize"))), styles["TableCell"]),
+                        gap_cell,
+                    ]
+                )
+
+            if asc_rows:
+                name_w = pw * 0.38
+                mod_w = pw * 0.28
+                size_w = pw * 0.12
+                gap_w = pw - name_w - mod_w - size_w
+                asc_table = styled_data_table(
+                    asc_headers,
+                    asc_rows,
+                    styles=styles,
+                    col_widths=[name_w, mod_w, size_w, gap_w],
+                )
+                if gap_row_indices:
+                    asc_table.setStyle(
+                        TableStyle(
+                            [
+                                ("BACKGROUND", (0, r), (-1, r), gap_fill)
+                                for r in gap_row_indices
+                            ]
+                        )
+                    )
+                out.append(asc_table)
+        else:
+            fetch_note = str(asc.get("summary") or "").strip()
+            # Avoid cached age/GAP summary strings; keep only availability notes.
+            if fetch_note and (
+                "unavailable" in fetch_note.lower() or "not configured" in fetch_note.lower()
+            ):
+                empty_msg = fetch_note
+            else:
+                empty_msg = "No *.asc files found for this report window."
+            out.append(Paragraph(_escape_xml_text(empty_msg), styles["Body"]))
+        out.append(Spacer(1, 10))
+
     attribution = review_payload.get("attribution") if isinstance(review_payload.get("attribution"), dict) else {}
     for line in format_report_attribution_lines(
         attribution,

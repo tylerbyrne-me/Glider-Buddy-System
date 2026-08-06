@@ -205,6 +205,8 @@ async def build_checklist_autofilled_schema(
             "expected_mission_file_ref_val": str(references.get("expected_mission_file") or "—"),
             "expected_script_ref_val": str(references.get("expected_script") or "—"),
             "argos_id_ref_val": str(references.get("argos_id") or "—"),
+            "argos_gps_check_val": "Argos check N/A",
+            "argos_monitor_val": "N/A",
             "u_alt_min_depth_ref_val": str(references.get("u_alt_min_depth") or "—"),
             "endurance_ref_val": f"{references.get('endurance_amphr_total') or '—'} Ah",
         }

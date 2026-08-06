@@ -2,62 +2,243 @@
 
 {% block title %}Login - {{ app_name }}{% endblock %}
 
-{% block body_class %}{% endblock %} {# Override to remove default body classes like container-fluid #}
+{% block body_class %}page-public-login{% endblock %}
 
 {% block head_extra_css %}
     <style>
-        body {
-            /* Fallback image; JS picks a random one on load */
+        body.page-public-login {
+            /* Measured at runtime from the fixed navbar; fallback clears a typical simple banner. */
+            --public-login-banner-height: 72px;
+            padding-top: var(--public-login-banner-height);
+            background: var(--app-bg, #f4f6f8);
+            overflow: hidden;
+        }
+        body.page-public-login.login-fallback {
             background-image: url('/static/images/login_splash.jpg');
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
             background-attachment: fixed;
-            padding-top: var(--banner-top-row-height);
+            overflow: auto;
         }
-        .login-container {
+        body.page-public-login:has(.public-login-shell) footer {
+            display: none;
+        }
+        body.page-public-login .main-content-wrapper.public-login-content {
+            flex: 1 1 auto;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            height: calc(100dvh - var(--public-login-banner-height));
+            max-height: calc(100dvh - var(--public-login-banner-height));
+            padding-left: 0;
+            padding-right: 0;
+        }
+        .public-login-shell {
+            flex: 1 1 auto;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 0;
+            height: 100%;
+            padding: 1rem 1.25rem;
+            box-sizing: border-box;
+        }
+        .public-map-wrap {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            width: min(75vw, 100%);
+            height: 75%;
+            max-height: 100%;
+            min-height: 280px;
+            gap: 0.65rem;
+        }
+        .public-map-toolbar {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+            justify-content: flex-start;
+            flex: 0 0 auto;
+            padding: 0.15rem 0 0;
+        }
+        .public-map-toolbar .btn {
+            font-weight: 600;
+        }
+        .public-map-frame {
+            position: relative;
+            flex: 1 1 auto;
+            min-height: 0;
+            border: 1px solid var(--card-border, #dee2e6);
+            border-radius: 0.5rem;
+            overflow: hidden;
+            box-shadow: 0 0.35rem 1rem rgba(0, 0, 0, 0.08);
+            background: #dfe6ea;
+        }
+        #publicMapContainer {
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        .public-map-status {
+            position: absolute;
+            top: 0.75rem;
+            left: 0.75rem;
+            z-index: 1100;
+            background: rgba(var(--bs-body-bg-rgb, 255, 255, 255), 0.88);
+            border: 1px solid var(--card-border, #dee2e6);
+            border-radius: 0.375rem;
+            padding: 0.35rem 0.65rem;
+            font-size: 0.8rem;
+            max-width: min(28rem, calc(100% - 1.5rem));
+        }
+        @media (max-width: 576px) {
+            .public-login-shell {
+                padding: 0.75rem;
+            }
+            .public-map-wrap {
+                width: 100%;
+                height: 78%;
+                min-height: 240px;
+            }
+        }
+        .public-login-open-btn {
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            padding: 0.25rem 0.9rem;
+            border-width: 2px;
+            line-height: 1.25;
+        }
+        .public-login-modal .modal-dialog {
+            max-width: 26rem;
+        }
+        .public-login-modal .modal-content {
+            border: none;
+            box-shadow: 0 1rem 2.5rem rgba(0, 0, 0, 0.28);
+        }
+        .public-login-modal .modal-header {
+            border-bottom: 1px solid var(--card-border, #dee2e6);
+            padding: 1.25rem 1.5rem 1rem;
+        }
+        .public-login-modal .modal-title {
+            font-size: 1.35rem;
+            font-weight: 600;
+        }
+        .public-login-modal .modal-body {
+            padding: 1.25rem 1.5rem 1.5rem;
+        }
+        .public-login-modal .form-control {
+            min-height: 2.75rem;
+            font-size: 1rem;
+        }
+        .public-login-modal .btn-login-submit {
+            min-height: 2.85rem;
+            font-weight: 600;
+            font-size: 1.05rem;
+        }
+        .login-fallback-container {
             display: flex;
             align-items: center;
             justify-content: center;
-            min-height: calc(100vh - var(--banner-top-row-height));
+            min-height: calc(100vh - var(--public-login-banner-height));
         }
         .login-card {
-            /* Add a semi-transparent background to the card for readability */
             width: 100%;
             max-width: 400px;
         }
     </style>
 {% endblock %}
 
+{% block content_container_class %}container-fluid main-content-wrapper{% if feature_enabled('public_login_map') %} public-login-content{% endif %}{% endblock %}
+
 {% block navbar %}
-    {# Use the same banner structure as the rest of the app, but simplified for login #}
     <nav class="navbar navbar-dark bg-dark fixed-top gbs-navbar gbs-navbar--simple">
       <div class="container-fluid gbs-navbar-inner">
-        <div class="navbar-top-row d-flex align-items-center justify-content-center w-100">
-          <a class="navbar-brand d-flex align-items-center" href="/home.html">
+        <div class="navbar-top-row d-flex align-items-center {% if feature_enabled('public_login_map') %}justify-content-between{% else %}justify-content-center{% endif %} w-100">
+          <a class="navbar-brand d-flex align-items-center mb-0" href="/login.html">
             <img src="/static/images/gbs_logo.svg" alt="{{ app_name }} Logo" class="navbar-logo me-2">
             <h3 class="navbar-title mb-0">{{ app_name }}</h3>
           </a>
+          {% if feature_enabled('public_login_map') %}
+          <button class="btn btn-primary public-login-open-btn" type="button"
+                  data-bs-toggle="modal" data-bs-target="#publicLoginModal"
+                  id="loginPanelToggle" aria-controls="publicLoginModal">
+            <i class="fas fa-sign-in-alt me-1"></i> Login
+          </button>
+          {% endif %}
         </div>
       </div>
     </nav>
 {% endblock %}
+
 {% block content %}
-    <div class="login-container">
+    {% if feature_enabled('public_login_map') %}
+    <div class="public-login-shell" data-public-map-enabled="true">
+        <div class="public-map-wrap">
+            <div class="public-map-frame">
+                <div id="publicMapContainer" aria-label="Public glider track map"></div>
+                <div id="publicMapStatus" class="public-map-status text-muted">Loading map…</div>
+            </div>
+            <div class="public-map-toolbar" role="toolbar" aria-label="Public map actions">
+                <button type="button" id="publicMapRefreshBtn" class="btn btn-primary btn-sm shadow-sm">
+                    <i class="fas fa-sync-alt" aria-hidden="true"></i> Refresh map
+                </button>
+                <a id="publicMapDownloadKmlBtn" class="btn btn-outline-primary btn-sm shadow-sm"
+                   href="/api/public/map/kml" download="public_glider_tracks.kml"
+                   role="button">
+                    <i class="fas fa-download" aria-hidden="true"></i> Download KML
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade public-login-modal" id="publicLoginModal" tabindex="-1"
+         aria-labelledby="publicLoginModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2 class="modal-title" id="publicLoginModalLabel">{{ app_name_short }} Login</h2>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="loginError" class="alert alert-danger" style="display: none;" role="alert"></div>
+            <form id="loginForm">
+              <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="username" name="username" required autocomplete="username">
+              </div>
+              <div class="mb-4">
+                <label for="password" class="form-label">Password</label>
+                <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
+              </div>
+              <div class="d-grid">
+                <button type="submit" class="btn btn-primary btn-login-submit">Login</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% else %}
+    <div class="login-fallback-container">
         <div class="card login-card shadow">
             <div class="card-body p-4">
                 <h3 class="card-title text-center mb-4">{{ app_name_short }} Login</h3>
-                <div id="loginError" class="alert alert-danger" style="display: none;" role="alert">
-                    <!-- Error messages will be displayed here -->
-                </div>
+                <div id="loginError" class="alert alert-danger" style="display: none;" role="alert"></div>
                 <form id="loginForm">
                     <div class="mb-3">
                         <label for="username" class="form-label">Username</label>
-                        <input type="text" class="form-control" id="username" name="username" required>
+                        <input type="text" class="form-control" id="username" name="username" required autocomplete="username">
                     </div>
                     <div class="mb-3">
                         <label for="password" class="form-label">Password</label>
-                        <input type="password" class="form-control" id="password" name="password" required>
+                        <input type="password" class="form-control" id="password" name="password" required autocomplete="current-password">
                     </div>
                     <div class="d-grid">
                         <button type="submit" class="btn btn-primary">Login</button>
@@ -66,28 +247,58 @@
             </div>
         </div>
     </div>
+    {% endif %}
 {% endblock %}
 
 {% block body_extra_js %}
-    {# auth.js is already included in base.html #}
+    {% if feature_enabled('public_login_map') %}
     <script>
         (function () {
+            function syncPublicLoginBannerOffset() {
+                var nav = document.querySelector('body.page-public-login .gbs-navbar');
+                if (!nav) return;
+                var height = Math.ceil(nav.getBoundingClientRect().height);
+                if (height > 0) {
+                    document.body.style.setProperty('--public-login-banner-height', height + 'px');
+                }
+            }
+            syncPublicLoginBannerOffset();
+            window.addEventListener('resize', syncPublicLoginBannerOffset);
+            window.addEventListener('load', syncPublicLoginBannerOffset);
+        })();
+    </script>
+    <script type="module" src="/static/js/public_map.js"></script>
+    <script>
+        (function () {
+            var modalEl = document.getElementById('publicLoginModal');
+            if (!modalEl) return;
+            modalEl.addEventListener('shown.bs.modal', function () {
+                var username = document.getElementById('username');
+                if (username) username.focus();
+            });
+        })();
+    </script>
+    {% else %}
+    <script>
+        (function () {
+            document.body.classList.add('login-fallback');
             var loginBackgrounds = [
-    '/static/images/login_splash.jpg',
-    '/static/images/login_splash_2.jpg',
-    '/static/images/login_splash_3.jpg',
-    '/static/images/login_splash_4.jpg',
-    '/static/images/login_splash_5.jpg',
-    '/static/images/login_splash_6.jpg',
-    '/static/images/login_splash_7.jpg',
-    '/static/images/login_splash_8.jpg',
-    '/static/images/login_splash_9.jpg',
-    '/static/images/login_splash_10.jpg',
-];
+                '/static/images/login_splash.jpg',
+                '/static/images/login_splash_2.jpg',
+                '/static/images/login_splash_3.jpg',
+                '/static/images/login_splash_4.jpg',
+                '/static/images/login_splash_5.jpg',
+                '/static/images/login_splash_6.jpg',
+                '/static/images/login_splash_7.jpg',
+                '/static/images/login_splash_8.jpg',
+                '/static/images/login_splash_9.jpg',
+                '/static/images/login_splash_10.jpg',
+            ];
             if (loginBackgrounds.length) {
                 var idx = Math.floor(Math.random() * loginBackgrounds.length);
                 document.body.style.backgroundImage = "url('" + loginBackgrounds[idx] + "')";
             }
         })();
     </script>
+    {% endif %}
 {% endblock %}

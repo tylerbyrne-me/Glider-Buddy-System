@@ -293,6 +293,23 @@
                         </div>
                     </div>
 
+                    <!-- Public visibility (login map) -->
+                    <div class="mb-4" id="publicVisibilitySection">
+                        <label class="form-label">Public visibility</label>
+                        <p class="text-muted small mb-2">
+                            Anyone on the internet can view this without logging in when enabled.
+                            The mission must also be listed in <code>ACTIVE_REALTIME_MISSIONS</code>.
+                        </p>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="publicMapEnabled">
+                            <label class="form-check-label" for="publicMapEnabled">Show on public map</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="publicWeeklyReportEnabled">
+                            <label class="form-check-label" for="publicWeeklyReportEnabled">Show latest weekly report</label>
+                        </div>
+                    </div>
+
                     <!-- Battery (Wave Glider) -->
                     <div class="mb-4">
                         <label class="form-label" for="batteryApuCount">Battery APU Count (Wave Glider)</label>

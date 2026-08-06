@@ -295,6 +295,12 @@ def get_slocum_daily_checklist_schema() -> models.MissionFormSchema:
                         value="—",
                     ),
                     models.FormItem(
+                        id="argos_gps_check_val",
+                        label="Argos vs GPS separation",
+                        item_type=models.FormItemTypeEnum.AUTOFILLED_VALUE,
+                        value="N/A",
+                    ),
+                    models.FormItem(
                         id="argos_monitor_val",
                         label="Argos monitored?",
                         item_type=models.FormItemTypeEnum.DROPDOWN,

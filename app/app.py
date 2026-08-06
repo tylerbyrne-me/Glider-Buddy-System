@@ -123,6 +123,7 @@ from .routers import admin as admin_router
 from .routers import error_analysis as error_analysis_router
 from .routers import sensor_csv as sensor_csv_router
 from .routers import map, live_kml
+from .routers import public_map as public_map_router
 from .routers import knowledge_base as knowledge_base_router
 from .routers import user_notes as user_notes_router
 from .routers import shared_tips as shared_tips_router
@@ -287,6 +288,7 @@ app.include_router(error_analysis_router.router)
 app.include_router(sensor_csv_router.router)
 app.include_router(map.router)
 app.include_router(live_kml.router)
+app.include_router(public_map_router.router)
 app.include_router(knowledge_base_router.router)
 app.include_router(user_notes_router.router)
 app.include_router(shared_tips_router.router)
@@ -1562,7 +1564,9 @@ async def run_slocum_weekly_reports_job():
     from app.platforms.slocum.reports import create_and_save_slocum_weekly_report
 
     try:
-        dataset_ids = [d.strip() for d in settings.active_slocum_datasets if d and d.strip()]
+        from app.core.mission_aliases import resolve_slocum_dataset_ids
+
+        dataset_ids = resolve_slocum_dataset_ids(settings.active_slocum_datasets)
         if not dataset_ids:
             logger.info("AUTOMATED: No active Slocum datasets configured. Skipping weekly reports.")
             record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active Slocum datasets")
@@ -1688,6 +1692,27 @@ async def run_dmon_review_prefetch_job():
         )
     except Exception as exc:
         logger.error("AUTOMATED: DMON review prefetch failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
+
+
+async def run_public_map_warm_job():
+    """Leader job: rebuild public login-map bundle cache (allowlisted tracks)."""
+    job_id = "system_public_map_warm_job"
+    logger.info("AUTOMATED: Warming public login map cache...")
+    try:
+        from .core.public_map_service import warm_public_map_cache
+
+        with SQLModelSession(sqlite_engine) as session:
+            summary = await warm_public_map_cache(session)
+        logger.info("AUTOMATED: Public map warm finished: %s", summary)
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            str(summary) if summary is not None else "Warm finished",
+            counts=summary if isinstance(summary, dict) else None,
+        )
+    except Exception as exc:
+        logger.error("AUTOMATED: Public map warm failed: %s", exc, exc_info=True)
         record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
@@ -1818,13 +1843,14 @@ async def run_slocum_auto_checklist_submit_job():
         )
         return
 
+    from app.core.mission_aliases import resolve_slocum_dataset_ids
     from app.platforms.slocum.checklist_submit_service import auto_submit_checklist_for_dataset
     from app.platforms.slocum.mirror_service import is_historical_dataset
 
     dataset_ids = [
-        d.strip()
-        for d in settings.active_slocum_datasets
-        if d and d.strip() and not is_historical_dataset(d.strip())
+        did
+        for did in resolve_slocum_dataset_ids(settings.active_slocum_datasets)
+        if not is_historical_dataset(did)
     ]
     if not dataset_ids:
         logger.info("AUTOMATED: No active Slocum datasets for auto checklist submit.")
@@ -2058,6 +2084,19 @@ async def startup_event():
             "DMON Robots4Whales review prefetch scheduled every %s hours",
             dmon_review_hours,
         )
+        public_map_warm_minutes = max(
+            1, int(getattr(settings, "public_map_warm_interval_minutes", 10) or 10)
+        )
+        scheduler.add_job(
+            run_public_map_warm_job,
+            "interval",
+            minutes=public_map_warm_minutes,
+            id="system_public_map_warm_job",
+        )
+        logger.info(
+            "Public login map warm scheduled every %s minutes",
+            public_map_warm_minutes,
+        )
         overage_cleanup_hours = max(1, int(getattr(settings, "slocum_overage_cleanup_interval_hours", 6)))
         scheduler.add_job(
             run_slocum_overage_cleanup_job,
@@ -2117,6 +2156,8 @@ async def startup_event():
         logger.info("STARTUP: Iridium TLE prefetch scheduled in background")
         asyncio.create_task(run_dmon_review_prefetch_job())
         logger.info("STARTUP: DMON Robots4Whales review prefetch scheduled in background")
+        asyncio.create_task(run_public_map_warm_job())
+        logger.info("STARTUP: Public login map warm scheduled in background")
         try:
             await run_slocum_overage_cleanup_job()
         except Exception as exc:

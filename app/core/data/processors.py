@@ -615,6 +615,190 @@ def telemetry_speed_over_ground_series(df: pd.DataFrame) -> Optional[pd.Series]:
     return None
 
 
+# Slocum surface GPS chatter over seconds produces absurd haversine SOG; require a
+# minimum segment duration before coloring (dive/surface legs are typically hours).
+SLOCUM_DERIVED_SOG_MIN_DT_SECONDS = 300.0
+SLOCUM_DERIVED_SOG_VMIN_KT = 0.0
+SLOCUM_DERIVED_SOG_VMAX_KT = 2.0
+
+# SFMC Surfacings "Speed & Distance" is distance ÷ time between surfacings (m/s in
+# the UI). ERDDAP tracks update ~30s including underwater DR, so we detect surface
+# sessions (depth ≤ threshold) separated by a long gap, then paint each dive leg
+# with that interval speed — matching the SFMC panel scale (~0.2–0.7 kt).
+# Colorbar upper bound is 1.1 kt so typical progress uses most of the palette.
+SLOCUM_SFMC_SOG_SURFACE_DEPTH_M = 2.0
+SLOCUM_SFMC_SOG_SESSION_GAP_SECONDS = 30 * 60.0
+SLOCUM_SFMC_SOG_VMIN_KT = SLOCUM_DERIVED_SOG_VMIN_KT
+SLOCUM_SFMC_SOG_VMAX_KT = 1.1
+
+
+def derived_speed_over_ground_series(
+    df: pd.DataFrame,
+    *,
+    lat_col: str = "latitude",
+    lon_col: str = "longitude",
+    time_col: str = "lastLocationFix",
+    min_dt_seconds: float = 0.0,
+) -> Optional[pd.Series]:
+    """Derive speed-over-ground (knots) from consecutive GPS fixes (haversine / Δt).
+
+    Returns a Series aligned to ``df.index``. The first row is always NaN (no prior fix).
+    Invalid or non-positive time deltas yield NaN for that segment. When
+    ``min_dt_seconds`` > 0, segments shorter than that duration are also NaN
+    (filters surface GPS jitter that otherwise maps to tens of knots).
+    """
+    if df is None or df.empty:
+        return None
+    if lat_col not in df.columns or lon_col not in df.columns or time_col not in df.columns:
+        return None
+    if len(df) < 2:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+
+    work = df[[lat_col, lon_col, time_col]].copy()
+    work[time_col] = pd.to_datetime(work[time_col], utc=True, errors="coerce")
+    lat = pd.to_numeric(work[lat_col], errors="coerce")
+    lon = pd.to_numeric(work[lon_col], errors="coerce")
+    ts = work[time_col]
+
+    lat1 = np.radians(lat.shift(1))
+    lon1 = np.radians(lon.shift(1))
+    lat2 = np.radians(lat)
+    lon2 = np.radians(lon)
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = np.sin(dlat / 2.0) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2.0) ** 2
+    c = 2.0 * np.arctan2(np.sqrt(a), np.sqrt(np.clip(1.0 - a, 0.0, None)))
+    distance_km = 6371.0 * c
+
+    dt_seconds = (ts - ts.shift(1)).dt.total_seconds()
+    dt_hours = dt_seconds / 3600.0
+    speed_knots = pd.Series(np.nan, index=df.index, dtype=float)
+    min_dt = max(0.0, float(min_dt_seconds))
+    valid = (
+        dt_seconds.notna()
+        & (dt_seconds > min_dt)
+        & distance_km.notna()
+    )
+    # km/h → knots (1 kt = 1.852 km/h)
+    speed_knots.loc[valid] = (distance_km.loc[valid] / dt_hours.loc[valid]) / 1.852
+    return speed_knots
+
+
+def surfacing_interval_speed_over_ground_series(
+    df: pd.DataFrame,
+    *,
+    lat_col: str = "latitude",
+    lon_col: str = "longitude",
+    time_col: str = "lastLocationFix",
+    depth_col: str = "depth",
+    surface_depth_m: float = SLOCUM_SFMC_SOG_SURFACE_DEPTH_M,
+    session_gap_seconds: float = SLOCUM_SFMC_SOG_SESSION_GAP_SECONDS,
+) -> Optional[pd.Series]:
+    """SFMC-style surfacing speed (knots) painted onto each dive-leg of ``df``.
+
+    Matches the Surfacings panel **Speed & Distance** idea: horizontal progress
+    between consecutive surfacings (haversine / Δt). Surface samples are
+    ``depth <= surface_depth_m``; sessions merge when gaps are shorter than
+    ``session_gap_seconds``. Each completed interval's speed is assigned to all
+    track rows with timestamps in ``(t_prev_surface, t_surface]``.
+
+    Returns ``None`` when inputs are unusable; otherwise a Series aligned to
+    ``df.index`` (often mostly NaN when depth is missing or fewer than two
+    surface sessions exist).
+    """
+    if df is None or df.empty:
+        return None
+    if lat_col not in df.columns or lon_col not in df.columns or time_col not in df.columns:
+        return None
+    if depth_col not in df.columns:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+
+    work = df[[lat_col, lon_col, time_col, depth_col]].copy()
+    work[time_col] = pd.to_datetime(work[time_col], utc=True, errors="coerce")
+    work[lat_col] = pd.to_numeric(work[lat_col], errors="coerce")
+    work[lon_col] = pd.to_numeric(work[lon_col], errors="coerce")
+    work[depth_col] = pd.to_numeric(work[depth_col], errors="coerce")
+    work = work.dropna(subset=[lat_col, lon_col, time_col]).sort_values(time_col)
+    if len(work) < 2:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+
+    is_surface = work[depth_col].notna() & (work[depth_col] <= float(surface_depth_m))
+    surface = work.loc[is_surface]
+    if len(surface) < 2:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+
+    gap_s = max(0.0, float(session_gap_seconds))
+    dt_s = surface[time_col].diff().dt.total_seconds().fillna(gap_s + 1.0)
+    session_id = (dt_s >= gap_s).cumsum()
+    reps = surface.groupby(session_id, sort=True).tail(1)
+    if len(reps) < 2:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+
+    leg_speeds = derived_speed_over_ground_series(
+        reps,
+        lat_col=lat_col,
+        lon_col=lon_col,
+        time_col=time_col,
+        min_dt_seconds=0.0,
+    )
+    if leg_speeds is None:
+        return pd.Series(np.nan, index=df.index, dtype=float)
+
+    out = pd.Series(np.nan, index=df.index, dtype=float)
+    rep_times = reps[time_col].to_numpy()
+    rep_speed_vals = leg_speeds.to_numpy(dtype=float)
+    full_ts = pd.to_datetime(df[time_col], utc=True, errors="coerce")
+    for i in range(1, len(rep_times)):
+        speed = rep_speed_vals[i]
+        if speed is None or (isinstance(speed, float) and np.isnan(speed)):
+            continue
+        t0 = rep_times[i - 1]
+        t1 = rep_times[i]
+        mask = full_ts.notna() & (full_ts > t0) & (full_ts <= t1)
+        out.loc[mask] = float(speed)
+    return out
+
+
+# Slocum ``m_water_depth`` often logs -1 (or other non-positive) when the altimeter
+# has no lock; also occasional wild spikes. Keep positive depths only, then drop
+# local spikes versus a rolling median.
+WATER_DEPTH_MAX_M = 6000.0
+WATER_DEPTH_SPIKE_ABS_M = 10.0
+WATER_DEPTH_SPIKE_FRAC = 0.30
+WATER_DEPTH_ROLL_WINDOW = 11
+
+
+def filter_valid_water_depth_m(
+    series: pd.Series,
+    *,
+    max_m: float = WATER_DEPTH_MAX_M,
+    spike_abs_m: float = WATER_DEPTH_SPIKE_ABS_M,
+    spike_frac: float = WATER_DEPTH_SPIKE_FRAC,
+    roll_window: int = WATER_DEPTH_ROLL_WINDOW,
+) -> pd.Series:
+    """Return water-depth (m) with invalid / outlier samples set to NaN.
+
+    Rejects non-positive values (including the common ``-1`` no-lock sentinel),
+    depths above ``max_m``, and spikes that deviate from a centered rolling median
+    by more than ``max(spike_abs_m, spike_frac * median)``.
+    """
+    values = pd.to_numeric(series, errors="coerce")
+    cleaned = values.where(values.notna() & (values > 0) & (values <= float(max_m)))
+    finite = cleaned.dropna()
+    if len(finite) < 3:
+        return cleaned
+
+    window = max(3, int(roll_window))
+    if window % 2 == 0:
+        window += 1
+    roll_med = cleaned.rolling(window=window, center=True, min_periods=3).median()
+    deviation = (cleaned - roll_med).abs()
+    threshold = np.maximum(float(spike_abs_m), float(spike_frac) * roll_med.abs())
+    # Where the rolling median is unavailable (edges), keep hard-filtered values.
+    keep = roll_med.isna() | (deviation <= threshold)
+    return cleaned.where(keep)
+
+
 def preprocess_slocum_track_df(df: pd.DataFrame) -> pd.DataFrame:
     """
     Preprocess Slocum ERDDAP track DataFrame for map display.

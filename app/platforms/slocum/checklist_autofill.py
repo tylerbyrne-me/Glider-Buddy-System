@@ -512,6 +512,151 @@ def _gps_lat_lon_cols(df: pd.DataFrame) -> tuple[Optional[str], Optional[str]]:
     return lat_col, lon_col
 
 
+def _latest_glider_gps(
+    df: pd.DataFrame,
+) -> tuple[Optional[float], Optional[float], Optional[pd.Timestamp]]:
+    """Latest valid glider GPS (prefer m_gps_*; skip null-island)."""
+    if df is None or df.empty or "Timestamp" not in df.columns:
+        return None, None, None
+    lat_col, lon_col = _gps_lat_lon_cols(df)
+    if not lat_col or not lon_col:
+        return None, None, None
+    work = df.dropna(subset=["Timestamp"]).copy()
+    work[lat_col] = pd.to_numeric(work[lat_col], errors="coerce")
+    work[lon_col] = pd.to_numeric(work[lon_col], errors="coerce")
+    work = work.dropna(subset=[lat_col, lon_col])
+    work = work[
+        (work[lat_col].abs() > 0.01)
+        & (work[lon_col].abs() > 0.01)
+        & (work[lat_col].abs() <= 90)
+        & (work[lon_col].abs() <= 180)
+    ]
+    # Exact (0,0) sentinel already excluded by abs>0.01; also drop exact zeros.
+    work = work[~((work[lat_col] == 0.0) & (work[lon_col] == 0.0))]
+    if work.empty:
+        return None, None, None
+    work = work.sort_values("Timestamp")
+    row = work.iloc[-1]
+    ts = pd.Timestamp(row["Timestamp"])
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("UTC")
+    return float(row[lat_col]), float(row[lon_col]), ts
+
+
+def _fmt_fix_time(ts: Any) -> str:
+    if ts is None:
+        return "—"
+    if isinstance(ts, pd.Timestamp):
+        if ts.tzinfo is None:
+            ts = ts.tz_localize("UTC")
+        else:
+            ts = ts.tz_convert("UTC")
+        return ts.strftime("%Y-%m-%d %H:%MZ")
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        else:
+            ts = ts.astimezone(timezone.utc)
+        return ts.strftime("%Y-%m-%d %H:%MZ")
+    return str(ts)
+
+
+def compute_argos_gps_check(
+    *,
+    argos_id: Optional[str],
+    gps_lat: Optional[float],
+    gps_lon: Optional[float],
+    gps_time: Optional[Any],
+    argos_fix: Optional[dict[str, Any]],
+    max_separation_km: float = 20.0,
+    max_fix_age_hours: float = 48.0,
+    configured: bool = True,
+    is_historical: bool = False,
+    now: Optional[datetime] = None,
+) -> dict[str, str]:
+    """
+    Compare latest Argos Doppler fix to glider GPS.
+
+    Returns ``display`` (autofill line) and ``monitor`` (Yes / No / N/A suggestion).
+    """
+    na = {"display": "Argos check N/A", "monitor": "N/A"}
+    if is_historical:
+        return {"display": "Argos check N/A (historical)", "monitor": "N/A"}
+    ref = str(argos_id or "").strip()
+    if not ref:
+        return na
+    if not configured:
+        return {"display": "Argos check N/A (API not configured)", "monitor": "N/A"}
+
+    if gps_lat is None or gps_lon is None or any(
+        math.isnan(v) for v in (float(gps_lat), float(gps_lon))
+    ):
+        return {"display": "GPS unavailable", "monitor": "N/A"}
+
+    if not argos_fix:
+        return {"display": "Argos fix unavailable", "monitor": "N/A"}
+
+    argos_lat = argos_fix.get("lat")
+    argos_lon = argos_fix.get("lon")
+    argos_time = argos_fix.get("fix_time")
+    try:
+        a_lat = float(argos_lat)
+        a_lon = float(argos_lon)
+    except (TypeError, ValueError):
+        return {"display": "Argos fix unavailable", "monitor": "N/A"}
+    if any(math.isnan(v) for v in (a_lat, a_lon)):
+        return {"display": "Argos fix unavailable", "monitor": "N/A"}
+
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    else:
+        clock = clock.astimezone(timezone.utc)
+
+    fix_dt: Optional[datetime] = None
+    if isinstance(argos_time, datetime):
+        fix_dt = (
+            argos_time.replace(tzinfo=timezone.utc)
+            if argos_time.tzinfo is None
+            else argos_time.astimezone(timezone.utc)
+        )
+    elif isinstance(argos_time, pd.Timestamp):
+        fix_dt = argos_time.to_pydatetime()
+        if fix_dt.tzinfo is None:
+            fix_dt = fix_dt.replace(tzinfo=timezone.utc)
+        else:
+            fix_dt = fix_dt.astimezone(timezone.utc)
+
+    if fix_dt is not None:
+        age_h = (clock - fix_dt).total_seconds() / 3600.0
+        if age_h > float(max_fix_age_hours):
+            return {
+                "display": (
+                    f"Argos fix stale ({age_h:.0f}h > {max_fix_age_hours:g}h; "
+                    f"{_fmt_fix_time(fix_dt)})"
+                ),
+                "monitor": "N/A",
+            }
+
+    dist_km = _haversine_m(float(gps_lat), float(gps_lon), a_lat, a_lon) / 1000.0
+    loc_class = argos_fix.get("location_class")
+    class_bit = f" class {loc_class}" if loc_class else ""
+    detail = (
+        f"(Argos {_fmt_fix_time(fix_dt)}{class_bit}; "
+        f"GPS {_fmt_fix_time(gps_time)})"
+    )
+    threshold = float(max_separation_km)
+    if dist_km <= threshold:
+        return {
+            "display": f"{dist_km:.1f} km · OK {detail}",
+            "monitor": "Yes",
+        }
+    return {
+        "display": f"{dist_km:.1f} km · REVIEW {detail}",
+        "monitor": "No",
+    }
+
+
 def _latest_valid_waypoint(df: pd.DataFrame) -> tuple[Optional[float], Optional[float]]:
     if "CWptLat" not in df.columns or "CWptLon" not in df.columns:
         return None, None
@@ -1423,6 +1568,52 @@ async def load_checklist_autofill_values(
                 continue
             if val:
                 values[key] = str(val)
+
+    # Argos vs GPS separation (CLS api-telemetry); best-effort.
+    refs = references or {}
+    argos_id = str(refs.get("argos_id") or "").strip()
+    if is_historical:
+        values["argos_gps_check_val"] = "Argos check N/A (historical)"
+        values["argos_monitor_val"] = "N/A"
+    elif not argos_id:
+        values.setdefault("argos_gps_check_val", "Argos check N/A")
+        values.setdefault("argos_monitor_val", "N/A")
+    else:
+        from app.config import settings
+        from app.core import argos_client
+        from app.core.argos_cache_service import get_latest_argos_fix
+
+        gps_lat, gps_lon, gps_time = _latest_glider_gps(checklist_df)
+        argos_fix = None
+        configured = argos_client.is_argos_configured()
+        if configured:
+            try:
+                argos_fix = await get_latest_argos_fix(argos_id)
+            except Exception as err:
+                logger.warning(
+                    "Checklist Argos fetch failed for %s (device %s): %s",
+                    dataset_id,
+                    argos_id,
+                    err,
+                )
+                argos_fix = None
+        check = compute_argos_gps_check(
+            argos_id=argos_id,
+            gps_lat=gps_lat,
+            gps_lon=gps_lon,
+            gps_time=gps_time,
+            argos_fix=argos_fix,
+            max_separation_km=float(
+                getattr(settings, "argos_gps_max_separation_km", 20.0) or 20.0
+            ),
+            max_fix_age_hours=float(
+                getattr(settings, "argos_fix_max_age_hours", 48.0) or 48.0
+            ),
+            configured=configured,
+            is_historical=False,
+        )
+        values["argos_gps_check_val"] = check["display"]
+        values["argos_monitor_val"] = check["monitor"]
 
     return values
 

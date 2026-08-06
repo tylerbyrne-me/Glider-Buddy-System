@@ -41,6 +41,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const robots4whalesUrlInput = document.getElementById('robots4whalesUrlInput');
     const saveRobots4WhalesUrlBtn = document.getElementById('saveRobots4WhalesUrlBtn');
     const robots4whalesUrlStatus = document.getElementById('robots4whalesUrlStatus');
+    const publicMapEnabledInput = document.getElementById('publicMapEnabled');
+    const publicWeeklyReportEnabledInput = document.getElementById('publicWeeklyReportEnabled');
+    const savePublicVisibilityBtn = document.getElementById('savePublicVisibilityBtn');
+    const publicVisibilityStatus = document.getElementById('publicVisibilityStatus');
     const uploadPlanBtn = document.getElementById('uploadPlanBtn');
     const planUploadStatus = document.getElementById('planUploadStatus');
     const saveSensorCardsBtn = document.getElementById('saveSensorCardsBtn');
@@ -235,6 +239,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         `).join('');
     }
 
+    function syncPublicReportToggleEnabled() {
+        if (!publicWeeklyReportEnabledInput) return;
+        const mapOn = Boolean(publicMapEnabledInput && publicMapEnabledInput.checked && !publicMapEnabledInput.disabled);
+        publicWeeklyReportEnabledInput.disabled = !mapOn;
+        if (!mapOn) publicWeeklyReportEnabledInput.checked = false;
+    }
+
     function setPlanActionsEnabled(isEnabled) {
         if (documentUpload) documentUpload.disabled = !isEnabled;
         if (uploadPlanBtn) uploadPlanBtn.disabled = !isEnabled;
@@ -245,10 +256,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (saveSensorCardsBtn) saveSensorCardsBtn.disabled = !isEnabled;
         if (robots4whalesUrlInput) robots4whalesUrlInput.disabled = !isEnabled;
         if (saveRobots4WhalesUrlBtn) saveRobots4WhalesUrlBtn.disabled = !isEnabled;
+        if (publicMapEnabledInput) publicMapEnabledInput.disabled = !isEnabled;
+        if (savePublicVisibilityBtn) savePublicVisibilityBtn.disabled = !isEnabled;
         document.querySelectorAll('.checklist-ref-input').forEach((input) => {
             input.disabled = !isEnabled;
         });
         if (saveChecklistRefsBtn) saveChecklistRefsBtn.disabled = !isEnabled;
+        syncPublicReportToggleEnabled();
     }
 
     function getSelectedSensorCards() {
@@ -281,6 +295,17 @@ document.addEventListener('DOMContentLoaded', async () => {
             robots4whalesUrlInput.value = url || '';
         }
         if (robots4whalesUrlStatus) robots4whalesUrlStatus.innerHTML = '';
+    }
+
+    function renderPublicVisibility(deployment) {
+        if (publicMapEnabledInput) {
+            publicMapEnabledInput.checked = Boolean(deployment?.public_map_enabled);
+        }
+        if (publicWeeklyReportEnabledInput) {
+            publicWeeklyReportEnabledInput.checked = Boolean(deployment?.public_weekly_report_enabled);
+        }
+        syncPublicReportToggleEnabled();
+        if (publicVisibilityStatus) publicVisibilityStatus.innerHTML = '';
     }
 
     function renderChecklistReferences(rawJson) {
@@ -403,6 +428,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         renderSensorCards(info.deployment?.enabled_sensor_cards || null);
         renderChecklistReferences(info.deployment?.checklist_reference_values || null);
         renderRobots4WhalesUrl(info.deployment?.robots4whales_url || null);
+        renderPublicVisibility(info.deployment || null);
         renderPlanDocument(info.deployment?.document_url || null);
         renderMissionNotes(info.notes);
         renderMissionGoals(info.goals);
@@ -614,6 +640,48 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showToast(`Failed to save Robots4Whales URL: ${error.message}`, 'danger');
                 if (robots4whalesUrlStatus) {
                     robots4whalesUrlStatus.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(error.message)}</div>`;
+                }
+            } finally {
+                setPlanActionsEnabled(Boolean(currentInfo?.deployment));
+            }
+        });
+    }
+
+    if (publicMapEnabledInput) {
+        publicMapEnabledInput.addEventListener('change', () => {
+            syncPublicReportToggleEnabled();
+        });
+    }
+
+    if (savePublicVisibilityBtn) {
+        savePublicVisibilityBtn.addEventListener('click', async () => {
+            const deploymentId = currentInfo?.deployment?.id;
+            if (!deploymentId) {
+                showToast('Deployment metadata unavailable for this dataset.', 'warning');
+                return;
+            }
+            savePublicVisibilityBtn.disabled = true;
+            if (publicVisibilityStatus) {
+                publicVisibilityStatus.innerHTML = '<div class="alert alert-info py-2 mb-0">Saving...</div>';
+            }
+            try {
+                const mapOn = Boolean(publicMapEnabledInput && publicMapEnabledInput.checked);
+                const reportOn = Boolean(
+                    mapOn && publicWeeklyReportEnabledInput && publicWeeklyReportEnabledInput.checked
+                );
+                await apiRequest(`/api/slocum/deployments/${deploymentId}/public-visibility`, 'PUT', {
+                    public_map_enabled: mapOn,
+                    public_weekly_report_enabled: reportOn,
+                });
+                showToast('Public visibility saved.', 'success');
+                if (publicVisibilityStatus) {
+                    publicVisibilityStatus.innerHTML = '<div class="alert alert-success py-2 mb-0">Saved.</div>';
+                }
+                await loadDatasetInfo(currentDatasetId);
+            } catch (error) {
+                showToast(`Failed to save public visibility: ${error.message}`, 'danger');
+                if (publicVisibilityStatus) {
+                    publicVisibilityStatus.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(error.message)}</div>`;
                 }
             } finally {
                 setPlanActionsEnabled(Boolean(currentInfo?.deployment));

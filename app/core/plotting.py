@@ -26,10 +26,22 @@ import logging
 from . import models, utils
 from .data.processors import (preprocess_ctd_df, preprocess_power_df,
                          preprocess_wave_df, preprocess_weather_df)
-from .data.processors import preprocess_telemetry_df, telemetry_speed_over_ground_series
+from .data.processors import (
+    SLOCUM_DERIVED_SOG_MIN_DT_SECONDS,
+    SLOCUM_DERIVED_SOG_VMAX_KT,
+    SLOCUM_DERIVED_SOG_VMIN_KT,
+    SLOCUM_SFMC_SOG_VMAX_KT,
+    SLOCUM_SFMC_SOG_VMIN_KT,
+    derived_speed_over_ground_series,
+    filter_valid_water_depth_m,
+    preprocess_telemetry_df,
+    surfacing_interval_speed_over_ground_series,
+    telemetry_speed_over_ground_series,
+)
 from .geo.bathymetry import fetch_etopo_bathymetry, nice_contour_levels
 from .geo.coordinates import drop_null_island_rows
 from .infra.feature_toggles import is_report_bathymetry_contours_enabled
+from matplotlib.collections import LineCollection
 
 logger = logging.getLogger(__name__)
 
@@ -1393,7 +1405,11 @@ def plot_telemetry_page_with_notes(
     map bbox via ERDDAP griddap and drawn under the track.
 
     ``color_by`` selects the track color scale: ``"sog"`` (Wave Glider default,
-    0–4 kt cmocean speed) or ``"depth"`` (Slocum, cmocean deep).
+    0–4 kt cmocean speed from instrument SOG), ``"derived_sog"`` (GPS haversine/Δt
+    as a continuous LineCollection on a 0–2 kt Slocum scale, segments shorter than
+    5 min omitted), ``"sfmc_sog"`` (SFMC-style surfacing interval speed: distance ÷
+    time between depth-detected surfacings, 0–1.1 kt), or ``"depth"`` (cmocean deep
+    scatter).
 
     Mission notes are NOT rendered on this page — the PDF report pipeline
     renders a separate mission-notes section. The map only shows lettered markers.
@@ -1451,6 +1467,9 @@ def plot_telemetry_page_with_notes(
     _add_report_bathymetry_contours(map_ax, padded_extent)
 
     resolved_color_by = (color_by or "sog").strip().lower()
+    colorbar_mappable = None
+    colorbar_label = None
+
     if resolved_color_by == "depth":
         depth_col = None
         for candidate in ("depth", "Depth", "MDepth"):
@@ -1474,32 +1493,106 @@ def plot_telemetry_page_with_notes(
             cmap = None
             color_values = "tab:blue"
             colorbar_label = None
+        scatter_kwargs: Dict[str, Any] = {
+            "s": 20,
+            "linewidths": 0,
+            "edgecolors": "none",
+            "transform": ccrs.PlateCarree(),
+        }
+        if not isinstance(color_values, str):
+            scatter_kwargs["c"] = color_values
+            scatter_kwargs["cmap"] = cmap
+            scatter_kwargs["norm"] = norm
+        else:
+            scatter_kwargs["c"] = color_values
+        colorbar_mappable = map_ax.scatter(
+            df_clean['longitude'],
+            df_clean['latitude'],
+            **scatter_kwargs,
+        )
+    elif resolved_color_by in ("derived_sog", "derived", "sfmc_sog", "sfmc", "surfacing_sog"):
+        use_sfmc = resolved_color_by in ("sfmc_sog", "sfmc", "surfacing_sog")
+        if use_sfmc:
+            sog = surfacing_interval_speed_over_ground_series(df_clean)
+            if sog is None or not sog.notna().any():
+                sog = derived_speed_over_ground_series(
+                    df_clean,
+                    min_dt_seconds=SLOCUM_DERIVED_SOG_MIN_DT_SECONDS,
+                )
+            vmin = SLOCUM_SFMC_SOG_VMIN_KT
+            vmax = SLOCUM_SFMC_SOG_VMAX_KT
+        else:
+            sog = derived_speed_over_ground_series(
+                df_clean,
+                min_dt_seconds=SLOCUM_DERIVED_SOG_MIN_DT_SECONDS,
+            )
+            vmin = SLOCUM_DERIVED_SOG_VMIN_KT
+            vmax = SLOCUM_DERIVED_SOG_VMAX_KT
+        norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
+        cmap = cmo.speed
+        colorbar_label = "Speed Over Ground (knots)"
+        lons = df_clean["longitude"].to_numpy(dtype=float)
+        lats = df_clean["latitude"].to_numpy(dtype=float)
+        # Thin backbone so gaps with NaN speed still read as one track.
+        map_ax.plot(
+            lons,
+            lats,
+            color="#94A3B8",
+            linewidth=1.0,
+            alpha=0.55,
+            transform=ccrs.PlateCarree(),
+            zorder=3,
+        )
+        if len(lons) >= 2:
+            points = np.column_stack([lons, lats]).reshape(-1, 1, 2)
+            segments = np.concatenate([points[:-1], points[1:]], axis=1)
+            seg_speeds = (
+                sog.iloc[1:].to_numpy(dtype=float)
+                if sog is not None
+                else np.full(len(segments), np.nan)
+            )
+            lc = LineCollection(
+                segments,
+                cmap=cmap,
+                norm=norm,
+                linewidths=2.4,
+                transform=ccrs.PlateCarree(),
+                zorder=4,
+            )
+            lc.set_array(seg_speeds)
+            map_ax.add_collection(lc)
+            colorbar_mappable = lc
+        else:
+            colorbar_mappable = None
+            colorbar_label = None
     else:
         norm = mcolors.Normalize(vmin=0, vmax=4)
         cmap = cmo.speed
         sog = telemetry_speed_over_ground_series(df_clean)
         color_values = sog if sog is not None and sog.notna().any() else "tab:blue"
         colorbar_label = "Speed Over Ground (knots)" if not isinstance(color_values, str) else None
+        scatter_kwargs = {
+            "s": 20,
+            "linewidths": 0,
+            "edgecolors": "none",
+            "transform": ccrs.PlateCarree(),
+        }
+        if not isinstance(color_values, str):
+            scatter_kwargs["c"] = color_values
+            scatter_kwargs["cmap"] = cmap
+            scatter_kwargs["norm"] = norm
+        else:
+            scatter_kwargs["c"] = color_values
+        colorbar_mappable = map_ax.scatter(
+            df_clean['longitude'],
+            df_clean['latitude'],
+            **scatter_kwargs,
+        )
 
-    scatter_kwargs: Dict[str, Any] = {
-        "s": 20,
-        "linewidths": 0,
-        "edgecolors": "none",
-        "transform": ccrs.PlateCarree(),
-    }
-    if not isinstance(color_values, str):
-        scatter_kwargs["c"] = color_values
-        scatter_kwargs["cmap"] = cmap
-        scatter_kwargs["norm"] = norm
-    else:
-        scatter_kwargs["c"] = color_values
-    scatter = map_ax.scatter(
-        df_clean['longitude'],
-        df_clean['latitude'],
-        **scatter_kwargs,
-    )
-    if colorbar_label is not None:
-        cbar = fig.colorbar(scatter, ax=map_ax, orientation='vertical', shrink=0.92, pad=0.05)
+    if colorbar_label is not None and colorbar_mappable is not None:
+        cbar = fig.colorbar(
+            colorbar_mappable, ax=map_ax, orientation='vertical', shrink=0.92, pad=0.05
+        )
         cbar.set_label(colorbar_label)
 
     _annotate_track_start_end(map_ax, df_clean)
@@ -1785,6 +1878,133 @@ def plot_ctd_for_report(fig, df: pd.DataFrame):
     axs[2].set_xlabel("Time (UTC)")
 
 
+def plot_slocum_ctd_profile_for_report(
+    fig,
+    df: pd.DataFrame,
+    *,
+    value_col: str,
+    title: str,
+    cmap,
+    colorbar_label: str,
+    depth_col: str = "Depth",
+    water_depth_df: Optional[pd.DataFrame] = None,
+) -> None:
+    """Depth-vs-time scatter colored by a CTD variable (dashboard-style cmocean profile).
+
+    When ``water_depth_df`` provides filtered ``m_water_depth`` samples (Timestamp +
+    MWaterDepth / water_depth), overlays a bathymetry line on the same axes.
+    """
+    if df.empty or "Timestamp" not in df.columns or value_col not in df.columns:
+        fig.text(
+            0.5,
+            0.5,
+            f"No {title} data in the selected range.",
+            ha="center",
+            va="center",
+            family=REPORT_PDF_FONT_PRIMARY,
+        )
+        return
+
+    work = df.copy()
+    work["Timestamp"] = utils.parse_timestamp_column(work["Timestamp"], errors="coerce", utc=True)
+    if depth_col in work.columns:
+        depth = pd.to_numeric(work[depth_col], errors="coerce")
+    else:
+        depth = pd.Series(np.nan, index=work.index, dtype=float)
+    if "Pressure" in work.columns:
+        depth = depth.fillna(pd.to_numeric(work["Pressure"], errors="coerce"))
+    values = pd.to_numeric(work[value_col], errors="coerce")
+    mask = work["Timestamp"].notna() & depth.notna() & values.notna()
+    if not mask.any():
+        fig.text(
+            0.5,
+            0.5,
+            f"No {title} profile points in the selected range.",
+            ha="center",
+            va="center",
+            family=REPORT_PDF_FONT_PRIMARY,
+        )
+        return
+
+    ts = work.loc[mask, "Timestamp"]
+    depth_vals = depth.loc[mask]
+    color_vals = values.loc[mask]
+
+    # Robust color bounds (2nd–98th percentile), matching dashboard profile charts.
+    if len(color_vals) >= 8:
+        vmin = float(color_vals.quantile(0.02))
+        vmax = float(color_vals.quantile(0.98))
+    else:
+        vmin = float(color_vals.min())
+        vmax = float(color_vals.max())
+    if not math.isfinite(vmin) or not math.isfinite(vmax):
+        vmin, vmax = 0.0, 1.0
+    if vmax <= vmin:
+        vmax = vmin + 1.0
+
+    bathy_ts: Optional[pd.Series] = None
+    bathy_depth: Optional[pd.Series] = None
+    if water_depth_df is not None and not water_depth_df.empty and "Timestamp" in water_depth_df.columns:
+        depth_col_wd = None
+        for candidate in ("MWaterDepth", "water_depth", "m_water_depth"):
+            if candidate in water_depth_df.columns:
+                depth_col_wd = candidate
+                break
+        if depth_col_wd is not None:
+            wd = water_depth_df[["Timestamp", depth_col_wd]].copy()
+            wd["Timestamp"] = utils.parse_timestamp_column(
+                wd["Timestamp"], errors="coerce", utc=True
+            )
+            wd[depth_col_wd] = filter_valid_water_depth_m(wd[depth_col_wd])
+            wd = wd.dropna(subset=["Timestamp", depth_col_wd]).sort_values("Timestamp")
+            if not wd.empty:
+                bathy_ts = wd["Timestamp"]
+                bathy_depth = wd[depth_col_wd]
+
+    ax = fig.add_subplot(1, 1, 1)
+    scatter = ax.scatter(
+        ts,
+        depth_vals,
+        c=color_vals,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        s=8,
+        linewidths=0,
+        alpha=0.85,
+        zorder=2,
+    )
+    if bathy_ts is not None and bathy_depth is not None:
+        ax.plot(
+            bathy_ts,
+            bathy_depth,
+            color="#57534E",
+            linewidth=1.6,
+            linestyle="--",
+            zorder=3,
+        )
+
+    ax.invert_yaxis()
+    # Ensure bathymetry remains visible below the densest profile cloud.
+    y_candidates = [float(depth_vals.max())]
+    if bathy_depth is not None and bathy_depth.notna().any():
+        y_candidates.append(float(bathy_depth.max()))
+    y_max = max(y_candidates)
+    if math.isfinite(y_max) and y_max > 0:
+        ax.set_ylim(y_max * 1.05, 0.0)
+
+    ax.set_title(title)
+    ax.set_xlabel("Time (UTC)")
+    if bathy_depth is not None and bathy_depth.notna().any():
+        ax.set_ylabel("Depth (m)\nWater Depth")
+    else:
+        ax.set_ylabel("Depth (m)")
+    ax.grid(True, alpha=0.3)
+    fig.autofmt_xdate()
+    cbar = fig.colorbar(scatter, ax=ax, pad=0.02)
+    cbar.set_label(colorbar_label)
+
+
 def plot_c3_for_report(
     fig,
     df: pd.DataFrame,
@@ -1925,3 +2145,105 @@ def plot_wave_for_report(fig, df: pd.DataFrame):
         axs[2].legend(loc="upper left")
 
     axs[2].set_xlabel("Time (UTC)")
+
+
+def plot_slocum_battery_for_report(
+    fig,
+    daily_df: pd.DataFrame,
+    *,
+    title: str = "Daily amp-hour consumption",
+) -> None:
+    """Bar chart of daily Ah consumption with optional cumulative coulomb twin axis.
+
+    Complete days are solid bars; incomplete (rate-normalized) days are hatched.
+    """
+    ax = fig.add_subplot(1, 1, 1)
+    if daily_df is None or daily_df.empty or "date" not in daily_df.columns:
+        ax.set_axis_off()
+        ax.text(
+            0.5,
+            0.5,
+            "No coulomb amp-hour data in the selected range.",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            family=REPORT_PDF_FONT_PRIMARY,
+        )
+        return
+
+    work = daily_df.copy()
+    dates = pd.to_datetime(work["date"], errors="coerce")
+    ah_day = pd.to_numeric(work.get("ah_day"), errors="coerce")
+    if dates.isna().all() or ah_day.notna().sum() == 0:
+        ax.set_axis_off()
+        ax.text(
+            0.5,
+            0.5,
+            "No daily amp-hour consumption in the selected range.",
+            ha="center",
+            va="center",
+            transform=ax.transAxes,
+            family=REPORT_PDF_FONT_PRIMARY,
+        )
+        return
+
+    x = np.arange(len(work))
+    values = ah_day.to_numpy(dtype=float)
+    if "is_complete" in work.columns:
+        is_complete = work["is_complete"].fillna(False).astype(bool).to_numpy()
+    else:
+        is_complete = np.ones(len(work), dtype=bool)
+    complete_vals = np.where(is_complete, values, np.nan)
+    incomplete_vals = np.where(~is_complete, values, np.nan)
+
+    ax.bar(
+        x,
+        complete_vals,
+        color="#2563EB",
+        width=0.7,
+        label="Ah / day (complete)",
+        zorder=3,
+    )
+    if np.isfinite(incomplete_vals).any():
+        ax.bar(
+            x,
+            incomplete_vals,
+            color="#93C5FD",
+            edgecolor="#1D4ED8",
+            hatch="//",
+            width=0.7,
+            label="Ah / day (partial, ×24h)",
+            zorder=3,
+        )
+    ax.set_ylabel("Consumption (Ah/day)")
+    ax.set_xlabel("UTC date")
+    ax.set_title(title, family=REPORT_PDF_FONT_PRIMARY)
+    ax.grid(True, axis="y", linestyle="--", alpha=0.3, zorder=0)
+    ax.set_xticks(x)
+    ax.set_xticklabels(
+        [d.strftime("%m-%d") if pd.notna(d) else "" for d in dates],
+        rotation=45,
+        ha="right",
+    )
+
+    if "cumulative_ah" in work.columns:
+        cum = pd.to_numeric(work["cumulative_ah"], errors="coerce")
+        if cum.notna().any():
+            ax2 = ax.twinx()
+            ax2.plot(
+                x,
+                cum.to_numpy(dtype=float),
+                color="#B45309",
+                marker="o",
+                markersize=3.5,
+                linewidth=1.4,
+                label="Coulomb total (Ah)",
+                zorder=4,
+            )
+            ax2.set_ylabel("Coulomb total (Ah)")
+            handles1, labels1 = ax.get_legend_handles_labels()
+            handles2, labels2 = ax2.get_legend_handles_labels()
+            ax.legend(handles1 + handles2, labels1 + labels2, loc="upper left", fontsize=8)
+            return
+
+    ax.legend(loc="upper left", fontsize=8)

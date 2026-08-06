@@ -17,6 +17,7 @@ from sqlmodel import select
 
 from app.core import models, utils
 from app.core.infra.db import SQLModelSession
+from app.core.mission_aliases import resolve_slocum_dataset_id
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +26,7 @@ def resolve_deployment_for_dataset(
     session: SQLModelSession,
     dataset_id: str,
 ) -> Optional[models.SlocumDeployment]:
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     mission_key = utils.slocum_mission_key(dataset_id)
     if not mission_key:
         return None
@@ -71,6 +73,7 @@ def get_or_create_deployment_for_dataset(
     Returns None when the dataset id cannot be parsed (same gate as Sensor Tracker
     mission-code derivation).
     """
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     existing = resolve_deployment_for_dataset(session, dataset_id)
     if existing:
         changed = False

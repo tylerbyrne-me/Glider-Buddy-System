@@ -597,6 +597,8 @@ class MissionOverviewUpdate(BaseModel):
     vessel_standoff_m: Optional[int] = None
     sensor_sampling_rates: Optional[str] = None
     pic_handoff_optional_sensors: Optional[str] = None
+    public_map_enabled: Optional[bool] = None
+    public_weekly_report_enabled: Optional[bool] = None
 
 
 class MissionGoalCreate(BaseModel):
@@ -1098,6 +1100,9 @@ class SlocumDeploymentRead(BaseModel):
     erddap_dataset_id: Optional[str] = None
     document_url: Optional[str] = None
     robots4whales_url: Optional[str] = None
+    weekly_report_url: Optional[str] = None
+    public_map_enabled: bool = False
+    public_weekly_report_enabled: bool = False
     enabled_sensor_cards: Optional[str] = None
     checklist_reference_values: Optional[str] = None
 
@@ -1113,6 +1118,12 @@ class SlocumSensorCardsUpdate(BaseModel):
 class SlocumRobots4WhalesUrlUpdate(BaseModel):
     """Body for updating Slocum deployment Robots4Whales page URL."""
     robots4whales_url: Optional[str] = None
+
+
+class SlocumPublicVisibilityUpdate(BaseModel):
+    """Body for updating Slocum public login-map visibility flags."""
+    public_map_enabled: bool = False
+    public_weekly_report_enabled: bool = False
 
 
 class SlocumChecklistReferencesUpdate(BaseModel):
