@@ -197,7 +197,8 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
     // Fetch user profile to update banner elements
     // Also used to determine which missions to show for pilots vs admin in mission dropdown
     // getUserProfile() is already async and defined below
-    const currentUserForBanner = await getUserProfile(); 
+    const currentUserForBanner = await getUserProfile();
+    const bodyRole = (document.body.dataset.userRole || '').trim();
 
     if (currentUserForBanner) {
         if (usernameDisplayBanner && currentUserForBanner.username) {
@@ -206,13 +207,14 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
 
         // Admin Management Dropdown
         const adminManagementDropdown = document.getElementById('adminManagementDropdown');
+        const isAdmin = currentUserForBanner.role === 'admin' || bodyRole === 'admin';
         if (adminManagementDropdown) {
-            adminManagementDropdown.style.display = (currentUserForBanner.role === 'admin') ? 'block' : 'none';
+            adminManagementDropdown.style.display = isAdmin ? 'block' : 'none';
         }
         if (viewFormsBtnBanner) {
             // This is now part of Admin Management dropdown, so its individual display is handled by that.
         }
-        if (currentUserForBanner.role === 'admin') {
+        if (isAdmin) {
             if (registerUserBtnBanner) registerUserBtnBanner.style.display = 'block';
             if (userManagementBtnBanner) userManagementBtnBanner.style.display = 'block';
         } else {
@@ -223,14 +225,18 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
         // PIC Management Dropdown
         const picManagementDropdown = document.getElementById('picManagementDropdown');
         if (picManagementDropdown) {
-            picManagementDropdown.style.display = (currentUserForBanner.role === 'pilot' || currentUserForBanner.role === 'admin') ? 'block' : 'none';
+            picManagementDropdown.style.display = (isAdmin || currentUserForBanner.role === 'pilot') ? 'block' : 'none';
         }
 
     } else { // No user logged in, ensure role-specific buttons are hidden
+        const adminManagementDropdown = document.getElementById('adminManagementDropdown');
+        if (bodyRole === 'admin' && adminManagementDropdown) {
+            adminManagementDropdown.style.display = 'block';
+        }
         if (viewFormsBtnBanner) viewFormsBtnBanner.style.display = 'none';
         if (registerUserBtnBanner) registerUserBtnBanner.style.display = 'none';
         if (userManagementBtnBanner) userManagementBtnBanner.style.display = 'none';
-        if (document.getElementById('adminManagementDropdown')) document.getElementById('adminManagementDropdown').style.display = 'none';
+        if (adminManagementDropdown && bodyRole !== 'admin') adminManagementDropdown.style.display = 'none';
         if (document.getElementById('picManagementDropdown')) document.getElementById('picManagementDropdown').style.display = 'none';
     }
 
@@ -441,19 +447,19 @@ async function logout() {
 
 
 async function getUserProfile() {
-    const token = getAuthToken();
-    if (!token) {
-        // console.log("getUserProfile: No token found. User is not authenticated.");
-        return null;
-    }
     try {
-        const user = await apiRequest('/api/users/me', 'GET'); // apiRequest returns parsed JSON or throws
+        const user = await apiRequest('/api/users/me', 'GET');
         return user;
     } catch (error) {
-        // If error is due to 401, apiRequest already redirects and removes token
         console.error('Network or other error fetching user profile:', error);
         return null;
     }
 }
 
-export { checkAuth, logout, getUserProfile, getAuthToken };
+/** True when API profile or server-rendered body role indicates admin. */
+function isUserAdmin(user) {
+    if (user?.role === 'admin') return true;
+    return (document.body.dataset.userRole || '').trim() === 'admin';
+}
+
+export { checkAuth, logout, getUserProfile, getAuthToken, isUserAdmin };

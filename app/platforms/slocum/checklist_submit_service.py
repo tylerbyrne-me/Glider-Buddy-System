@@ -14,6 +14,11 @@ from typing import Any, Optional
 from sqlmodel import Session, select
 
 from app.core import models, utils
+from app.core.mission_aliases import (
+    resolve_slocum_dataset_id,
+    resolved_slocum_mission_key,
+    slocum_submission_mission_ids,
+)
 from .checklist_autofill import (
     CHECKLIST_FORM_TITLE,
     CHECKLIST_FORM_TYPE,
@@ -53,17 +58,94 @@ def has_checklist_for_utc_day(
     day_end: datetime,
 ) -> bool:
     """True if a daily checklist already exists for ``mission_key`` in ``[day_start, day_end)``."""
+    return has_checklist_for_utc_day_any(session, [mission_key], day_start, day_end)
+
+
+def has_checklist_for_utc_day_any(
+    session: Session,
+    mission_ids: list[str],
+    day_start: datetime,
+    day_end: datetime,
+) -> bool:
+    """True if a daily checklist exists for any ``mission_id`` in ``mission_ids``."""
+    keys = [k.strip() for k in mission_ids if k and str(k).strip()]
+    if not keys:
+        return False
     statement = (
         select(models.SubmittedForm.id)
         .where(
             models.SubmittedForm.form_type == CHECKLIST_FORM_TYPE,
-            models.SubmittedForm.mission_id == mission_key,
+            models.SubmittedForm.mission_id.in_(keys),
             models.SubmittedForm.submission_timestamp >= day_start,
             models.SubmittedForm.submission_timestamp < day_end,
         )
         .limit(1)
     )
     return session.exec(statement).first() is not None
+
+
+def checklist_lookup_mission_ids(
+    session: Session,
+    dataset_id: str,
+    deployment: Optional[models.SlocumDeployment] = None,
+) -> list[str]:
+    """
+    mission_id set for checklist list/auto-submit queries (canonical + legacy aliases).
+    """
+    mission_ids = slocum_submission_mission_ids(
+        dataset_id,
+        deployment_mission_key=deployment.mission_key if deployment else None,
+        deployment_erddap_dataset_id=deployment.erddap_dataset_id if deployment else None,
+    )
+    seen = set(mission_ids)
+    canonical = resolve_slocum_dataset_id(dataset_id)
+    parsed = utils.parse_slocum_dataset_id(canonical)
+    if not parsed:
+        return mission_ids
+
+    dep_number = str(parsed["deployment_number"])
+    glider = parsed["glider_name"]
+    legacy_rows = session.exec(
+        select(models.SubmittedForm.mission_id)
+        .where(models.SubmittedForm.form_type == CHECKLIST_FORM_TYPE)
+        .distinct()
+    ).all()
+    for mid in legacy_rows:
+        key = (mid or "").strip()
+        if not key or key in seen:
+            continue
+        if utils.parse_slocum_dataset_id(key):
+            continue
+        if key == glider or dep_number in key:
+            seen.add(key)
+            mission_ids.append(key)
+    return mission_ids
+
+
+def rekey_legacy_checklist_mission_ids(
+    session: Session,
+    *,
+    canonical_mission_id: str,
+    legacy_mission_ids: list[str],
+) -> int:
+    """Move checklist rows from legacy alias mission_id values to the canonical key."""
+    updated = 0
+    for legacy_id in legacy_mission_ids:
+        if not legacy_id or legacy_id == canonical_mission_id:
+            continue
+        rows = session.exec(
+            select(models.SubmittedForm).where(
+                models.SubmittedForm.form_type == CHECKLIST_FORM_TYPE,
+                models.SubmittedForm.mission_id == legacy_id,
+            )
+        ).all()
+        for row in rows:
+            row.mission_id = canonical_mission_id
+            session.add(row)
+            updated += 1
+    if updated:
+        session.commit()
+    return updated
 
 
 def apply_autofill_to_schema(
@@ -356,7 +438,8 @@ def persist_checklist_submission(
     submission_timestamp: Optional[datetime] = None,
 ) -> models.SubmittedForm:
     """Insert a checklist ``SubmittedForm`` row and commit."""
-    mission_key = utils.slocum_mission_key(dataset_id) or dataset_id
+    resolved_dataset_id = resolve_slocum_dataset_id(dataset_id)
+    mission_key = resolved_slocum_mission_key(resolved_dataset_id)
     stamp = submission_timestamp or datetime.now(timezone.utc)
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
@@ -389,13 +472,15 @@ async def auto_submit_checklist_for_dataset(
         logger.info("Auto checklist: skipping historical dataset %s", dataset_id)
         return None
 
-    mission_key = utils.slocum_mission_key(dataset_id) or dataset_id
+    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    mission_ids = checklist_lookup_mission_ids(session, dataset_id, deployment)
+    mission_key = resolved_slocum_mission_key(dataset_id)
     day_start, day_end = utc_day_bounds(now_utc)
-    if has_checklist_for_utc_day(session, mission_key, day_start, day_end):
+    if has_checklist_for_utc_day_any(session, mission_ids, day_start, day_end):
         logger.info(
-            "Auto checklist: skip %s (mission_key=%s) — already submitted for UTC day",
+            "Auto checklist: skip %s (mission_ids=%s) — already submitted for UTC day",
             dataset_id,
-            mission_key,
+            mission_ids,
         )
         return None
 

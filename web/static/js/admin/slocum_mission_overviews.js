@@ -4,7 +4,7 @@
  * Mirrors the Wave Glider Manage Mission Overviews page layout and interactions.
  */
 
-import { checkAuth, getUserProfile } from '/static/js/auth.js';
+import { checkAuth, getUserProfile, isUserAdmin } from '/static/js/auth.js';
 import { apiRequest, showToast, fetchWithAuth } from '/static/js/api.js';
 import { formatUtcDateTime } from '/static/js/datetime_utils.js';
 
@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!await checkAuth()) return;
 
     const user = await getUserProfile();
-    if (!user || user.role !== 'admin') {
+    if (!isUserAdmin(user)) {
         document.body.innerHTML = '<div class="container mt-5"><div class="alert alert-danger">Access Denied. You must be an administrator to view this page.</div></div>';
         return;
     }

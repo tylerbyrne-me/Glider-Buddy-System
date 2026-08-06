@@ -104,6 +104,42 @@ def resolved_slocum_mission_key(key: str) -> str:
     return slocum_mission_key(canonical) or canonical.strip()
 
 
+def slocum_submission_mission_ids(
+    dataset_id: str,
+    *,
+    deployment_mission_key: Optional[str] = None,
+    deployment_erddap_dataset_id: Optional[str] = None,
+) -> list[str]:
+    """
+    mission_id values that may appear on Slocum ``submitted_forms`` rows.
+
+    Prefer ``resolved_slocum_mission_key`` for new writes. Lookups should match
+    any returned id so env alias renames do not orphan checklist history.
+    """
+    ordered: list[str] = []
+    seen: set[str] = set()
+
+    def add(raw: str) -> None:
+        key = (raw or "").strip()
+        if key and key not in seen:
+            seen.add(key)
+            ordered.append(key)
+
+    canonical = resolve_slocum_dataset_id(dataset_id)
+    add(resolved_slocum_mission_key(dataset_id))
+    add(canonical)
+    for equiv in equivalent_slocum_dataset_keys(canonical):
+        resolved = resolve_slocum_dataset_id(equiv)
+        add(slocum_mission_key(resolved) or resolved)
+        add(resolved)
+    for raw in (deployment_mission_key, deployment_erddap_dataset_id):
+        if raw:
+            trimmed = raw.strip()
+            add(trimmed)
+            add(slocum_mission_key(resolve_slocum_dataset_id(trimmed)) or trimmed)
+    return ordered
+
+
 def slocum_report_storage_dir_names(
     dataset_id: str,
     *,
@@ -116,23 +152,14 @@ def slocum_report_storage_dir_names(
     Covers canonical mission_key dirs plus legacy alias-only names from before
     alias renames.
     """
-    ordered: list[str] = []
-    seen: set[str] = set()
-
-    def add(raw: str) -> None:
-        safe = (raw or "").strip().replace("/", "_").replace("\\", "_")
-        if safe and safe not in seen:
-            seen.add(safe)
-            ordered.append(safe)
-
-    canonical = resolve_slocum_dataset_id(dataset_id)
-    add(resolved_slocum_mission_key(dataset_id))
-    for key in equivalent_slocum_dataset_keys(canonical):
-        add(slocum_mission_key(resolve_slocum_dataset_id(key)) or key)
-    for raw in (deployment_mission_key, deployment_erddap_dataset_id):
-        if raw:
-            add(slocum_mission_key(resolve_slocum_dataset_id(raw)) or raw)
-    return ordered
+    return [
+        key.replace("/", "_").replace("\\", "_")
+        for key in slocum_submission_mission_ids(
+            dataset_id,
+            deployment_mission_key=deployment_mission_key,
+            deployment_erddap_dataset_id=deployment_erddap_dataset_id,
+        )
+    ]
 
 
 def slocum_display_label(configured_key: str, *, fallback: Optional[str] = None) -> str:

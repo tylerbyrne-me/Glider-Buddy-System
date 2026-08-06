@@ -736,7 +736,7 @@ async def get_slocum_dmon_review(
         filter_dmon_review,
         get_cached_dmon_review,
     )
-    from app.core.utils import slocum_mission_key
+    from app.core.mission_aliases import resolved_slocum_mission_key
 
     deployment = resolve_deployment_for_dataset(session, dataset_id)
     source_url = (deployment.robots4whales_url if deployment else None) or None
@@ -755,7 +755,11 @@ async def get_slocum_dmon_review(
             "meta": {"message": "No deployment found for dataset"},
         }
 
-    mission_key = deployment.mission_key or slocum_mission_key(dataset_id) or ""
+    mission_key = (
+        deployment.mission_key
+        or resolved_slocum_mission_key(dataset_id)
+        or ""
+    )
     cached = get_cached_dmon_review(mission_key) if mission_key else None
 
     parsed_start = None

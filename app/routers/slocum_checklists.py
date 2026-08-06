@@ -17,7 +17,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlmodel import select
 
-from ..core import models, utils
+from ..core import models
+from ..core.mission_aliases import resolved_slocum_mission_key
 from ..core.auth import get_current_active_user, get_optional_current_user, require_platform_access
 from ..core.infra.db import SQLModelSession, get_db_session
 from ..core.infra.feature_toggles import is_feature_enabled
@@ -33,7 +34,9 @@ from app.platforms.slocum.checklist_autofill import (
 from app.platforms.slocum.checklist_compare import build_compare_result
 from app.platforms.slocum.checklist_submit_service import (
     build_checklist_autofilled_schema,
+    checklist_lookup_mission_ids,
     persist_checklist_submission,
+    rekey_legacy_checklist_mission_ids,
 )
 from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
 from app.platforms.slocum.mirror_service import is_historical_dataset
@@ -289,16 +292,32 @@ def list_checklists_for_dataset(
     session: SQLModelSession = Depends(get_db_session),
 ):
     _require_slocum_platform()
-    mission_key = utils.slocum_mission_key(dataset_id) or dataset_id
+    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    mission_ids = checklist_lookup_mission_ids(session, dataset_id, deployment)
+    canonical_mission_id = resolved_slocum_mission_key(dataset_id)
+    legacy_ids = [mid for mid in mission_ids if mid != canonical_mission_id]
+    if legacy_ids:
+        try:
+            rekey_legacy_checklist_mission_ids(
+                session,
+                canonical_mission_id=canonical_mission_id,
+                legacy_mission_ids=legacy_ids,
+            )
+            mission_ids = checklist_lookup_mission_ids(session, dataset_id, deployment)
+        except Exception as exc:
+            logger.warning("Checklist legacy rekey skipped for %s: %s", dataset_id, exc)
+    if not mission_ids:
+        return []
     statement = (
         select(models.SubmittedForm)
         .where(
             models.SubmittedForm.form_type == CHECKLIST_FORM_TYPE,
-            models.SubmittedForm.mission_id == mission_key,
+            models.SubmittedForm.mission_id.in_(mission_ids),
         )
         .order_by(models.SubmittedForm.submission_timestamp.desc())
     )
-    return list(session.exec(statement).all())
+    forms = list(session.exec(statement).all())
+    return forms
 
 
 @router.post(
@@ -312,7 +331,6 @@ async def submit_checklist(
     session: SQLModelSession = Depends(get_db_session),
 ):
     _require_slocum_platform()
-    mission_key = utils.slocum_mission_key(dataset_id) or dataset_id
     try:
         sections_data = form_data.get("sections_data")
         submitted_form = persist_checklist_submission(
@@ -323,6 +341,7 @@ async def submit_checklist(
             form_type=form_data.get("form_type") or CHECKLIST_FORM_TYPE,
             form_title=form_data.get("form_title") or CHECKLIST_FORM_TITLE,
         )
+        mission_key = submitted_form.mission_id
         return {
             "message": "Checklist submitted successfully",
             "id": submitted_form.id,
