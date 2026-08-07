@@ -16,6 +16,8 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from app.core.data.processors import filter_valid_water_depth_m
+
 logger = logging.getLogger(__name__)
 
 CHECKLIST_FORM_TYPE = "slocum_daily_checklist"
@@ -1229,6 +1231,8 @@ CHECKLIST_PLOTTABLE_ITEMS: dict[str, Any] = {
         "column": "MWaterDepth",
         "label": "m_water_depth",
         "unit": "m",
+        # Plot-it: share inverted Depth axis (min 0); filter non-positive water depth.
+        "invert_value_axis": True,
     },
     "bms_currents_val": {
         "label": "m_bms_currents",
@@ -1320,6 +1324,11 @@ def get_plottable_spec(item_id: str) -> Optional[dict[str, Any]]:
     return CHECKLIST_PLOTTABLE_ITEMS.get(str(item_id).strip())
 
 
+def _payload_invert_value_axis(spec: dict[str, Any]) -> bool:
+    """Whether Plot-it should reverse the secondary value axis (depth-like series)."""
+    return bool(spec.get("invert_value_axis"))
+
+
 def _iso_z_timestamp(ts: Any) -> Optional[str]:
     try:
         stamp = pd.Timestamp(ts)
@@ -1334,7 +1343,12 @@ def _iso_z_timestamp(ts: Any) -> Optional[str]:
     return stamp.isoformat().replace("+00:00", "Z")
 
 
-def _series_points_non_null(df: pd.DataFrame, value_col: str) -> list[dict[str, Any]]:
+def _series_points_non_null(
+    df: pd.DataFrame,
+    value_col: str,
+    *,
+    filter_water_depth: bool = False,
+) -> list[dict[str, Any]]:
     """
     Emit ``[{t, v}, ...]`` for valid samples only (no null placeholders).
 
@@ -1342,11 +1356,16 @@ def _series_points_non_null(df: pd.DataFrame, value_col: str) -> list[dict[str, 
     inserting null depth breaks Chart.js lines into dozens of segments
     (``spanGaps: false``). Each series is therefore densified independently;
     tooltips look up nearest depth by time.
+
+    When ``filter_water_depth`` is true, drop non-positive / spike outliers via
+    ``filter_valid_water_depth_m`` (common ``m_water_depth`` ``-1`` no-lock).
     """
     if df is None or df.empty or "Timestamp" not in df.columns or value_col not in df.columns:
         return []
     work = df[["Timestamp", value_col]].copy()
     work[value_col] = pd.to_numeric(work[value_col], errors="coerce")
+    if filter_water_depth:
+        work[value_col] = filter_valid_water_depth_m(work[value_col])
     work = work.dropna(subset=["Timestamp", value_col]).sort_values("Timestamp")
     if work.empty:
         return []
@@ -1413,6 +1432,7 @@ def build_checklist_series_payload(
             "column": primary.get("column"),
             "commanded_label": None,
             "commanded_column": None,
+            "invert_value_axis": _payload_invert_value_axis(spec),
             "depth": depth_points,
             "values": [],
             "commanded": [],
@@ -1441,12 +1461,20 @@ def build_checklist_series_payload(
             commanded_col = None
             commanded_label = None
 
+    invert_value_axis = _payload_invert_value_axis(spec)
+
     commanded_points: list[dict[str, Any]] = []
     if commanded_col:
         commanded_points = _series_points_non_null(df, commanded_col)
 
     values = (
-        _series_points_non_null(df, measured_col) if measured_col else []
+        _series_points_non_null(
+            df,
+            measured_col,
+            filter_water_depth=invert_value_axis,
+        )
+        if measured_col
+        else []
     )
 
     return {
@@ -1456,6 +1484,7 @@ def build_checklist_series_payload(
         "column": measured_col or spec.get("column"),
         "commanded_label": commanded_label,
         "commanded_column": commanded_col,
+        "invert_value_axis": invert_value_axis,
         "depth": depth_points,
         "values": values,
         "commanded": commanded_points,

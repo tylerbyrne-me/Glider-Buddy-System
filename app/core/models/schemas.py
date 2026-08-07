@@ -112,13 +112,65 @@ class ForecastParams(BaseModel):
         return v
 
 
-class ReportGenerationOptions(BaseModel):
+def resolve_ephemeral_expanded_notes(
+    *,
+    include_expanded_notes: bool,
+    expanded_notes: Optional[str],
+) -> Optional[str]:
+    """Normalize ephemeral report wrap-up notes; raise ValueError if include is on but text empty."""
+    if not include_expanded_notes:
+        return None
+    text = (expanded_notes or "").strip()
+    if not text:
+        raise ValueError("expanded_notes is required when include_expanded_notes is enabled")
+    if len(text) > 8000:
+        raise ValueError("expanded_notes exceeds maximum length of 8000")
+    return text
+
+
+class ExpandedNotesFields(BaseModel):
+    """Optional free-text notes embedded in a single PDF generation (not stored in-app)."""
+
+    include_expanded_notes: bool = Field(
+        default=False,
+        description="If true, include free-text expanded notes in the PDF Mission details section.",
+    )
+    expanded_notes: Optional[str] = Field(
+        default=None,
+        max_length=8000,
+        description="Ephemeral wrap-up / briefing notes for this report only (not stored in-app).",
+    )
+
+    @model_validator(mode="after")
+    def validate_expanded_notes(self):
+        self.expanded_notes = resolve_ephemeral_expanded_notes(
+            include_expanded_notes=self.include_expanded_notes,
+            expanded_notes=self.expanded_notes,
+        )
+        return self
+
+
+class ReportGenerationOptions(ExpandedNotesFields):
     """Options for report generation."""
     start_date: Optional[date] = None
     end_date: Optional[date] = None
     plots_to_include: List[str] = Field(default_factory=lambda: ["telemetry", "power", "ctd", "weather", "waves", "c3", "errors", "ais", "wg_vm4"])
     save_to_overview: bool = Field(default=True, description="If true, saves the generated report URL to the mission overview.")
     custom_filename: Optional[str] = Field(default=None, max_length=100, description="A custom name for the report file, used when not saving to overview.")
+
+
+class GenerateReportWithSensorTrackerRequest(ExpandedNotesFields):
+    """Body for admin weekly / end-of-mission report generation with Sensor Tracker sync."""
+
+    report_type: str = Field(..., description="Report type: 'weekly' or 'end_of_mission'")
+    force_refresh_sensor_tracker: bool = Field(
+        default=False,
+        description="Force refresh Sensor Tracker data before generating the report.",
+    )
+    save_to_overview: bool = Field(
+        default=True,
+        description="Save the generated report URL to the mission overview.",
+    )
 
 
 class ESSWaypointsRequest(BaseModel):

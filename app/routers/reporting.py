@@ -203,9 +203,7 @@ async def purge_bathy_cache_endpoint(
 )
 async def generate_report_with_sensor_tracker(
     mission_id: str,
-    report_type: str = Body(..., embed=True, description="Report type: 'weekly' or 'end_of_mission'"),
-    force_refresh_sensor_tracker: bool = Body(default=False, embed=True, description="Force refresh Sensor Tracker data"),
-    save_to_overview: bool = Body(default=True, embed=True, description="Save report URL to mission overview"),
+    request: models.GenerateReportWithSensorTrackerRequest,
     session: SQLModelSession = Depends(get_db_session),
     current_user: models.User = Depends(get_current_admin_user),
 ):
@@ -215,7 +213,12 @@ async def generate_report_with_sensor_tracker(
     Restricted to administrators.
     """
     from ..services.sensor_tracker_service import SensorTrackerService, SENSOR_TRACKER_AVAILABLE
-    
+
+    report_type = request.report_type
+    force_refresh_sensor_tracker = request.force_refresh_sensor_tracker
+    save_to_overview = request.save_to_overview
+    expanded_notes = request.expanded_notes
+
     logger.info(
         f"Generating {report_type} report for mission '{mission_id}' "
         f"with Sensor Tracker sync (force_refresh={force_refresh_sensor_tracker}), "
@@ -371,6 +374,7 @@ async def generate_report_with_sensor_tracker(
         source_path=source_path,
         offload_logs=offload_logs,
         report_mode="end_of_mission" if report_type == "end_of_mission" else "weekly",
+        expanded_notes=expanded_notes,
     )
     
     if save_to_overview:

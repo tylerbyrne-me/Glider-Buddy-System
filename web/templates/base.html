@@ -141,6 +141,15 @@
                             <label class="form-check-label" for="saveToOverview">Save as official mission report</label>
                             <small class="form-text text-muted d-block">Uncheck to generate a one-off report without updating the mission's main report link.</small>
                         </div>
+                        <div class="form-check form-switch mb-3">
+                            <input class="form-check-input" type="checkbox" role="switch" id="includeExpandedNotes">
+                            <label class="form-check-label" for="includeExpandedNotes">Include expanded notes</label>
+                            <small class="form-text text-muted d-block">Optional wrap-up / briefing text for this PDF only (not stored on the mission).</small>
+                        </div>
+                        <div class="mb-3" id="expandedNotesGroup" style="display: none;">
+                            <label for="expandedNotes" class="form-label">Expanded notes</label>
+                            <textarea class="form-control" id="expandedNotes" rows="4" maxlength="8000" placeholder="Mission wrap-up, briefing details, or other narrative to include after Mission details…"></textarea>
+                        </div>
                         <div class="mb-3" id="customFilenameGroup" style="display: none;">
                             <label for="customFilename" class="form-label">Custom Report Name (Optional)</label>
                             <input type="text" class="form-control" id="customFilename" placeholder="e.g., incident_report_2024-07-26">

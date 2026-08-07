@@ -302,6 +302,7 @@ async def generate_weekly_report_pdf_for_mission(
         mission_overview=mission_overview,
         source_path=source_path,
         offload_logs=offload_logs,
+        expanded_notes=options.expanded_notes,
     )
 
 
@@ -327,6 +328,7 @@ async def generate_weekly_report(
     source_path: Optional[str] = None,
     offload_logs: Optional[List[models.OffloadLog]] = None,
     report_mode: str = "weekly",
+    expanded_notes: Optional[str] = None,
 ) -> str:
     """Generate a mission PDF and return its URL path under /static/...
 
@@ -397,6 +399,7 @@ async def generate_weekly_report(
         source_path=source_path,
         offload_logs=offload_logs or [],
         report_mode=resolved_mode,  # type: ignore[arg-type]
+        expanded_notes=expanded_notes,
     )
     return url_path
 

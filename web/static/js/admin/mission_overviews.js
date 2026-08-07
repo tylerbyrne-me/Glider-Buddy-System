@@ -110,7 +110,18 @@ document.addEventListener('DOMContentLoaded', async function() {
         const reportStatus = document.getElementById('reportStatus');
         const reportResult = document.getElementById('reportResult');
         const reportDownloadLink = document.getElementById('reportDownloadLink');
+        const includeExpandedNotesSwitch = document.getElementById('includeExpandedNotes');
+        const expandedNotesGroup = document.getElementById('expandedNotesGroup');
+        const expandedNotesInput = document.getElementById('expandedNotes');
 
+        if (includeExpandedNotesSwitch && expandedNotesGroup) {
+            includeExpandedNotesSwitch.addEventListener('change', (e) => {
+                expandedNotesGroup.style.display = e.target.checked ? 'block' : 'none';
+                if (!e.target.checked && expandedNotesInput) {
+                    expandedNotesInput.value = '';
+                }
+            });
+        }
         // Mission Media Elements
         const mediaUploadForm = document.getElementById('mediaUploadForm');
         const mediaFileInput = document.getElementById('mediaFileInput');
@@ -285,6 +296,15 @@ document.addEventListener('DOMContentLoaded', async function() {
 
                 const reportType = reportTypeSelect ? reportTypeSelect.value : 'weekly';
                 const forceRefresh = forceRefreshCheckbox ? forceRefreshCheckbox.checked : false;
+                const includeExpandedNotes = includeExpandedNotesSwitch ? includeExpandedNotesSwitch.checked : false;
+                const expandedNotes = expandedNotesInput ? expandedNotesInput.value.trim() : '';
+
+                if (includeExpandedNotes && !expandedNotes) {
+                    showToast('Enter expanded notes, or turn off Include expanded notes.', 'warning');
+                    generateReportBtn.disabled = false;
+                    if (reportGenerationSpinner) reportGenerationSpinner.style.display = 'none';
+                    return;
+                }
 
                 try {
                     if (reportStatus) {
@@ -297,7 +317,9 @@ document.addEventListener('DOMContentLoaded', async function() {
                         {
                             report_type: reportType,
                             force_refresh_sensor_tracker: forceRefresh,
-                            save_to_overview: true
+                            save_to_overview: true,
+                            include_expanded_notes: includeExpandedNotes,
+                            expanded_notes: includeExpandedNotes ? expandedNotes : null,
                         }
                     );
 
@@ -1024,6 +1046,9 @@ document.addEventListener('DOMContentLoaded', async function() {
 
         missionSelect.addEventListener('change', async function() {
             selectedMissionId = this.value;
+            if (includeExpandedNotesSwitch) includeExpandedNotesSwitch.checked = false;
+            if (expandedNotesGroup) expandedNotesGroup.style.display = 'none';
+            if (expandedNotesInput) expandedNotesInput.value = '';
             updateReportGenerationVisibility(); // Update report generation visibility
             if (!selectedMissionId) {
                 setOverviewVisibility(false);

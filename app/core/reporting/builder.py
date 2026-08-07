@@ -1092,6 +1092,7 @@ def write_mission_pdf(
     source_path: Optional[str],
     offload_logs: Optional[List[models.OffloadLog]] = None,
     report_mode: Literal["weekly", "end_of_mission"] = "weekly",
+    expanded_notes: Optional[str] = None,
 ) -> None:
     """Build and write the mission PDF. See module docstring for weekly vs end-of-mission layout."""
     from reportlab.platypus import PageBreak, Paragraph, NextPageTemplate
@@ -1211,7 +1212,8 @@ def write_mission_pdf(
     )
     md_main = sections.build_mission_details_sections(mission_blocks[:2])
     md_pub = sections.build_mission_details_sections(mission_blocks[2:])
-    if md_main or md_pub:
+    md_notes = sections.build_expanded_notes_section(expanded_notes)
+    if md_main or md_pub or md_notes:
         story.append(Paragraph("Mission details", styles["Heading1"]))
         if md_main:
             story.extend(md_main)
@@ -1219,6 +1221,8 @@ def write_mission_pdf(
             if md_main:
                 story.append(PageBreak())
             story.extend(md_pub)
+        if md_notes:
+            story.extend(md_notes)
         story.append(PageBreak())
 
     if sensor_tracker_deployment:
@@ -1486,6 +1490,7 @@ def write_weekly_mission_pdf(
     source_path: Optional[str],
     offload_logs: Optional[List[models.OffloadLog]] = None,
     report_mode: Literal["weekly", "end_of_mission"] = "weekly",
+    expanded_notes: Optional[str] = None,
 ) -> None:
     """Backward-compatible alias for write_mission_pdf."""
     write_mission_pdf(
@@ -1511,4 +1516,5 @@ def write_weekly_mission_pdf(
         source_path=source_path,
         offload_logs=offload_logs,
         report_mode=report_mode,
+        expanded_notes=expanded_notes,
     )

@@ -24,6 +24,7 @@ See [conventions](./conventions.md#product--platform-naming) and [ADR 0003](../d
 - **Routers** — HTTP endpoints only; depend on core/platforms/services, never the reverse (`app/routers/`)
 - **Services** — higher-level orchestration (knowledge base, reporting, sensor tracker, etc.) (`app/services/`)
 - **Sensor Tracker instruments** — sync stores `MissionInstrument` + nested `MissionSensor` in SQLite. Mission/deployment info APIs and home briefing load them via `app/core/mission_instruments.py` (`selectinload`). UI lists (dashboards, admin overviews, home) show nested sensors under each instrument when present; weekly reports use the same DB rows.
+- **Mission reports** — PDF builders in `app/core/reporting/` (Wave Glider) and `app/platforms/slocum/reports.py` (Slocum). Automated weekly jobs use default options (goals + `include_in_report` comments only). User-generated reports may pass ephemeral `expanded_notes` that render as **Additional notes** after the Mission details “Publication, attribution, and data” table (not stored in-app).
 - **Web assets** — Jinja templates in `web/templates/` and static files in `web/static/` (wired in `app/core/templates.py` / `app/app.py`); Python form helpers in `app/forms/`
 - **CLI** — admin/ops scripts such as station CSV import (`app/cli/`)
 - **Data on disk** — mission CSVs under `data/`; weather/bathy/iridium/slocum/public-map caches under `data_store/`

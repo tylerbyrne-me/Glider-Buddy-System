@@ -523,6 +523,7 @@ def write_slocum_weekly_pdf(
     dmon_detection_counts: Optional[dict[str, int]] = None,
     dmon_review_payload: Optional[dict[str, Any]] = None,
     dmon_asc_payload: Optional[dict[str, Any]] = None,
+    expanded_notes: Optional[str] = None,
 ) -> Path:
     styles = get_report_paragraph_styles()
     max_width = 180 * mm
@@ -590,7 +591,8 @@ def write_slocum_weekly_pdf(
     )
     md_main = sections.build_mission_details_sections(mission_blocks[:2])
     md_pub = sections.build_mission_details_sections(mission_blocks[2:])
-    if md_main or md_pub:
+    md_notes = sections.build_expanded_notes_section(expanded_notes)
+    if md_main or md_pub or md_notes:
         story.append(Paragraph("Mission details", styles["Heading1"]))
         if md_main:
             story.extend(md_main)
@@ -598,6 +600,8 @@ def write_slocum_weekly_pdf(
             if md_main:
                 story.append(PageBreak())
             story.extend(md_pub)
+        if md_notes:
+            story.extend(md_notes)
         story.append(PageBreak())
 
     if sensor_tracker_deployment and session is not None:
@@ -722,7 +726,12 @@ def write_slocum_weekly_pdf(
     return output_path
 
 
-async def create_and_save_slocum_weekly_report(dataset_id: str, session: SQLModelSession) -> Optional[str]:
+async def create_and_save_slocum_weekly_report(
+    dataset_id: str,
+    session: SQLModelSession,
+    *,
+    expanded_notes: Optional[str] = None,
+) -> Optional[str]:
     dataset_id = resolve_slocum_dataset_id(dataset_id)
     start_date, end_date = default_slocum_weekly_date_window()
     deployment = get_or_create_deployment_for_dataset(
@@ -792,6 +801,7 @@ async def create_and_save_slocum_weekly_report(dataset_id: str, session: SQLMode
         dmon_detection_counts=dmon_detection_counts,
         dmon_review_payload=dmon_review_payload,
         dmon_asc_payload=dmon_asc_payload,
+        expanded_notes=expanded_notes,
     )
     report_url = f"/static/mission_reports/slocum/{safe_id}/{filename}"
     if deployment is not None:

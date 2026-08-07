@@ -73,6 +73,7 @@ from .schemas import (
     ForecastParams,
     ESSWaypointsRequest,
     ReportGenerationOptions,
+    GenerateReportWithSensorTrackerRequest,
     MissionReportFile,
     MissionReportListResponse,
     
@@ -235,6 +236,7 @@ __all__ = [
     "ForecastParams",
     "ESSWaypointsRequest",
     "ReportGenerationOptions",
+    "GenerateReportWithSensorTrackerRequest",
     "MissionReportFile",
     "MissionReportListResponse",
     "UserBase",

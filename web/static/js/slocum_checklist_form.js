@@ -422,6 +422,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const label = payload.label || itemId;
             const unit = payload.unit || '';
             const commandedLabel = payload.commanded_label || null;
+            const invertValueAxis = !!payload.invert_value_axis;
             const depthPts = mapSeriesPoints(payload.depth);
             const valuePts = mapSeriesPoints(payload.values);
             const commandedPts = mapSeriesPoints(payload.commanded);
@@ -478,6 +479,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 commandedPts,
                 commandedLabel,
                 multiSeries,
+                invertValueAxis,
             });
         } catch (error) {
             setPlotStatus(`Failed to load plot: ${error.message}`, true);
@@ -494,6 +496,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         const commandedPts = extras.commandedPts || [];
         const commandedLabel = extras.commandedLabel || null;
         const multiSeries = extras.multiSeries || [];
+        const invertValueAxis = !!extras.invertValueAxis;
+        // Depth-like series (e.g. m_water_depth): share the inverted vehicle-depth axis.
+        const shareDepthAxis = invertValueAxis && !multiSeries.length;
         const measuredAxisTitle = unit ? `${label} (${unit})` : label;
         const commandedAxisTitle = commandedLabel
             ? (unit ? `${commandedLabel} (${unit})` : commandedLabel)
@@ -507,7 +512,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         const y3Title = multiSeries.length ? seriesAxisTitle(multiSeries, 'y3') : null;
         const titleText = Array.isArray(chartTitleLines) && chartTitleLines.length
             ? chartTitleLines
-            : [`${y2Title}${y3Title ? ` · ${y3Title}` : ''}  ·  ${depthAxisTitle}`];
+            : (shareDepthAxis
+                ? [`${measuredAxisTitle}  ·  ${depthAxisTitle}`]
+                : [`${y2Title}${y3Title ? ` · ${y3Title}` : ''}  ·  ${depthAxisTitle}`]);
+        const valueYAxisId = shareDepthAxis ? 'y' : 'y2';
 
         const datasets = [
             {
@@ -556,7 +564,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 backgroundColor: colors.value,
                 pointBackgroundColor: colors.value,
                 pointBorderColor: colors.value,
-                yAxisID: 'y2',
+                yAxisID: valueYAxisId,
                 pointRadius: 3.5,
                 pointHoverRadius: 6,
                 order: 1,
@@ -570,7 +578,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     backgroundColor: colors.commanded,
                     pointBackgroundColor: colors.commanded,
                     pointBorderColor: colors.commanded,
-                    yAxisID: 'y2',
+                    yAxisID: valueYAxisId,
                     pointRadius: 3.5,
                     pointHoverRadius: 6,
                     pointStyle: 'triangle',
@@ -583,7 +591,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             responsive: true,
             maintainAspectRatio: false,
             layout: {
-                padding: { top: 8, right: y3Title ? 18 : 12, bottom: 4, left: 8 },
+                padding: {
+                    top: 8,
+                    right: (!shareDepthAxis && y3Title) ? 18 : 12,
+                    bottom: 4,
+                    left: 8,
+                },
             },
             interaction: { mode: 'nearest', intersect: true, axis: 'xy' },
             plugins: {
@@ -680,6 +693,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     type: 'linear',
                     position: 'left',
                     reverse: true,
+                    // Depth / water-depth are non-negative; avoid Chart.js padding below 0.
+                    ...(shareDepthAxis ? { min: 0 } : {}),
                     title: {
                         display: true,
                         text: depthAxisTitle,
@@ -689,25 +704,29 @@ document.addEventListener('DOMContentLoaded', async () => {
                     ticks: { color: colors.depth },
                     grid: { color: colors.border },
                 },
-                y2: {
-                    type: 'linear',
-                    position: 'right',
-                    title: {
-                        display: true,
-                        text: y2Title,
-                        color: colors.value,
-                        font: { size: 13, weight: '600' },
-                    },
-                    ticks: { color: colors.value },
-                    grid: { drawOnChartArea: false },
-                },
             },
         };
-        if (y3Title) {
+        if (!shareDepthAxis) {
+            chartOptions.scales.y2 = {
+                type: 'linear',
+                position: 'right',
+                reverse: invertValueAxis,
+                title: {
+                    display: true,
+                    text: y2Title,
+                    color: colors.value,
+                    font: { size: 13, weight: '600' },
+                },
+                ticks: { color: colors.value },
+                grid: { drawOnChartArea: false },
+            };
+        }
+        if (!shareDepthAxis && y3Title) {
             chartOptions.scales.y3 = {
                 type: 'linear',
                 position: 'right',
                 offset: true,
+                reverse: invertValueAxis,
                 title: {
                     display: true,
                     text: y3Title,

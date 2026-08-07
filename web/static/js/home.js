@@ -20,6 +20,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const saveToOverviewSwitch = document.getElementById('saveToOverview');
     const customFilenameGroup = document.getElementById('customFilenameGroup');
     const customFilenameInput = document.getElementById('customFilename');
+    const includeExpandedNotesSwitch = document.getElementById('includeExpandedNotes');
+    const expandedNotesGroup = document.getElementById('expandedNotesGroup');
+    const expandedNotesInput = document.getElementById('expandedNotes');
 
     // --- USER CONTEXT ---
     const container = document.querySelector('.container[data-user-role]');
@@ -641,6 +644,9 @@ document.addEventListener('DOMContentLoaded', function() {
         // Ensure the custom filename field is hidden and cleared on open
         customFilenameGroup.style.display = 'none';
         customFilenameInput.value = '';
+        if (includeExpandedNotesSwitch) includeExpandedNotesSwitch.checked = false;
+        if (expandedNotesGroup) expandedNotesGroup.style.display = 'none';
+        if (expandedNotesInput) expandedNotesInput.value = '';
 
         reportModal.show();
     };
@@ -651,6 +657,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const endDate = document.getElementById('endDate').value;
         const saveToOverview = document.getElementById('saveToOverview').checked;
         const customFilename = document.getElementById('customFilename').value.trim();
+        const includeExpandedNotes = includeExpandedNotesSwitch ? includeExpandedNotesSwitch.checked : false;
+        const expandedNotes = expandedNotesInput ? expandedNotesInput.value.trim() : '';
 
         const plotsToInclude = Array.from(document.querySelectorAll('#plot-selection-group input[type="checkbox"]:checked'))
                                     .map(checkbox => checkbox.value);
@@ -660,12 +668,19 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
+        if (includeExpandedNotes && !expandedNotes) {
+            showToast('Enter expanded notes, or turn off Include expanded notes.', 'warning');
+            return;
+        }
+
         const options = {
             start_date: startDate || null,
             end_date: endDate || null,
             plots_to_include: plotsToInclude,
             save_to_overview: saveToOverview,
             custom_filename: customFilename || null,
+            include_expanded_notes: includeExpandedNotes,
+            expanded_notes: includeExpandedNotes ? expandedNotes : null,
         };
 
         generateReportBtn.disabled = true;
@@ -705,6 +720,15 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 // If not saving, show the custom name field
                 customFilenameGroup.style.display = 'block';
+            }
+        });
+    }
+
+    if (includeExpandedNotesSwitch && expandedNotesGroup) {
+        includeExpandedNotesSwitch.addEventListener('change', (e) => {
+            expandedNotesGroup.style.display = e.target.checked ? 'block' : 'none';
+            if (!e.target.checked && expandedNotesInput) {
+                expandedNotesInput.value = '';
             }
         });
     }

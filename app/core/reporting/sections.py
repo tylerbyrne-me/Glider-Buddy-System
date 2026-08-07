@@ -135,6 +135,23 @@ def build_mission_details_sections(
     return out
 
 
+def build_expanded_notes_section(text: Optional[str]) -> List[Any]:
+    """Heading2 + body paragraphs for ephemeral wrap-up notes; empty when text is blank."""
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    styles = build_paragraph_styles()
+    out: List[Any] = [Paragraph("Additional notes", styles["Heading2"])]
+    # Split on blank lines into paragraphs; preserve single newlines as <br/>.
+    blocks = [b.strip() for b in raw.replace("\r\n", "\n").replace("\r", "\n").split("\n\n") if b.strip()]
+    for block in blocks:
+        lines = [_escape_xml_text(line) for line in block.split("\n")]
+        out.append(Paragraph("<br/>".join(lines), styles["Body"]))
+        out.append(Spacer(1, 6))
+    out.append(Spacer(1, 4))
+    return out
+
+
 def _instrument_cell(text: str, styles: dict[str, ParagraphStyle]) -> Paragraph:
     return Paragraph(_escape_xml_text(text or ""), styles["Body"])
 

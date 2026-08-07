@@ -5,8 +5,9 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 from pathlib import Path
+from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Body, Depends, HTTPException, status
 from sqlmodel import Session as SQLModelSession
 
 from ..core.auth import get_current_active_user, get_current_admin_user, require_platform_access
@@ -76,12 +77,18 @@ async def list_slocum_reports(
 @router.post("/datasets/{dataset_id}/generate-weekly-report")
 async def generate_slocum_weekly_report(
     dataset_id: str,
+    options: Annotated[Optional[models.ReportGenerationOptions], Body()] = None,
     session: SQLModelSession = Depends(get_db_session),
     current_user: models.User = Depends(get_current_admin_user),
 ):
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=403, detail="Slocum platform is disabled.")
-    url = await create_and_save_slocum_weekly_report(dataset_id, session)
+    opts = options or models.ReportGenerationOptions()
+    url = await create_and_save_slocum_weekly_report(
+        dataset_id,
+        session,
+        expanded_notes=opts.expanded_notes,
+    )
     if not url:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

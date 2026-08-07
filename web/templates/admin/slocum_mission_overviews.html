@@ -401,6 +401,18 @@
                         </div>
 
                         <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" role="switch" id="includeExpandedNotes">
+                                <label class="form-check-label" for="includeExpandedNotes">Include expanded notes</label>
+                            </div>
+                            <small class="form-text text-muted">Optional wrap-up / briefing text for this PDF only (not stored on the mission).</small>
+                        </div>
+                        <div class="mb-3" id="expandedNotesGroup" style="display: none;">
+                            <label for="expandedNotes" class="form-label">Expanded notes</label>
+                            <textarea class="form-control" id="expandedNotes" rows="4" maxlength="8000" placeholder="Mission wrap-up, briefing details, or other narrative to include after Mission details…"></textarea>
+                        </div>
+
+                        <div class="mb-3">
                             <button type="button" class="btn btn-success" id="generateReportBtn">
                                 <i class="fas fa-file-pdf"></i> Generate Report
                             </button>

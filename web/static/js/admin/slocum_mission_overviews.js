@@ -102,6 +102,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const reportStatus = document.getElementById('reportStatus');
     const reportResult = document.getElementById('reportResult');
     const reportDownloadLink = document.getElementById('reportDownloadLink');
+    const includeExpandedNotesSwitch = document.getElementById('includeExpandedNotes');
+    const expandedNotesGroup = document.getElementById('expandedNotesGroup');
+    const expandedNotesInput = document.getElementById('expandedNotes');
 
     let currentDatasetId = null;
     let currentInfo = null;
@@ -439,6 +442,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Loading ---
     async function loadDatasetInfo(datasetId) {
         currentDatasetId = datasetId;
+        if (includeExpandedNotesSwitch) includeExpandedNotesSwitch.checked = false;
+        if (expandedNotesGroup) expandedNotesGroup.style.display = 'none';
+        if (expandedNotesInput) expandedNotesInput.value = '';
         missionSpinner.style.display = 'inline-flex';
         try {
             const info = await apiRequest(`/api/slocum/datasets/${encodeURIComponent(datasetId)}/info`, 'GET');
@@ -1137,8 +1143,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Reports
     weeklyReportSelect.addEventListener('change', renderWeeklyReportSelection);
 
+    if (includeExpandedNotesSwitch && expandedNotesGroup) {
+        includeExpandedNotesSwitch.addEventListener('change', (e) => {
+            expandedNotesGroup.style.display = e.target.checked ? 'block' : 'none';
+            if (!e.target.checked && expandedNotesInput) {
+                expandedNotesInput.value = '';
+            }
+        });
+    }
+
     generateReportBtn.addEventListener('click', async () => {
         if (!currentDatasetId) return;
+        const includeExpandedNotes = includeExpandedNotesSwitch ? includeExpandedNotesSwitch.checked : false;
+        const expandedNotes = expandedNotesInput ? expandedNotesInput.value.trim() : '';
+        if (includeExpandedNotes && !expandedNotes) {
+            showToast('Enter expanded notes, or turn off Include expanded notes.', 'warning');
+            return;
+        }
         reportGenerationSpinner.style.display = 'inline-flex';
         generateReportBtn.disabled = true;
         reportStatus.innerHTML = '';
@@ -1146,7 +1167,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             const result = await apiRequest(
                 `/api/slocum/reporting/datasets/${encodeURIComponent(currentDatasetId)}/generate-weekly-report`,
-                'POST'
+                'POST',
+                {
+                    include_expanded_notes: includeExpandedNotes,
+                    expanded_notes: includeExpandedNotes ? expandedNotes : null,
+                }
             );
             reportDownloadLink.href = result.report_url;
             reportResult.style.display = 'block';

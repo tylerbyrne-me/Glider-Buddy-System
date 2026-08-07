@@ -3,6 +3,8 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-07 — Mission wrap-up expanded notes (ephemeral v1): optional toggle on user-generated WG weekly/EOM + Slocum weekly report UIs; free text embedded after "Publication, attribution, and data" in Mission details; automated scheduler reports unchanged; persistent in-app briefing storage deferred
+- [x] 2026-08-07 — BUG-003: checklist Plot-it shares inverted Depth axis for `m_water_depth` (`invert_value_axis`; axis min 0; filter invalid water-depth samples) — [BUG-003](../bugs/BUG-003-flip-water-depth-axis.md)
 - [x] 2026-08-06 — Nested Sensor Tracker sensors in UI: APIs return `MissionInstrumentRead.sensors`; shared `sensor_tracker_instruments.js` + home Jinja list nested sensors under instruments (same DB data reports already use)
 - [x] 2026-08-06 — Phase A UI tokens + comfort (no DB): Bootstrap bridges in `themes.css`; `.gbs-card` / `.gbs-hint` / `.gbs-empty-state`; login + admin page CSS extraction; theme-aware Leaflet tiles (`map_tiles.js`); admin overview empty states; equal platform-choice cards
 
