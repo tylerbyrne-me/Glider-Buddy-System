@@ -41,6 +41,7 @@ import {
     drawNoDataOnCanvas,
     buildTimeScaleX,
 } from '/static/js/chart_time_series_utils.js';
+import { renderSensorTrackerInstrumentColumns } from '/static/js/sensor_tracker_instruments.js';
 
 registerForceUtcTimeDisplayPlugin();
 registerNearestXByDatasetInteractionMode();
@@ -2006,23 +2007,10 @@ function renderSensorTrackerOverview(deployment, instruments) {
             }
         }
         setText('overviewStDescription', deployment.deployment_comment || '-');
-        const instrumentsWrap = document.getElementById('overviewStInstruments');
-        const instrumentsList = document.getElementById('overviewStInstrumentsList');
-        if (instrumentsWrap && instrumentsList) {
-            instrumentsList.innerHTML = '';
-            if (instruments && instruments.length) {
-                instruments.forEach((inst) => {
-                    const li = document.createElement('li');
-                    const name = inst.instrument_name || inst.instrument_identifier || 'Instrument';
-                    const serial = inst.instrument_serial ? ` (${inst.instrument_serial})` : '';
-                    li.textContent = `${name}${serial}`;
-                    instrumentsList.appendChild(li);
-                });
-                instrumentsWrap.style.display = 'block';
-            } else {
-                instrumentsWrap.style.display = 'none';
-            }
-        }
+        renderSensorTrackerInstrumentColumns(instruments, {
+            prefix: 'overviewSt',
+            wrapId: 'overviewStInstruments',
+        });
     } else if (container && empty) {
         container.style.display = 'none';
         empty.style.display = 'block';

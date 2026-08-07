@@ -3,6 +3,9 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-06 — Nested Sensor Tracker sensors in UI: APIs return `MissionInstrumentRead.sensors`; shared `sensor_tracker_instruments.js` + home Jinja list nested sensors under instruments (same DB data reports already use)
+- [x] 2026-08-06 — Phase A UI tokens + comfort (no DB): Bootstrap bridges in `themes.css`; `.gbs-card` / `.gbs-hint` / `.gbs-empty-state`; login + admin page CSS extraction; theme-aware Leaflet tiles (`map_tiles.js`); admin overview empty states; equal platform-choice cards
+
 ## Rebrand round summary (2026-08-02 → 2026-08-03)
 
 Closed in-repo for **Glider Buddy System (GBS)** multi-platform rebrand:

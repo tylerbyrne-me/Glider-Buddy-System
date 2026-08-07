@@ -21,6 +21,7 @@ from ..config import settings
 from ..core.auth import get_current_active_user, get_current_admin_user, require_platform_access
 from ..core.infra.db import get_db_session, SQLModelSession
 from ..core import models, utils
+from ..core.mission_instruments import load_mission_instruments_with_sensors
 from ..core.mission_aliases import resolve_slocum_dataset_id, resolve_slocum_dataset_ids
 from ..core.infra.feature_toggles import is_feature_enabled
 from app.platforms.slocum.checklist_autofill import list_checklist_presets
@@ -100,7 +101,7 @@ def _build_deployment_info(
 ) -> SlocumDeploymentInfoResponse:
     parsed_dataset: Optional[SlocumParsedDataset] = None
     sensor_tracker_deployment: Optional[models.SensorTrackerDeployment] = None
-    sensor_tracker_instruments: List[models.MissionInstrument] = []
+    sensor_tracker_instruments: List[models.MissionInstrumentRead] = []
     resolved_dataset_id = resolve_slocum_dataset_id(dataset_id or "") if dataset_id else None
     if not resolved_dataset_id and deployment and deployment.erddap_dataset_id:
         resolved_dataset_id = resolve_slocum_dataset_id(deployment.erddap_dataset_id)
@@ -116,11 +117,9 @@ def _build_deployment_info(
                 )
             ).first()
             if sensor_tracker_deployment:
-                sensor_tracker_instruments = session.exec(
-                    select(models.MissionInstrument).where(
-                        models.MissionInstrument.mission_id == mission_code
-                    )
-                ).all()
+                sensor_tracker_instruments = load_mission_instruments_with_sensors(
+                    session, mission_code
+                )
     if not deployment:
         return SlocumDeploymentInfoResponse(
             deployment=None,

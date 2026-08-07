@@ -1,6 +1,6 @@
 # Architecture
 
-_Last updated: 2026-08-05_
+_Last updated: 2026-08-06_
 
 ## One-paragraph summary
 
@@ -23,6 +23,7 @@ See [conventions](./conventions.md#product--platform-naming) and [ADR 0003](../d
 - **Platforms** — vehicle-specific packages (e.g. Slocum ERDDAP/mirrors/checklists) (`app/platforms/`)
 - **Routers** — HTTP endpoints only; depend on core/platforms/services, never the reverse (`app/routers/`)
 - **Services** — higher-level orchestration (knowledge base, reporting, sensor tracker, etc.) (`app/services/`)
+- **Sensor Tracker instruments** — sync stores `MissionInstrument` + nested `MissionSensor` in SQLite. Mission/deployment info APIs and home briefing load them via `app/core/mission_instruments.py` (`selectinload`). UI lists (dashboards, admin overviews, home) show nested sensors under each instrument when present; weekly reports use the same DB rows.
 - **Web assets** — Jinja templates in `web/templates/` and static files in `web/static/` (wired in `app/core/templates.py` / `app/app.py`); Python form helpers in `app/forms/`
 - **CLI** — admin/ops scripts such as station CSV import (`app/cli/`)
 - **Data on disk** — mission CSVs under `data/`; weather/bathy/iridium/slocum/public-map caches under `data_store/`

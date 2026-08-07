@@ -1,0 +1,36 @@
+/* Admin mission / dataset overview pages */
+
+.page-admin-overviews .admin-page-header {
+  gap: 0.75rem;
+}
+
+.page-admin-overviews .admin-instruments-row > [class*="col-"] {
+  margin-bottom: 1rem;
+}
+
+@media (max-width: 991.98px) {
+  .page-admin-overviews .admin-instruments-row > [class*="col-md-4"] {
+    flex: 0 0 100%;
+    max-width: 100%;
+  }
+}
+
+.page-admin-overviews #sensorTrackerMetadataContainer .card.border-info {
+  border-color: var(--app-alert-info-border) !important;
+}
+
+.page-admin-overviews .admin-outbox-table th,
+.page-admin-overviews .admin-cache-table th {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.page-admin-overviews #overviewEmptyState {
+  min-height: 12rem;
+}
+
+.page-admin-overviews .gbs-card + .gbs-card,
+.page-admin-overviews .gbs-card + #overviewEmptyState,
+.page-admin-overviews #overviewEmptyState + #overviewFormContainer {
+  margin-top: 0;
+}

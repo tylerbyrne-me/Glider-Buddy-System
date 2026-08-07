@@ -10,6 +10,7 @@ import re
 from sqlmodel import select
 from sqlalchemy import or_
 from ..core import models, utils
+from ..core.mission_instruments import load_mission_instruments_with_sensors, mission_id_variants
 from ..core.pic_handoff_optional_sensors import get_pic_handoff_optional_sensor_keys
 from ..core.infra.db import get_db_session, SQLModelSession
 from ..core.auth import get_current_active_user, get_current_admin_user, get_optional_current_user
@@ -487,18 +488,12 @@ async def _get_mission_info(
         )
     ).first()
     
-    # If we found a deployment, load its instruments
     instruments = []
     if sensor_tracker_deployment:
-        instruments = session.exec(
-            select(models.MissionInstrument).where(
-                or_(
-                    models.MissionInstrument.mission_id == mission_id,
-                    models.MissionInstrument.mission_id == mission_base
-                )
-            )
-        ).all()
-    
+        instruments = load_mission_instruments_with_sensors(
+            session, mission_id_variants(mission_id, mission_base)
+        )
+
     return models.MissionInfoResponse(
         overview=overview,
         goals=goals,

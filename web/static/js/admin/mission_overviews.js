@@ -6,6 +6,7 @@
 import { checkAuth, getUserProfile, isUserAdmin } from '/static/js/auth.js';
 import { apiRequest, showToast, fetchWithAuth } from '/static/js/api.js';
 import { formatUtcDateTime } from '/static/js/datetime_utils.js';
+import { renderSensorTrackerInstrumentColumns } from '/static/js/sensor_tracker_instruments.js';
 
 const PIC_HANDOFF_OPTIONAL_SENSOR_REGISTRY = Object.freeze({
     adcp: 'ADCP',
@@ -27,6 +28,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         const missionSelect = document.getElementById('missionSelect');
         const missionSpinner = document.getElementById('missionSpinner');
         const overviewFormContainer = document.getElementById('overviewFormContainer');
+        const overviewEmptyState = document.getElementById('overviewEmptyState');
+
+        function setOverviewVisibility(isVisible) {
+            if (overviewFormContainer) {
+                overviewFormContainer.style.display = isVisible ? 'block' : 'none';
+            }
+            if (overviewEmptyState) {
+                overviewEmptyState.classList.toggle('d-none', isVisible);
+            }
+        }
         const overviewForm = document.getElementById('overviewForm');
         const editingMissionTitle = document.getElementById('editingMissionTitle');
         const documentUrlInput = document.getElementById('documentUrlInput'); // This is now the hidden input
@@ -449,91 +460,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                     document.getElementById('stDescription').textContent = '-';
                 }
 
-                const flightInstruments = instruments.filter(inst => inst.data_logger_type === 'flight');
-                const scienceInstruments = instruments.filter(inst => inst.data_logger_type === 'science');
-                const platformInstruments = instruments.filter(inst => inst.is_platform_direct);
-
-                const flightContainer = document.getElementById('stFlightInstrumentsContainer');
-                const flightList = document.getElementById('stFlightInstruments');
-                const flightSerialEl = document.getElementById('stFlightComputerSerial');
-                if (flightInstruments.length > 0) {
-                    const flightComputerSerial = flightInstruments[0].data_logger_serial;
-                    if (flightSerialEl) {
-                        if (flightComputerSerial) {
-                            flightSerialEl.textContent = `Serial: ${escapeHtml(flightComputerSerial)}`;
-                            flightSerialEl.style.display = 'block';
-                        } else {
-                            flightSerialEl.textContent = '';
-                            flightSerialEl.style.display = 'none';
-                        }
-                    }
-                    flightList.innerHTML = '';
-                    flightInstruments.forEach(inst => {
-                        const li = document.createElement('li');
-                        li.className = 'mb-1';
-                        const name = inst.instrument_name || inst.instrument_identifier;
-                        const serial = inst.instrument_serial ? ` (${inst.instrument_serial})` : '';
-                        li.innerHTML = `<strong>${escapeHtml(name)}</strong>${escapeHtml(serial)}`;
-                        flightList.appendChild(li);
-                    });
-                    flightContainer.style.display = 'block';
-                } else {
-                    if (flightSerialEl) flightSerialEl.style.display = 'none';
-                    if (flightContainer) flightContainer.style.display = 'none';
-                }
-
-                const scienceContainer = document.getElementById('stScienceInstrumentsContainer');
-                const scienceList = document.getElementById('stScienceInstruments');
-                const scienceSerialEl = document.getElementById('stScienceComputerSerial');
-                if (scienceInstruments.length > 0) {
-                    const scienceComputerSerial = scienceInstruments[0].data_logger_serial;
-                    if (scienceSerialEl) {
-                        if (scienceComputerSerial) {
-                            scienceSerialEl.textContent = `Serial: ${escapeHtml(scienceComputerSerial)}`;
-                            scienceSerialEl.style.display = 'block';
-                        } else {
-                            scienceSerialEl.textContent = '';
-                            scienceSerialEl.style.display = 'none';
-                        }
-                    }
-                    scienceList.innerHTML = '';
-                    scienceInstruments.forEach(inst => {
-                        const li = document.createElement('li');
-                        li.className = 'mb-1';
-                        const name = inst.instrument_name || inst.instrument_identifier;
-                        const serial = inst.instrument_serial ? ` (${inst.instrument_serial})` : '';
-                        li.innerHTML = `<strong>${escapeHtml(name)}</strong>${escapeHtml(serial)}`;
-                        scienceList.appendChild(li);
-                    });
-                    scienceContainer.style.display = 'block';
-                } else {
-                    if (scienceSerialEl) scienceSerialEl.style.display = 'none';
-                    scienceContainer.style.display = 'none';
-                }
-
-                const platformContainer = document.getElementById('stPlatformInstrumentsContainer');
-                const platformList = document.getElementById('stPlatformInstruments');
-                if (platformInstruments.length > 0) {
-                    platformList.innerHTML = '';
-                    platformInstruments.forEach(inst => {
-                        const li = document.createElement('li');
-                        li.className = 'mb-1';
-                        const name = inst.instrument_name || inst.instrument_identifier;
-                        const serial = inst.instrument_serial ? ` (${inst.instrument_serial})` : '';
-                        li.innerHTML = `<strong>${escapeHtml(name)}</strong>${escapeHtml(serial)}`;
-                        platformList.appendChild(li);
-                    });
-                    platformContainer.style.display = 'block';
-                } else {
-                    platformContainer.style.display = 'none';
-                }
-
-                const instrumentsContainer = document.getElementById('stInstrumentsContainer');
-                if (flightInstruments.length > 0 || platformInstruments.length > 0 || scienceInstruments.length > 0) {
-                    instrumentsContainer.style.display = 'flex';
-                } else {
-                    instrumentsContainer.style.display = 'none';
-                }
+                renderSensorTrackerInstrumentColumns(instruments, {
+                    prefix: 'st',
+                    wrapId: 'stInstrumentsContainer',
+                });
 
                 if (sensorTrackerContainer) sensorTrackerContainer.style.display = 'block';
                 if (sensorTrackerPlaceholder) sensorTrackerPlaceholder.style.display = 'none';
@@ -1096,7 +1026,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             selectedMissionId = this.value;
             updateReportGenerationVisibility(); // Update report generation visibility
             if (!selectedMissionId) {
-                overviewFormContainer.style.display = 'none';
+                setOverviewVisibility(false);
                 if (missionMediaGallery) {
                     missionMediaGallery.innerHTML = '<div class="text-muted small">Select a mission to view uploaded media.</div>';
                 }
@@ -1127,9 +1057,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             missionSpinner.style.display = 'inline-block';
             saveStatusDiv.innerHTML = '';
-            if (overviewFormContainer) {
-                overviewFormContainer.style.display = 'block';
-            }
+            setOverviewVisibility(true);
 
             try {
                 const missionInfo = await apiRequest(`/api/missions/${selectedMissionId}/info`, 'GET');
@@ -1199,11 +1127,7 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
                 
                 // Show the form container
-                if (overviewFormContainer) {
-                    overviewFormContainer.style.display = 'block';
-                } else {
-                    console.error('overviewFormContainer not found!');
-                }
+                setOverviewVisibility(true);
                 
                 // Update report generation visibility after mission is loaded
                 updateReportGenerationVisibility();

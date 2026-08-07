@@ -13,6 +13,7 @@ import { initializeWgVm4OffloadSection } from '/static/js/wg_vm4.js';
 import { formatUtcDateTime, datetimeLocalToUtcIso, findNearestTimeIndexUtc, toUtcDate } from '/static/js/datetime_utils.js';
 import { registerForceUtcTimeDisplayPlugin } from '/static/js/chart_utc_utils.js';
 import { initializeMiniCharts } from '/static/js/mini_charts.js';
+import { renderSensorTrackerInstrumentColumns } from '/static/js/sensor_tracker_instruments.js';
 import {
     applyTimeAxisZoom,
     bindResetZoomButton,
@@ -148,8 +149,6 @@ document.addEventListener('DOMContentLoaded', async function() {
     const overviewStPlatform = document.getElementById('overviewStPlatform');
     const overviewStDataRepo = document.getElementById('overviewStDataRepo');
     const overviewStDescription = document.getElementById('overviewStDescription');
-    const overviewStInstruments = document.getElementById('overviewStInstruments');
-    const overviewStInstrumentsList = document.getElementById('overviewStInstrumentsList');
     const dashboardMissionNotesList = document.getElementById('dashboardMissionNotesList');
     const dashboardMissionGoalsList = document.getElementById('dashboardMissionGoalsList');
     const goalModalElement = document.getElementById('goalModal');
@@ -887,21 +886,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
                 if (overviewStDescription) overviewStDescription.textContent = deployment.deployment_comment || '-';
 
-                if (overviewStInstruments && overviewStInstrumentsList) {
-                    overviewStInstrumentsList.innerHTML = '';
-                    if (instruments.length > 0) {
-                        instruments.forEach(inst => {
-                            const li = document.createElement('li');
-                            const name = inst.instrument_name || inst.instrument_identifier || 'Instrument';
-                            const serial = inst.instrument_serial ? ` (${inst.instrument_serial})` : '';
-                            li.textContent = `${name}${serial}`;
-                            overviewStInstrumentsList.appendChild(li);
-                        });
-                        overviewStInstruments.style.display = 'block';
-                    } else {
-                        overviewStInstruments.style.display = 'none';
-                    }
-                }
+                renderSensorTrackerInstrumentColumns(instruments, {
+                    prefix: 'overviewSt',
+                    wrapId: 'overviewStInstruments',
+                });
             } else if (overviewSensorTrackerContainer && overviewSensorTrackerEmpty) {
                 overviewSensorTrackerContainer.style.display = 'none';
                 overviewSensorTrackerEmpty.style.display = 'block';

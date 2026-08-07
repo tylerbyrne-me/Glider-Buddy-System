@@ -1096,3 +1096,124 @@ footer .text-muted {
     border-bottom: none;
   }
 }
+
+/* --- Shared GBS components (token-driven) --- */
+.gbs-card {
+  background-color: var(--bs-card-bg, #ffffff);
+  color: var(--bs-card-color, var(--app-text));
+  border: 1px solid var(--app-card-border, var(--card-border));
+  border-radius: var(--app-radius-md, 0.5rem);
+  box-shadow: var(--app-shadow-elevated, none);
+}
+
+.gbs-card:hover {
+  transform: none;
+  box-shadow: var(--app-shadow-elevated, none);
+}
+
+.gbs-card > .card-header,
+.gbs-card-header {
+  background-color: var(--app-surface-muted, var(--bs-tertiary-bg));
+  color: var(--app-text);
+  border-bottom: 1px solid var(--app-card-border, var(--card-border));
+  border-radius: var(--app-radius-md, 0.5rem) var(--app-radius-md, 0.5rem) 0 0;
+  padding: 0.75rem 1rem;
+}
+
+.gbs-card > .card-body,
+.gbs-card-body {
+  padding: 1rem 1.15rem;
+  background-color: transparent;
+  color: inherit;
+}
+
+.gbs-hint {
+  background: var(--app-alert-info-bg);
+  border: 1px solid var(--app-alert-info-border);
+  color: var(--app-alert-info-text);
+  font-size: 0.9rem;
+  border-radius: var(--app-radius-md, 0.5rem);
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.gbs-hint i {
+  margin-right: 0.35rem;
+}
+
+.gbs-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.5rem;
+  padding: 2.5rem 1.5rem;
+  margin-bottom: 1.5rem;
+  background-color: var(--app-surface-muted, var(--bs-tertiary-bg));
+  border: 1px dashed var(--app-card-border, var(--card-border));
+  border-radius: var(--app-radius-md, 0.5rem);
+  color: var(--app-text);
+}
+
+.gbs-empty-state .gbs-empty-state-icon {
+  font-size: 1.75rem;
+  color: var(--app-secondary, var(--secondary-color));
+  opacity: 0.85;
+}
+
+.gbs-empty-state h5 {
+  margin: 0;
+  font-weight: 600;
+  color: var(--app-text);
+}
+
+.gbs-empty-state p {
+  margin: 0;
+  max-width: 32rem;
+}
+
+.platform-choice-card {
+  border: 1px solid var(--app-card-border, var(--card-border)) !important;
+  background-color: var(--bs-card-bg, #ffffff);
+  color: var(--bs-card-color, var(--app-text));
+  transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+}
+
+.platform-choice-card:hover {
+  border-color: var(--app-primary, var(--primary)) !important;
+  box-shadow: var(--app-shadow-elevated, 0 0.25rem 0.5rem var(--app-shadow-medium));
+}
+
+.platform-choice-card .text-muted {
+  color: var(--app-secondary, var(--secondary-color)) !important;
+}
+
+.alert-info {
+  background-color: var(--app-alert-info-bg);
+  border-color: var(--app-alert-info-border);
+  color: var(--app-alert-info-text);
+}
+
+.card.border-info {
+  border-color: var(--app-alert-info-border) !important;
+}
+
+.form-control,
+.form-select {
+  background-color: var(--bs-card-bg, var(--bs-body-bg));
+  border-color: var(--bs-border-color, var(--app-card-border));
+  color: var(--bs-body-color, var(--app-text));
+}
+
+.form-control:focus,
+.form-select:focus {
+  background-color: var(--bs-card-bg, var(--bs-body-bg));
+  border-color: var(--app-primary, var(--bs-primary));
+  color: var(--bs-body-color, var(--app-text));
+}
+
+.form-control::placeholder {
+  color: var(--app-secondary, var(--secondary-color));
+  opacity: 0.85;
+}

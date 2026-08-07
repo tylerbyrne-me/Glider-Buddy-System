@@ -2,15 +2,19 @@
 
 {% block title %}Admin: Manage Wave Glider Mission Overviews{% endblock %}
 
+{% block head_extra_css %}
+<link rel="stylesheet" href="/static/css/pages/admin.css">
+{% endblock %}
+
 {% block content %}
-<div class="container mt-4">
-    <div class="d-flex justify-content-between align-items-center mb-3">
+<div class="container mt-4 page-admin-overviews">
+    <div class="d-flex justify-content-between align-items-center mb-3 admin-page-header">
         <h1>Manage Wave Glider Mission Overviews</h1>
         <a href="/wave-glider/home" class="btn btn-secondary">Back to Dashboard</a>
     </div>
 
     <!-- Container 1: Mission Selector -->
-    <div class="card mb-4">
+    <div class="card gbs-card mb-4">
         <div class="card-header">
             Mission Selector
         </div>
@@ -31,11 +35,17 @@
         </div>
     </div>
 
+    {% set empty_id = "overviewEmptyState" %}
+    {% set empty_icon = "fa-folder-open" %}
+    {% set empty_title = "Select a mission" %}
+    {% set empty_message = "Choose a mission above to edit Sensor Tracker metadata, visibility, comments, and reports." %}
+    {% include "_empty_state.html" %}
+
     <div id="overviewFormContainer" style="display: none;">
         <h4 class="mb-3" id="editingMissionTitle"></h4>
 
         <!-- Container 2: Sensor Tracker -->
-        <div class="card mb-4">
+        <div class="card gbs-card mb-4">
             <div class="card-header">
                 Sensor Tracker
             </div>
@@ -43,7 +53,7 @@
                 <!-- Sensor Tracker Metadata Section -->
                 <div class="mb-4">
                     <label class="form-label">Sensor Tracker Metadata</label>
-                    <div class="alert alert-info mb-2" style="font-size: 0.9em;">
+                    <div class="gbs-hint">
                         <i class="fas fa-info-circle"></i> Metadata can be synced without generating a report.
                     </div>
                     <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
@@ -90,7 +100,7 @@
                                 </div>
                                 
                                 <!-- Instruments Section -->
-                                <div class="row mt-3" id="stInstrumentsContainer" style="display: none;">
+                                <div class="row mt-3 admin-instruments-row" id="stInstrumentsContainer" style="display: none;">
                                     <div class="col-md-4" id="stFlightInstrumentsContainer" style="display: none;">
                                         <h6 class="mb-2">Flight Computer Instruments</h6>
                                         <p class="small text-muted mb-2" id="stFlightComputerSerial" style="display: none;"></p>
@@ -199,7 +209,7 @@
         </div>
 
         <!-- Container 3: Editing Overview -->
-        <div class="card mb-4">
+        <div class="card gbs-card mb-4">
             <div class="card-header">
                 Editing Overview
             </div>
@@ -383,7 +393,7 @@
         </div>
 
         <!-- Container 4: Media -->
-        <div class="card mb-4">
+        <div class="card gbs-card mb-4">
             <div class="card-header">
                 Media Upload & Download
             </div>
@@ -391,7 +401,7 @@
                 <!-- Mission Media Management -->
                 <div class="mb-4">
                     <label class="form-label">Deployment & Recovery Media</label>
-                    <div class="alert alert-info mb-2" style="font-size: 0.9em;">
+                    <div class="gbs-hint">
                         <i class="fas fa-info-circle"></i> Upload and manage photos or short videos for this mission.
                     </div>
                     <div id="mediaUploadForm" class="card mb-3">
@@ -434,7 +444,7 @@
         </div>
 
         <!-- Container 5: Reports -->
-        <div class="card mb-4">
+        <div class="card gbs-card mb-4">
             <div class="card-header">
                 Reports
             </div>
@@ -442,7 +452,7 @@
                 <!-- Mission Reports Section -->
                 <div class="mb-3">
                     <label class="form-label">Report Download Links</label>
-                    <div class="alert alert-info mb-2" style="font-size: 0.9em;">
+                    <div class="gbs-hint">
                         <i class="fas fa-info-circle"></i> Weekly reports are generated for ongoing missions. End of Mission reports are comprehensive reports generated when a mission is complete.
                     </div>
                     <div id="endOfMissionReportContainer" class="mb-2" style="display: none;">
@@ -533,12 +543,12 @@
         </div>
 
         <!-- Container 6: Cached Dataset Inspector -->
-        <div class="card mb-4">
+        <div class="card gbs-card mb-4">
             <div class="card-header">
                 Cached Dataset Inspector
             </div>
             <div class="card-body">
-                <div class="alert alert-info mb-3" style="font-size: 0.9em;">
+                <div class="gbs-hint">
                     <i class="fas fa-info-circle"></i> Uses existing cache metadata and cache stats endpoints. Select a mission, then inspect source/timestamps to verify whether a product looks valid.
                 </div>
                 <div class="row g-2 align-items-end mb-3">

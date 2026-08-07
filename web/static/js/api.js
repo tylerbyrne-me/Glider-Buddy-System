@@ -42,16 +42,10 @@ const redirectToLoginOn401 = () => {
     localStorage.removeItem('accessToken');
     const onLoginPage = isLoginPath(window.location.pathname);
     if (onLoginPage) {
-        // #region agent log
-        fetch('http://127.0.0.1:7650/ingest/4c770a18-5d45-4257-8f2a-77da070675ea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a1bfbb'},body:JSON.stringify({sessionId:'a1bfbb',hypothesisId:'H-login-loop',location:'api.js:redirectToLoginOn401',message:'401 on login page — skip redirect',data:{pathname:window.location.pathname},timestamp:Date.now(),runId:'login-loop'})}).catch(()=>{});
-        // #endregion
         return;
     }
     const current = window.location.pathname + window.location.search;
     const nextPath = sanitizeLoginNextPath(current) ?? '/platform';
-    // #region agent log
-    fetch('http://127.0.0.1:7650/ingest/4c770a18-5d45-4257-8f2a-77da070675ea',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'a1bfbb'},body:JSON.stringify({sessionId:'a1bfbb',hypothesisId:'H-login-loop',location:'api.js:redirectToLoginOn401',message:'redirect to login',data:{from:current,nextPath},timestamp:Date.now(),runId:'login-loop'})}).catch(()=>{});
-    // #endregion
     window.location.href = `${LOGIN_PATH}?session_expired=true&next=${encodeURIComponent(nextPath)}`;
 };
 

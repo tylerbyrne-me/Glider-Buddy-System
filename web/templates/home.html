@@ -195,10 +195,22 @@
                                                     {% endif %}
                                                     <ul class="list-unstyled small">
                                                         {% for inst in flight_instruments %}
-                                                        <li class="mb-1">
+                                                        <li class="mb-2">
                                                             <strong>{{ inst.instrument_name or inst.instrument_identifier }}</strong>
                                                             {% if inst.instrument_serial %}
                                                             <span class="text-muted">({{ inst.instrument_serial }})</span>
+                                                            {% endif %}
+                                                            {% if inst.sensors %}
+                                                            <ul class="list-unstyled small ms-3 mt-1 mb-0 text-muted">
+                                                                {% for sensor in inst.sensors %}
+                                                                <li class="mb-1">
+                                                                    {{ sensor.sensor_long_name or sensor.sensor_short_name or sensor.sensor_identifier }}
+                                                                    {% if sensor.sensor_serial %}
+                                                                    ({{ sensor.sensor_serial }})
+                                                                    {% endif %}
+                                                                </li>
+                                                                {% endfor %}
+                                                            </ul>
                                                             {% endif %}
                                                         </li>
                                                         {% endfor %}
@@ -214,10 +226,22 @@
                                                     {% endif %}
                                                     <ul class="list-unstyled small">
                                                         {% for inst in science_instruments %}
-                                                        <li class="mb-1">
+                                                        <li class="mb-2">
                                                             <strong>{{ inst.instrument_name or inst.instrument_identifier }}</strong>
                                                             {% if inst.instrument_serial %}
                                                             <span class="text-muted">({{ inst.instrument_serial }})</span>
+                                                            {% endif %}
+                                                            {% if inst.sensors %}
+                                                            <ul class="list-unstyled small ms-3 mt-1 mb-0 text-muted">
+                                                                {% for sensor in inst.sensors %}
+                                                                <li class="mb-1">
+                                                                    {{ sensor.sensor_long_name or sensor.sensor_short_name or sensor.sensor_identifier }}
+                                                                    {% if sensor.sensor_serial %}
+                                                                    ({{ sensor.sensor_serial }})
+                                                                    {% endif %}
+                                                                </li>
+                                                                {% endfor %}
+                                                            </ul>
                                                             {% endif %}
                                                         </li>
                                                         {% endfor %}
@@ -230,10 +254,22 @@
                                                     <h6 class="mb-2">Platform Direct Instruments</h6>
                                                     <ul class="list-unstyled small">
                                                         {% for inst in platform_instruments %}
-                                                        <li class="mb-1">
+                                                        <li class="mb-2">
                                                             <strong>{{ inst.instrument_name or inst.instrument_identifier }}</strong>
                                                             {% if inst.instrument_serial %}
                                                             <span class="text-muted">({{ inst.instrument_serial }})</span>
+                                                            {% endif %}
+                                                            {% if inst.sensors %}
+                                                            <ul class="list-unstyled small ms-3 mt-1 mb-0 text-muted">
+                                                                {% for sensor in inst.sensors %}
+                                                                <li class="mb-1">
+                                                                    {{ sensor.sensor_long_name or sensor.sensor_short_name or sensor.sensor_identifier }}
+                                                                    {% if sensor.sensor_serial %}
+                                                                    ({{ sensor.sensor_serial }})
+                                                                    {% endif %}
+                                                                </li>
+                                                                {% endfor %}
+                                                            </ul>
                                                             {% endif %}
                                                         </li>
                                                         {% endfor %}

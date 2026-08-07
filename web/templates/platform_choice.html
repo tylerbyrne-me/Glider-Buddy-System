@@ -12,7 +12,7 @@
         {% if 'wave_glider' in allowed %}
         <div class="col-12 col-md-5">
             <a href="/wave-glider/home" class="text-decoration-none">
-                <div class="card h-100 shadow-sm border-primary">
+                <div class="card h-100 shadow-sm platform-choice-card">
                     <div class="card-body text-center py-5">
                         <i class="fas fa-water fa-3x text-primary mb-3"></i>
                         <h4 class="card-title">{{ labels['wave_glider'] | default('Wave Glider') }}</h4>
@@ -25,9 +25,9 @@
         {% if 'slocum' in allowed and feature_enabled('slocum_platform') %}
         <div class="col-12 col-md-5">
             <a href="/slocum/home" class="text-decoration-none">
-                <div class="card h-100 shadow-sm border-secondary">
+                <div class="card h-100 shadow-sm platform-choice-card">
                     <div class="card-body text-center py-5">
-                        <i class="fas fa-map-marked-alt fa-3x text-secondary mb-3"></i>
+                        <i class="fas fa-map-marked-alt fa-3x text-primary mb-3"></i>
                         <h4 class="card-title">{{ labels['slocum'] | default('Slocum') }}</h4>
                         <p class="card-text text-muted">Slocum datasets, map, and glider data.</p>
                     </div>

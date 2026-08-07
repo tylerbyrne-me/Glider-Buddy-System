@@ -7,6 +7,7 @@
 import { checkAuth, getUserProfile, isUserAdmin } from '/static/js/auth.js';
 import { apiRequest, showToast, fetchWithAuth } from '/static/js/api.js';
 import { formatUtcDateTime } from '/static/js/datetime_utils.js';
+import { renderSensorTrackerInstrumentColumns } from '/static/js/sensor_tracker_instruments.js';
 
 document.addEventListener('DOMContentLoaded', async () => {
     if (!await checkAuth()) return;
@@ -22,7 +23,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const missionSpinner = document.getElementById('missionSpinner');
     const parsedIdentity = document.getElementById('parsedIdentity');
     const overviewFormContainer = document.getElementById('overviewFormContainer');
+    const overviewEmptyState = document.getElementById('overviewEmptyState');
     const editingMissionTitle = document.getElementById('editingMissionTitle');
+
+    function setOverviewVisibility(isVisible) {
+        if (overviewFormContainer) {
+            overviewFormContainer.style.display = isVisible ? 'block' : 'none';
+        }
+        if (overviewEmptyState) {
+            overviewEmptyState.classList.toggle('d-none', isVisible);
+        }
+    }
 
     // --- Sensor Tracker ---
     const stMissionCode = document.getElementById('stMissionCode');
@@ -100,36 +111,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const formatTimestamp = (value) => (value ? formatUtcDateTime(value) : '-');
 
     // --- Sensor Tracker rendering (mirrors WG stTitle/stStart/... layout) ---
-    function renderInstrumentGroup(items, containerId, listId, serialId) {
-        const container = document.getElementById(containerId);
-        const list = document.getElementById(listId);
-        const serialEl = serialId ? document.getElementById(serialId) : null;
-        if (!items.length) {
-            container.style.display = 'none';
-            return false;
-        }
-        if (serialEl) {
-            const loggerSerial = items[0].data_logger_serial;
-            if (loggerSerial) {
-                serialEl.textContent = `Serial: ${loggerSerial}`;
-                serialEl.style.display = 'block';
-            } else {
-                serialEl.style.display = 'none';
-            }
-        }
-        list.innerHTML = '';
-        items.forEach(inst => {
-            const li = document.createElement('li');
-            li.className = 'mb-1';
-            const name = inst.instrument_name || inst.instrument_long_name || inst.instrument_identifier;
-            const serial = inst.instrument_serial ? ` (${inst.instrument_serial})` : '';
-            li.innerHTML = `<strong>${escapeHtml(name)}</strong>${escapeHtml(serial)}`;
-            list.appendChild(li);
-        });
-        container.style.display = 'block';
-        return true;
-    }
-
     function renderSensorTracker(deployment, instruments) {
         if (!deployment) {
             sensorTrackerMetadataContainer.style.display = 'none';
@@ -161,21 +142,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         document.getElementById('stDescription').textContent = deployment.deployment_comment || '-';
 
-        const allInstruments = instruments || [];
-        const hasFlight = renderInstrumentGroup(
-            allInstruments.filter(i => i.data_logger_type === 'flight'),
-            'stFlightInstrumentsContainer', 'stFlightInstruments', 'stFlightComputerSerial'
-        );
-        const hasScience = renderInstrumentGroup(
-            allInstruments.filter(i => i.data_logger_type === 'science'),
-            'stScienceInstrumentsContainer', 'stScienceInstruments', 'stScienceComputerSerial'
-        );
-        const hasPlatform = renderInstrumentGroup(
-            allInstruments.filter(i => i.is_platform_direct),
-            'stPlatformInstrumentsContainer', 'stPlatformInstruments', null
-        );
-        document.getElementById('stInstrumentsContainer').style.display =
-            (hasFlight || hasScience || hasPlatform) ? 'flex' : 'none';
+        renderSensorTrackerInstrumentColumns(instruments || [], {
+            prefix: 'st',
+            wrapId: 'stInstrumentsContainer',
+        });
 
         sensorTrackerMetadataContainer.style.display = 'block';
     }
@@ -487,7 +457,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             editingMissionTitle.textContent = `Editing Overview for: ${datasetId}`;
             renderSensorTracker(info.sensor_tracker_deployment, info.sensor_tracker_instruments);
             renderBriefing(info);
-            overviewFormContainer.style.display = 'block';
+            setOverviewVisibility(true);
             reportResult.style.display = 'none';
             reportStatus.innerHTML = '';
             if (cacheInspectorStatus) {

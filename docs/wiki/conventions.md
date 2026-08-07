@@ -59,6 +59,21 @@ Core → Routers → App
 - Do not commit secrets (`.env`, credentials).
 - Always-apply Cursor rules live under [`.cursor/rules/`](../../.cursor/rules/) as `.mdc` files.
 
+## Theme tokens
+
+Light/dark themes are CSS custom properties on `<html data-theme="...">` (also `data-bs-theme` for Bootstrap). Source of truth: [`web/static/css/themes.css`](../../web/static/css/themes.css).
+
+| Tier | Examples | Role |
+|------|----------|------|
+| Semantic `--app-*` | `--app-text`, `--app-bg`, `--app-card-border` | Preferred for custom CSS |
+| Legacy aliases | `--text`, `--card-border` | Kept for existing `custom.css` |
+| Bootstrap bridges | `--bs-card-bg`, `--bs-body-bg-rgb`, `--bs-border-color` | Keep Bootstrap components themed |
+| Comfort tokens | `--app-radius-md`, `--app-shadow-elevated`, `--app-alert-info-*`, `--app-map-frame-bg` | Shared components / maps |
+
+Shared UI classes live in [`web/static/css/custom.css`](../../web/static/css/custom.css): `.gbs-card`, `.gbs-hint`, `.gbs-empty-state`, `.platform-choice-card`. Page-specific stylesheets: [`web/static/css/pages/login.css`](../../web/static/css/pages/login.css), [`web/static/css/pages/admin.css`](../../web/static/css/pages/admin.css). Leaflet base tiles switch with theme via [`web/static/js/map_tiles.js`](../../web/static/js/map_tiles.js) (OSM light / CARTO Dark Matter).
+
+Theme preference is still client-only (`localStorage` + banner/login `#themeSwitch` in [`auth.js`](../../web/static/js/auth.js)); per-user DB prefs are a later phase.
+
 ## Patterns to follow
 
 - Data loading through the data service layer (see CODE_STANDARDS).

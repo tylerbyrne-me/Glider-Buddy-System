@@ -1,0 +1,10 @@
+{# Shared empty-state panel.
+   Requires: empty_id, empty_icon, empty_title, empty_message
+   Optional: empty_hidden (truthy to start hidden) #}
+<div id="{{ empty_id }}"
+     class="gbs-empty-state{% if empty_hidden %} d-none{% endif %}"
+     role="status">
+  <i class="fas {{ empty_icon }} gbs-empty-state-icon" aria-hidden="true"></i>
+  <h5>{{ empty_title }}</h5>
+  <p class="text-muted">{{ empty_message }}</p>
+</div>

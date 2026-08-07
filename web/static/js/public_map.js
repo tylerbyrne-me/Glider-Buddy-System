@@ -5,6 +5,13 @@
  * Uses plain fetch — not apiRequest — so 401s never redirect away from login.
  */
 
+import {
+    createThemedTileLayer,
+    observeThemeChange,
+    swapMapTileLayer,
+    isDarkTheme,
+} from '/static/js/map_tiles.js';
+
 const TRACK_COLORS = [
     '#3388ff', '#dc143c', '#008b8b', '#ff8c00',
     '#9370db', '#2e8b57', '#ff69b4', '#00ced1',
@@ -16,10 +23,10 @@ let publicMap = null;
 let trackLayers = [];
 let autoRefreshTimer = null;
 let isLoading = false;
+const publicMapTileHolder = { current: null };
 
 function mapMarkerThemeColors() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-        || document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    const isDark = isDarkTheme();
     return {
         positionRing: isDark ? '#f8f9fa' : '#ffffff',
         waypointFill: isDark ? '#ced4da' : '#f8f9fa',
@@ -150,6 +157,21 @@ function plotMission(mission, colorIndex) {
     trackLayers.push({ polyline, position, waypoint });
 }
 
+function restyleTrackMarkersForTheme() {
+    const theme = mapMarkerThemeColors();
+    for (const track of trackLayers) {
+        if (track.position) {
+            track.position.setStyle({ color: theme.positionRing });
+        }
+        if (track.waypoint) {
+            track.waypoint.setStyle({
+                color: theme.waypointBorder,
+                fillColor: theme.waypointFill,
+            });
+        }
+    }
+}
+
 function fitToTracks() {
     if (!publicMap || !trackLayers.length) return;
     const group = L.featureGroup(trackLayers.map((t) => t.polyline).filter(Boolean));
@@ -272,10 +294,12 @@ function initializePublicMap() {
     }).setView([44.6, -63.5], 6);
     L.control.zoom({ position: 'bottomright' }).addTo(publicMap);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 18,
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(publicMap);
+    publicMapTileHolder.current = createThemedTileLayer();
+    publicMapTileHolder.current.addTo(publicMap);
+    observeThemeChange(() => {
+        swapMapTileLayer(publicMap, publicMapTileHolder);
+        restyleTrackMarkersForTheme();
+    });
 
     const refreshBtn = document.getElementById('publicMapRefreshBtn');
     if (refreshBtn) {

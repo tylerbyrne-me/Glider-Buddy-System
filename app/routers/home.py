@@ -3,6 +3,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Optional, Dict, List
 import json
 from ..core import models, utils
+from ..core.mission_instruments import load_mission_instruments_with_sensors, mission_id_variants
 from ..core.auth import (
     get_current_active_user,
     get_optional_current_user,
@@ -195,19 +196,13 @@ async def _get_wave_glider_home_response(
             )
         ).first()
         
-        # Load instruments if we have a deployment
-        # Instruments are stored with the full mission_id (e.g., "1070-m216")
         instruments = []
         if sensor_tracker_deployment:
-            instruments = session.exec(
-                select(models.MissionInstrument).where(
-                    or_(
-                        models.MissionInstrument.mission_id == mission_id,
-                        models.MissionInstrument.mission_id == mission_base
-                    )
-                )
-            ).all()
-        
+            instruments = load_mission_instruments_with_sensors(
+                session, mission_id_variants(mission_id, mission_base)
+            )
+
+
         media_stmt = (
             select(models.MissionMedia)
             .where(models.MissionMedia.mission_id == mission_id)

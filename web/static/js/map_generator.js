@@ -8,6 +8,12 @@
 import { apiRequest, showToast } from '/static/js/api.js';
 import { formatUtcDate } from '/static/js/datetime_utils.js';
 import {
+    createThemedTileLayer,
+    observeThemeChange,
+    swapMapTileLayer,
+    isDarkTheme,
+} from '/static/js/map_tiles.js';
+import {
     bindWindOverlayContext,
     initWindOverlay,
     refreshWindLayerIfActive,
@@ -62,19 +68,34 @@ function notifyWindOverlayTracksChanged() {
 let missionMap = null;
 let missionTracks = [];
 let slocumTracks = [];
+const missionMapTileHolder = { current: null };
 
 /** Slocum track color palette (teal/green for visual distinction from Wave Glider blue/red) */
 const SLOCUM_COLORS = ['#008b8b', '#20b2aa', '#2e8b57', '#3cb371', '#48d1cc', '#5f9ea0', '#66cdaa', '#7fffd4'];
 
-/** Theme-aware marker chrome that stays visible on light OSM tiles. */
+/** Theme-aware marker chrome that stays visible on light OSM / dark CARTO tiles. */
 function mapMarkerThemeColors() {
-    const isDark = document.documentElement.getAttribute('data-theme') === 'dark'
-        || document.documentElement.getAttribute('data-bs-theme') === 'dark';
+    const isDark = isDarkTheme();
     return {
         positionRing: isDark ? '#f8f9fa' : '#ffffff',
         waypointFill: isDark ? '#ced4da' : '#f8f9fa',
         waypointBorder: isDark ? '#f8f9fa' : '#1a1a1a',
     };
+}
+
+function restyleMissionMapMarkersForTheme() {
+    const theme = mapMarkerThemeColors();
+    for (const track of [...missionTracks, ...slocumTracks]) {
+        if (track.positionLayer) {
+            track.positionLayer.setStyle({ color: theme.positionRing });
+        }
+        if (track.waypointLayer) {
+            track.waypointLayer.setStyle({
+                color: theme.waypointBorder,
+                fillColor: theme.waypointFill,
+            });
+        }
+    }
 }
 
 /**
@@ -207,11 +228,12 @@ function initializeMissionMap() {
         worldCopyJump: true
     });
 
-    // Add tile layer (OpenStreetMap)
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '© OpenStreetMap contributors',
-        maxZoom: 18
-    }).addTo(missionMap);
+    missionMapTileHolder.current = createThemedTileLayer();
+    missionMapTileHolder.current.addTo(missionMap);
+    observeThemeChange(() => {
+        swapMapTileLayer(missionMap, missionMapTileHolder);
+        restyleMissionMapMarkersForTheme();
+    });
 
     // Auto-load primary-platform tracks from data attributes.
     // Cross-platform overlays (e.g. WG missions on Slocum home) stay opt-in via checkboxes.

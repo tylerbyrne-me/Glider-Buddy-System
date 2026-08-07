@@ -41,6 +41,12 @@
   --app-shadow-soft: rgba(0, 0, 0, 0.08);
   --app-shadow-medium: rgba(0, 0, 0, 0.15);
   --app-shadow-inset: rgba(0, 0, 0, 0.075);
+  --app-shadow-elevated: 0 0.125rem 0.35rem rgba(0, 0, 0, 0.08), 0 0.35rem 0.85rem rgba(0, 0, 0, 0.06);
+  --app-radius-md: 0.5rem;
+  --app-map-frame-bg: #dfe6ea;
+  --app-alert-info-bg: rgba(13, 202, 240, 0.12);
+  --app-alert-info-border: rgba(13, 202, 240, 0.35);
+  --app-alert-info-text: var(--app-text);
 
   /* Legacy aliases used throughout custom.css */
   --text: var(--app-text);
@@ -69,10 +75,16 @@
   /* Bootstrap bridges */
   --bs-body-bg: var(--app-bg);
   --bs-body-color: var(--app-text);
+  --bs-body-bg-rgb: 240, 240, 244;
   --bs-primary: var(--app-primary);
   --bs-secondary: var(--app-secondary);
   --bs-primary-dark: rgb(14, 40, 79);
   --bs-secondary-dark: #5c636a;
+  --bs-card-bg: #ffffff;
+  --bs-card-color: var(--app-text);
+  --bs-border-color: var(--app-card-border);
+  --bs-tertiary-bg: var(--app-surface-muted);
+  --bs-secondary-bg: var(--app-surface-muted);
 }
 
 /* Season Statistics card: follow light/dark theme */
@@ -140,6 +152,12 @@
   --app-shadow-soft: rgba(0, 0, 0, 0.35);
   --app-shadow-medium: rgba(0, 0, 0, 0.5);
   --app-shadow-inset: rgba(0, 0, 0, 0.35);
+  --app-shadow-elevated: 0 0.15rem 0.45rem rgba(0, 0, 0, 0.45), 0 0.45rem 1.1rem rgba(0, 0, 0, 0.35);
+  --app-radius-md: 0.5rem;
+  --app-map-frame-bg: #1a1f24;
+  --app-alert-info-bg: rgba(13, 202, 240, 0.15);
+  --app-alert-info-border: rgba(13, 202, 240, 0.35);
+  --app-alert-info-text: var(--app-text);
 
   /* Legacy aliases used throughout custom.css */
   --text: var(--app-text);
@@ -168,8 +186,14 @@
   /* Bootstrap bridges */
   --bs-body-bg: var(--app-bg);
   --bs-body-color: var(--app-text);
+  --bs-body-bg-rgb: 11, 15, 20;
   --bs-primary: var(--app-primary);
   --bs-secondary: #6c757d;
   --bs-primary-dark: rgb(14, 40, 79);
   --bs-secondary-dark: #5c636a;
+  --bs-card-bg: #1a1f24;
+  --bs-card-color: var(--app-text);
+  --bs-border-color: var(--app-card-border);
+  --bs-tertiary-bg: var(--app-surface-muted);
+  --bs-secondary-bg: var(--app-surface-muted);
 }

@@ -672,13 +672,51 @@ class MissionMediaRead(BaseModel):
         from_attributes = True
 
 
+class MissionSensorRead(BaseModel):
+    """Sensor nested under a Sensor Tracker instrument (for UI / APIs)."""
+    id: int
+    sensor_identifier: str
+    sensor_short_name: Optional[str] = None
+    sensor_long_name: Optional[str] = None
+    sensor_manufacturer: Optional[str] = None
+    sensor_serial: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MissionInstrumentRead(BaseModel):
+    """Instrument with nested sensors for mission briefing / dashboard UIs."""
+    id: int
+    mission_id: str
+    sensor_tracker_instrument_id: Optional[int] = None
+    instrument_identifier: str
+    instrument_short_name: Optional[str] = None
+    instrument_long_name: Optional[str] = None
+    instrument_manufacturer: Optional[str] = None
+    instrument_serial: Optional[str] = None
+    instrument_name: Optional[str] = None
+    data_logger_type: Optional[str] = None
+    data_logger_id: Optional[int] = None
+    data_logger_name: Optional[str] = None
+    data_logger_identifier: Optional[str] = None
+    data_logger_serial: Optional[str] = None
+    is_platform_direct: bool = False
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    sensors: List[MissionSensorRead] = []
+
+    class Config:
+        from_attributes = True
+
+
 class MissionInfoResponse(BaseModel):
     """Response model for mission info."""
     overview: Optional[MissionOverview] = None
     goals: List[MissionGoal] = []
     notes: List[MissionNote] = []
     sensor_tracker_deployment: Optional["SensorTrackerDeployment"] = None  # Sensor Tracker metadata
-    sensor_tracker_instruments: List["MissionInstrument"] = []  # Sensor Tracker instruments
+    sensor_tracker_instruments: List[MissionInstrumentRead] = []  # Instruments + nested sensors
     media: List["MissionMediaRead"] = []
 
 
@@ -1217,4 +1255,4 @@ class SlocumDeploymentInfoResponse(BaseModel):
     media: List[SlocumDeploymentMediaRead] = []
     parsed_dataset: Optional[SlocumParsedDataset] = None
     sensor_tracker_deployment: Optional[SensorTrackerDeployment] = None
-    sensor_tracker_instruments: List[MissionInstrument] = []
+    sensor_tracker_instruments: List[MissionInstrumentRead] = []
