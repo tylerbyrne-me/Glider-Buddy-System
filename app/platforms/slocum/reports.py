@@ -780,6 +780,15 @@ async def create_and_save_slocum_weekly_report(
         start_date=start_date,
         end_date=end_date,
     )
+    if isinstance(dmon_asc_payload, dict):
+        from app.platforms.slocum.dmon_asc_thruster import enrich_dmon_asc_with_thruster
+
+        dash_for_thruster = data_frames.get("dashboard")
+        if not isinstance(dash_for_thruster, pd.DataFrame):
+            dash_for_thruster = pd.DataFrame()
+        dmon_asc_payload = enrich_dmon_asc_with_thruster(
+            dmon_asc_payload, dash_for_thruster
+        )
 
     mission_key = resolved_slocum_mission_key(dataset_id)
     safe_id = mission_key.replace("/", "_").replace("\\", "_")

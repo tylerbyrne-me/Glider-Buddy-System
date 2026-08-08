@@ -20,6 +20,7 @@ from ..core.auth import get_current_active_user, get_current_admin_user, require
 from ..core import models
 from ..core.geo.map_utils import prepare_track_points, generate_kml_from_track_points, get_track_bounds
 from ..core.geo import weather_map_cache, iridium_tle_cache
+from ..core.geo import map_layers as map_layers_service
 from ..core.data.processors import preprocess_telemetry_df
 from ..core.data.data_service import get_data_service
 from app.platforms.slocum.cache_service import (
@@ -28,7 +29,7 @@ from app.platforms.slocum.cache_service import (
     parse_slocum_time_window,
     slice_processed_df,
 )
-from app.platforms.slocum.mirror_service import dashboard_df_to_track_df
+from app.platforms.slocum.mirror_service import dashboard_df_to_track_df, load_mirror_df
 from app.platforms.slocum.checklist_autofill import latest_valid_waypoint
 from app.platforms.slocum.overage_cache import OverageRangeError
 from ..core.infra.feature_toggles import is_feature_enabled
@@ -41,6 +42,58 @@ router = APIRouter(tags=["Map"])
 # Slocum map reads from parquet mirror (no live ERDDAP on request path)
 SLOCUM_MAP_REQUEST_TIMEOUT = 35
 UTC_ISO_INPUT_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?Z$")
+
+
+def _slocum_track_from_mirror_df(
+    dataset_id: str,
+    dashboard_df: pd.DataFrame,
+    *,
+    hours_back: int,
+    use_date_range: bool,
+    time_start_str: Optional[str],
+    time_end_str: Optional[str],
+    max_points: int,
+    source_label: str,
+    current_waypoint: Optional[dict] = None,
+) -> dict:
+    """Build map track payload from an already-loaded dashboard DataFrame."""
+    if dashboard_df is None or dashboard_df.empty:
+        return {
+            "track_points": [],
+            "point_count": 0,
+            "bounds": None,
+            "source": source_label,
+            "current_waypoint": current_waypoint,
+            "error": "No data available",
+        }
+    sliced = slice_processed_df(
+        dashboard_df,
+        hours_back=hours_back,
+        use_date_range=use_date_range,
+        time_start_str=time_start_str,
+        time_end_str=time_end_str,
+    )
+    # Stale mirror: display window may end after mirror_max — use full frame as fallback.
+    processed_df = dashboard_df_to_track_df(sliced if not sliced.empty else dashboard_df)
+    if processed_df.empty:
+        return {
+            "track_points": [],
+            "point_count": 0,
+            "bounds": None,
+            "source": source_label,
+            "current_waypoint": current_waypoint,
+            "error": "No valid track points",
+        }
+    track_points = prepare_track_points(processed_df, max_points=max_points)
+    bounds = get_track_bounds(track_points)
+    return {
+        "track_points": track_points,
+        "point_count": len(track_points),
+        "bounds": bounds,
+        "source": source_label,
+        "current_waypoint": current_waypoint,
+        "error": None,
+    }
 
 
 def _parse_iso_datetime(value: str, field_name: str) -> datetime:
@@ -197,8 +250,37 @@ async def _prepare_slocum_track_data(
                 "current_waypoint": None,
                 "error": str(err),
             }
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Slocum mirror/overage read timed out for dataset %s; falling back to on-disk mirror",
+                dataset_id,
+            )
+            mirror_df = load_mirror_df(dataset_id, "dashboard")
+            return _slocum_track_from_mirror_df(
+                dataset_id,
+                mirror_df,
+                hours_back=hours_back,
+                use_date_range=use_date_range,
+                time_start_str=time_start_str,
+                time_end_str=time_end_str,
+                max_points=max_points,
+                source_label=f"{source_label} (timeout fallback)",
+            )
+
         if dashboard_df is None or dashboard_df.empty:
             logger.warning(f"No Slocum mirror/overage data for dataset {dataset_id}")
+            mirror_df = load_mirror_df(dataset_id, "dashboard")
+            if not mirror_df.empty:
+                return _slocum_track_from_mirror_df(
+                    dataset_id,
+                    mirror_df,
+                    hours_back=hours_back,
+                    use_date_range=use_date_range,
+                    time_start_str=time_start_str,
+                    time_end_str=time_end_str,
+                    max_points=max_points,
+                    source_label=f"{source_label} (empty-result fallback)",
+                )
             return {
                 "track_points": [],
                 "point_count": 0,
@@ -208,26 +290,6 @@ async def _prepare_slocum_track_data(
                 "error": "No data available",
             }
 
-        sliced = slice_processed_df(
-            dashboard_df,
-            hours_back=hours_back,
-            use_date_range=use_date_range,
-            time_start_str=time_start_str,
-            time_end_str=time_end_str,
-        )
-        processed_df = dashboard_df_to_track_df(sliced if not sliced.empty else dashboard_df)
-        if processed_df.empty:
-            logger.warning(f"No valid Slocum track points after preprocessing for {dataset_id}")
-            return {
-                "track_points": [],
-                "point_count": 0,
-                "bounds": None,
-                "source": source_label,
-                "current_waypoint": None,
-                "error": "No valid track points",
-            }
-        track_points = prepare_track_points(processed_df, max_points=max_points)
-        bounds = get_track_bounds(track_points)
         current_waypoint = None
         try:
             checklist_df = await asyncio.wait_for(
@@ -260,24 +322,48 @@ async def _prepare_slocum_track_data(
                 dataset_id,
                 wpt_err,
             )
-        return {
-            "track_points": track_points,
-            "point_count": len(track_points),
-            "bounds": bounds,
-            "source": source_label,
-            "current_waypoint": current_waypoint,
-            "error": None,
-        }
+        return _slocum_track_from_mirror_df(
+            dataset_id,
+            dashboard_df,
+            hours_back=hours_back,
+            use_date_range=use_date_range,
+            time_start_str=time_start_str,
+            time_end_str=time_end_str,
+            max_points=max_points,
+            source_label=source_label,
+            current_waypoint=current_waypoint,
+        )
     except asyncio.TimeoutError:
         logger.warning(f"Slocum mirror read timed out for dataset {dataset_id}")
-        return {
-            "track_points": [],
-            "point_count": 0,
-            "bounds": None,
-            "source": source_label,
-            "current_waypoint": None,
-            "error": "Slocum data did not load in time. Try again later.",
-        }
+        try:
+            mirror_df = load_mirror_df(dataset_id, "dashboard")
+            use_date_range = bool(time_start and time_end)
+            if use_date_range:
+                time_start_str, time_end_str = time_start, time_end
+            else:
+                time_start_str, time_end_str, _ = parse_slocum_time_window(
+                    dataset_id, hours_back, is_historical, None, None
+                )
+            return _slocum_track_from_mirror_df(
+                dataset_id,
+                mirror_df,
+                hours_back=hours_back,
+                use_date_range=use_date_range,
+                time_start_str=time_start_str,
+                time_end_str=time_end_str,
+                max_points=max_points,
+                source_label=f"{source_label} (timeout fallback)",
+            )
+        except Exception as fallback_err:
+            logger.warning("Slocum timeout mirror fallback failed for %s: %s", dataset_id, fallback_err)
+            return {
+                "track_points": [],
+                "point_count": 0,
+                "bounds": None,
+                "source": source_label,
+                "current_waypoint": None,
+                "error": "Slocum data did not load in time. Try again later.",
+            }
     except Exception as e:
         logger.error(f"Error preparing Slocum track for {dataset_id}: {e}", exc_info=True)
         return {
@@ -727,6 +813,77 @@ def _require_weather_map_layers() -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Weather map layers are disabled (feature_toggles.weather_map_layers).",
         )
+
+
+def _require_map_vector_layers() -> None:
+    if not is_feature_enabled("map_vector_layers"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Vector map layers are disabled (feature_toggles.map_vector_layers).",
+        )
+
+
+@router.get("/api/map/layers")
+async def list_map_layers(
+    platform: Optional[str] = Query(
+        None,
+        description="Optional platform filter (empty platforms in manifest = all).",
+    ),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Return static vector layer catalog (id, name, style, bounds — no geometry)."""
+    _require_map_vector_layers()
+    try:
+        catalog = map_layers_service.get_layer_catalog(platform=platform)
+    except Exception as exc:
+        logger.error("Failed to load map layer catalog: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to load map layer catalog.",
+        ) from exc
+    return JSONResponse(content={"layers": catalog})
+
+
+@router.get("/api/map/layers/{layer_id}")
+async def get_map_layer_geojson(
+    layer_id: str,
+    request: Request,
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Return published GeoJSON for a catalog layer (ETag + short cache)."""
+    _require_map_vector_layers()
+    try:
+        body, etag, _mtime = map_layers_service.read_layer_geojson(layer_id)
+    except KeyError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Unknown map layer: {layer_id}",
+        )
+    except FileNotFoundError as exc:
+        logger.error("Map layer GeoJSON missing for %s: %s", layer_id, exc)
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Map layer file missing: {layer_id}",
+        ) from exc
+    except Exception as exc:
+        logger.error("Failed to read map layer %s: %s", layer_id, exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to load map layer.",
+        ) from exc
+
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match.strip() == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+
+    return Response(
+        content=body,
+        media_type="application/geo+json",
+        headers={
+            "ETag": etag,
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
 
 
 @router.get("/api/map/weather/manifest")

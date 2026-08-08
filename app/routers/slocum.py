@@ -374,10 +374,192 @@ def _merge_overage_metadata(
         "cache_expires_at",
         "cache_key",
         "bundle",
+        "stale",
+        "fallback_error",
+        "mirror_max",
     ):
         if key in overage_meta:
             out[key] = overage_meta[key]
     return out
+
+
+_DERIVED_CHART_LOOKBACK_HOURS = 36  # Rolling coulomb rate needs samples before the display window.
+_MIRROR_RETENTION_HOURS = 72
+
+
+def _mirror_max_iso(dataset_id: str, bundle: str = "dashboard") -> Optional[str]:
+    """Latest Timestamp in the on-disk mirror, or None if empty."""
+    try:
+        df = load_mirror_df(dataset_id, bundle)
+    except Exception:
+        return None
+    if df is None or df.empty or "Timestamp" not in df.columns:
+        return None
+    mirror_max = pd.to_datetime(df["Timestamp"], utc=True).max()
+    if pd.isna(mirror_max):
+        return None
+    return pd.Timestamp(mirror_max).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _compute_load_hours_back(
+    hours_back: int,
+    *,
+    has_derived: bool = False,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+) -> int:
+    """
+    Hours to fetch from mirror/overage (may exceed the display window).
+
+    For hours_back mode, widen so stale mirror tails and derived lookback overlap.
+    Date-range mode keeps ``hours_back`` as a span hint; callers shift fetch start instead.
+    """
+    load = hours_back
+    if start_date and end_date:
+        if has_derived:
+            load = max(load, hours_back + _DERIVED_CHART_LOOKBACK_HOURS)
+        return min(_MIRROR_RETENTION_HOURS, load) if has_derived else load
+    # Widen load so stale mirror tails overlap the display window (24h vs 48h gap bug).
+    load = max(load, min(_MIRROR_RETENTION_HOURS, hours_back + 24))
+    if has_derived:
+        # Prefer full mirror retention so a stale-anchored display still has lookback rows.
+        load = max(load, hours_back + _DERIVED_CHART_LOOKBACK_HOURS, _MIRROR_RETENTION_HOURS)
+    return min(_MIRROR_RETENTION_HOURS, load) if has_derived else load
+
+
+def _widen_fetch_start_iso(time_start_str: str, lookback_hours: int) -> str:
+    """Shift a display start ISO timestamp backward for derived-series lookback fetch."""
+    start = datetime.fromisoformat(time_start_str.replace("Z", "+00:00"))
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=timezone.utc)
+    widened = start.astimezone(timezone.utc) - timedelta(hours=lookback_hours)
+    return widened.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _anchored_display_slice(
+    full_df: pd.DataFrame,
+    *,
+    hours_back: int,
+    time_start_str: Optional[str],
+    time_end_str: Optional[str],
+) -> tuple[pd.DataFrame, Optional[str], Optional[str]]:
+    """
+    Slice ``full_df`` to the display window; if that is empty but data exists,
+    re-anchor the window to the data max timestamp (stale mirror tail).
+
+    Also re-anchors when the mirror ends before the requested end (stale), even if
+    a thin partial overlap exists — otherwise a 40h wall-clock window that only
+    clips the last ~30m of a stale mirror would hide the rest of the cache.
+
+    Returns ``(display_df, effective_start_iso, effective_end_iso)`` so derived
+    series can be filtered to the same window charts use.
+    """
+    display_df = slice_processed_df(
+        full_df,
+        hours_back=hours_back,
+        use_date_range=True,
+        time_start_str=time_start_str,
+        time_end_str=time_end_str,
+    )
+    if full_df.empty or "Timestamp" not in full_df.columns:
+        return display_df, time_start_str, time_end_str
+    data_max = pd.to_datetime(full_df["Timestamp"], utc=True).max()
+    if pd.isna(data_max):
+        return display_df, time_start_str, time_end_str
+
+    should_anchor = display_df.empty
+    if time_end_str:
+        end_dt = pd.to_datetime(time_end_str, utc=True)
+        # Mirror tail behind requested end → treat as stale and show last N hours of data.
+        if data_max < end_dt - pd.Timedelta(minutes=1):
+            should_anchor = True
+
+    if not should_anchor:
+        return display_df, time_start_str, time_end_str
+
+    anchored_end = data_max
+    anchored_start = anchored_end - pd.Timedelta(hours=hours_back)
+    start_iso = anchored_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+    end_iso = anchored_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+    display_df = slice_processed_df(
+        full_df,
+        hours_back=hours_back,
+        use_date_range=True,
+        time_start_str=start_iso,
+        time_end_str=end_iso,
+    )
+    return display_df, start_iso, end_iso
+
+
+def _resolve_fetch_window(
+    dataset_id: str,
+    *,
+    hours_back: int,
+    is_historical: bool,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    has_derived: bool = False,
+) -> tuple[str, str, str, str, int]:
+    """
+    Return ``(display_start, display_end, fetch_start, fetch_end, fetch_hours_back)``.
+
+    Display bounds stay on the user-selected window; fetch may extend earlier for
+    derived lookback / stale-tail overlap. When the on-disk mirror is behind
+    wall-clock ``display_end``, fetch is anchored to ``mirror_max`` so lookback
+    rows are taken from cached history rather than an empty future window.
+    """
+    display_start, display_end, _ = _parse_slocum_time_window(
+        dataset_id, hours_back, is_historical, start_date, end_date
+    )
+    if not display_start or not display_end:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Could not resolve a bounded time window for this request.",
+        )
+    load_hours = _compute_load_hours_back(
+        hours_back,
+        has_derived=has_derived,
+        start_date=start_date,
+        end_date=end_date,
+    )
+
+    mirror_max = _mirror_max_iso(dataset_id, "dashboard")
+    display_end_dt = datetime.fromisoformat(display_end.replace("Z", "+00:00"))
+    if display_end_dt.tzinfo is None:
+        display_end_dt = display_end_dt.replace(tzinfo=timezone.utc)
+    mirror_is_stale = False
+    if mirror_max:
+        mirror_max_dt = datetime.fromisoformat(mirror_max.replace("Z", "+00:00"))
+        if mirror_max_dt.tzinfo is None:
+            mirror_max_dt = mirror_max_dt.replace(tzinfo=timezone.utc)
+        mirror_is_stale = mirror_max_dt < display_end_dt - timedelta(minutes=1)
+
+    if start_date and end_date:
+        if mirror_is_stale and mirror_max:
+            fetch_end = mirror_max
+            fetch_start = _widen_fetch_start_iso(
+                mirror_max,
+                load_hours if has_derived else hours_back,
+            )
+        else:
+            fetch_end = display_end
+            if has_derived:
+                lookback = min(_DERIVED_CHART_LOOKBACK_HOURS, _MIRROR_RETENTION_HOURS)
+                fetch_start = _widen_fetch_start_iso(display_start, lookback)
+            else:
+                fetch_start = display_start
+        return display_start, display_end, fetch_start, fetch_end, load_hours
+
+    if mirror_is_stale and mirror_max:
+        # Anchor fetch to mirror tail so stale interactive charts get lookback history.
+        fetch_end = mirror_max
+        fetch_start = _widen_fetch_start_iso(mirror_max, load_hours)
+        return display_start, display_end, fetch_start, fetch_end, load_hours
+
+    fetch_start, fetch_end, _ = _parse_slocum_time_window(
+        dataset_id, load_hours, is_historical, None, None
+    )
+    return display_start, display_end, fetch_start or display_start, fetch_end or display_end, load_hours
 
 
 async def _load_bundle_result(
@@ -388,18 +570,36 @@ async def _load_bundle_result(
     is_historical: bool,
     start_date: Optional[str],
     end_date: Optional[str],
+    fetch_hours_back: Optional[int] = None,
+    fetch_start_date: Optional[str] = None,
+    fetch_end_date: Optional[str] = None,
 ) -> OverageResult:
-    """Load one bundle via mirror/overage; raise HTTPException for range/validation errors."""
-    time_start_str, time_end_str, _use_date_range = _parse_slocum_time_window(
-        dataset_id, hours_back, is_historical, start_date, end_date
-    )
+    """
+    Load one bundle via mirror/overage; raise HTTPException for range/validation errors.
+
+    ``hours_back`` / ``start_date`` / ``end_date`` define the caller display window.
+    Optional ``fetch_*`` override the on-disk/ERDDAP fetch window (e.g. derived lookback).
+    """
+    if fetch_start_date and fetch_end_date:
+        time_start_str, time_end_str = fetch_start_date, fetch_end_date
+        load_hours = fetch_hours_back if fetch_hours_back is not None else hours_back
+    elif fetch_hours_back is not None and fetch_hours_back != hours_back and not (start_date and end_date):
+        time_start_str, time_end_str, _ = _parse_slocum_time_window(
+            dataset_id, fetch_hours_back, is_historical, None, None
+        )
+        load_hours = fetch_hours_back
+    else:
+        time_start_str, time_end_str, _ = _parse_slocum_time_window(
+            dataset_id, hours_back, is_historical, start_date, end_date
+        )
+        load_hours = hours_back
     try:
         result = await get_cached_or_fetch_bundle_df(
             dataset_id,
             bundle,
             time_start_str,
             time_end_str,
-            hours_back=hours_back,
+            hours_back=load_hours,
             is_historical=is_historical,
             context="interactive",
             return_metadata=True,
@@ -410,9 +610,6 @@ async def _load_bundle_result(
         df = result if isinstance(result, pd.DataFrame) else pd.DataFrame()
         return OverageResult(df=df if df is not None else pd.DataFrame(), metadata={"data_source": "mirror"})
     return result
-
-
-_DERIVED_CHART_LOOKBACK_HOURS = 36  # Rolling coulomb rate needs samples before the display window.
 
 
 def _utc_iso_z(series: pd.Series) -> pd.Series:
@@ -459,6 +656,15 @@ def _resample_series(
     return out_df.to_dict(orient="records")
 
 
+def _chart_df_for_variable(df: pd.DataFrame, variable: str, value_col: str) -> pd.DataFrame:
+    """Copy + filter water-depth sentinels/spikes so chart axes are not pulled below 0."""
+    if variable != "m_water_depth" or value_col not in df.columns:
+        return df
+    work = df.copy()
+    work[value_col] = processors.filter_valid_water_depth_m(work[value_col])
+    return work
+
+
 def _series_records_from_index(
     series: pd.Series,
 ) -> list[dict[str, Any]]:
@@ -480,8 +686,11 @@ def _derive_coulomb_amphr_daily(
     Rolling AmpHr/day consumption matching checklist ``compute_amphr_usage_rate``.
 
     At each output timestamp ``t``, find the nearest sample near ``t - 24h`` and
-    emit ``(v_now - v_prior) * (24 / hours_elapsed)``. Points without a lookback
-    sample in [12h, 36h] are null. Negative deltas (counter reset) are null.
+    emit ``(v_now - v_prior) * (24 / hours_elapsed)``. Preferred lookback is
+    [12h, 36h]. Shorter positive lags (≥6h) are still accepted and rate-normalized
+    the same way weekly report incomplete calendar days are — this fills the start
+    of a display window when the mirror has limited pre-window history.
+    Negative deltas (counter reset) are null.
     """
     from app.platforms.slocum.checklist_autofill import compute_amphr_usage_rate
 
@@ -514,7 +723,9 @@ def _derive_coulomb_amphr_daily(
     ts_values = series.index.to_numpy(dtype="datetime64[ns]")
     amp_values = series.to_numpy(dtype=float)
     lookback = np.timedelta64(24, "h")
-    min_lag = np.timedelta64(12, "h")
+    # Prefer ~24h lookback; allow ≥6h (rate-normalized) so stale/short mirrors
+    # still populate the start of the display window (report incomplete-day spirit).
+    min_lag = np.timedelta64(6, "h")
     max_lag = np.timedelta64(36, "h")
 
     rates: list[float] = []
@@ -673,13 +884,17 @@ async def get_slocum_sfmc_dmon_asc_files(
     """
     Cached SFMC ``from-glider`` ``*.asc`` listing for DMON sensor card / checklist.
 
-    Reads the SFMC snapshot only (no live SFMC HTTP).
+    Reads the SFMC snapshot only (no live SFMC HTTP). Enriches each file with
+    ``thruster_since_prev`` from the dashboard mirror over the interval since
+    the previous ``*.asc`` (when telemetry is available).
     """
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
 
     from ..core.sfmc_cache_service import get_cached_dmon_asc_files
+    from ..core.sfmc_transforms import DMON_ASC_WINDOW_HOURS
     from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
+    from app.platforms.slocum.dmon_asc_thruster import enrich_dmon_asc_with_thruster
 
     deployment = resolve_deployment_for_dataset(session, dataset_id)
     if deployment is None:
@@ -697,6 +912,28 @@ async def get_slocum_sfmc_dmon_asc_files(
     payload, fetched_at, fetch_error, configured = get_cached_dmon_asc_files(
         session, deployment.id
     )
+    if not isinstance(payload, dict):
+        payload = {}
+
+    resolved_id = resolve_slocum_dataset_id(dataset_id)
+    try:
+        dashboard_df = await get_cached_or_fetch_dashboard_df(
+            resolved_id,
+            None,
+            None,
+            hours_back=int(DMON_ASC_WINDOW_HOURS),
+            context="interactive",
+        )
+        if dashboard_df is None:
+            dashboard_df = pd.DataFrame()
+        payload = enrich_dmon_asc_with_thruster(payload, dashboard_df)
+    except Exception as err:
+        logger.debug(
+            "DMON ASC thruster enrich skipped for %s: %s",
+            resolved_id,
+            err,
+        )
+
     files = payload.get("files") if isinstance(payload.get("files"), list) else []
     return {
         "files": files,
@@ -1093,6 +1330,15 @@ async def get_slocum_profile_data(
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
 
+    display_start, display_end, fetch_start, fetch_end, load_hours = _resolve_fetch_window(
+        dataset_id,
+        hours_back=hours_back,
+        is_historical=is_historical,
+        start_date=start_date,
+        end_date=end_date,
+        has_derived=False,
+    )
+
     try:
         ctd_result, dashboard_result = await asyncio.gather(
             _load_bundle_result(
@@ -1102,6 +1348,9 @@ async def get_slocum_profile_data(
                 is_historical=is_historical,
                 start_date=start_date,
                 end_date=end_date,
+                fetch_hours_back=load_hours,
+                fetch_start_date=fetch_start,
+                fetch_end_date=fetch_end,
             ),
             _load_bundle_result(
                 dataset_id,
@@ -1110,6 +1359,9 @@ async def get_slocum_profile_data(
                 is_historical=is_historical,
                 start_date=start_date,
                 end_date=end_date,
+                fetch_hours_back=load_hours,
+                fetch_start_date=fetch_start,
+                fetch_end_date=fetch_end,
             ),
             return_exceptions=True,
         )
@@ -1136,10 +1388,22 @@ async def get_slocum_profile_data(
             dashboard_result,
         )
     else:
-        dash_df = dashboard_result.df if dashboard_result.df is not None else pd.DataFrame()
+        dash_full = dashboard_result.df if dashboard_result.df is not None else pd.DataFrame()
+        dash_df, _, _ = _anchored_display_slice(
+            dash_full,
+            hours_back=hours_back,
+            time_start_str=display_start,
+            time_end_str=display_end,
+        )
         depth_overlay = _build_depth_overlay_records(dash_df)
 
-    sliced = ctd_result.df if ctd_result.df is not None else pd.DataFrame()
+    ctd_full = ctd_result.df if ctd_result.df is not None else pd.DataFrame()
+    sliced, _, _ = _anchored_display_slice(
+        ctd_full,
+        hours_back=hours_back,
+        time_start_str=display_start,
+        time_end_str=display_end,
+    )
     if sliced.empty:
         payload = _build_profile_payload(pd.DataFrame())
         payload["depth_overlay"] = depth_overlay
@@ -1187,15 +1451,15 @@ async def get_slocum_chart_data_bulk(
     ]
     needs_dashboard = bool(dash_vars or derived_vars)
 
-    time_start_str, time_end_str, _use_date_range = _parse_slocum_time_window(
-        dataset_id, hours_back, is_historical, start_date, end_date
+    display_start, display_end, fetch_start, fetch_end, load_hours = _resolve_fetch_window(
+        dataset_id,
+        hours_back=hours_back,
+        is_historical=is_historical,
+        start_date=start_date,
+        end_date=end_date,
+        has_derived=bool(derived_vars),
     )
-    load_hours_back = hours_back
-    if not start_date and not end_date:
-        # Widen load so stale mirror tails overlap the display window (24h vs 48h gap bug).
-        load_hours_back = max(load_hours_back, min(72, hours_back + 24))
-        if derived_vars:
-            load_hours_back = max(load_hours_back, hours_back + _DERIVED_CHART_LOOKBACK_HOURS)
+    time_start_str, time_end_str = display_start, display_end
 
     try:
         dashboard_result = None
@@ -1204,12 +1468,23 @@ async def get_slocum_chart_data_bulk(
             dashboard_result = await _load_bundle_result(
                 dataset_id,
                 "dashboard",
-                hours_back=load_hours_back,
+                hours_back=hours_back,
                 is_historical=is_historical,
                 start_date=start_date,
                 end_date=end_date,
+                fetch_hours_back=load_hours,
+                fetch_start_date=fetch_start,
+                fetch_end_date=fetch_end,
             )
         if ctd_vars:
+            _, _, ctd_fetch_start, ctd_fetch_end, ctd_load = _resolve_fetch_window(
+                dataset_id,
+                hours_back=hours_back,
+                is_historical=is_historical,
+                start_date=start_date,
+                end_date=end_date,
+                has_derived=False,
+            )
             ctd_result = await _load_bundle_result(
                 dataset_id,
                 "ctd",
@@ -1217,6 +1492,9 @@ async def get_slocum_chart_data_bulk(
                 is_historical=is_historical,
                 start_date=start_date,
                 end_date=end_date,
+                fetch_hours_back=ctd_load,
+                fetch_start_date=ctd_fetch_start,
+                fetch_end_date=ctd_fetch_end,
             )
     except HTTPException:
         raise
@@ -1231,38 +1509,31 @@ async def get_slocum_chart_data_bulk(
 
     if needs_dashboard and dashboard_result is not None and not dashboard_result.df.empty:
         full_df = dashboard_result.df
-        display_df = slice_processed_df(
+        display_df, filter_start, filter_end = _anchored_display_slice(
             full_df,
             hours_back=hours_back,
-            use_date_range=True,
             time_start_str=time_start_str,
             time_end_str=time_end_str,
         )
-        if display_df.empty and not full_df.empty:
-            data_max = pd.to_datetime(full_df["Timestamp"], utc=True).max()
-            if pd.notna(data_max):
-                anchored_end = data_max
-                anchored_start = anchored_end - pd.Timedelta(hours=hours_back)
-                display_df = slice_processed_df(
-                    full_df,
-                    hours_back=hours_back,
-                    use_date_range=True,
-                    time_start_str=anchored_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    time_end_str=anchored_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-                )
         last_dt = _last_dt_from_processed(display_df) or _last_dt_from_processed(full_df)
         source_meta = dashboard_result.metadata or source_meta
         for variable in dash_vars:
             value_col = _SLOCUM_VARIABLE_TO_COLUMN[variable]
-            series[variable] = _resample_series(display_df, value_col, granularity_minutes)
+            chart_df = _chart_df_for_variable(display_df, variable, value_col)
+            series[variable] = _resample_series(chart_df, value_col, granularity_minutes)
         for variable in derived_vars:
             derived_records = _build_derived_series(full_df, variable, granularity_minutes)
             series[variable] = _filter_records_to_time_window(
-                derived_records, time_start_str, time_end_str,
+                derived_records, filter_start, filter_end,
             )
 
     if ctd_vars and ctd_result is not None and not ctd_result.df.empty:
-        sliced = ctd_result.df
+        sliced, _, _ = _anchored_display_slice(
+            ctd_result.df,
+            hours_back=hours_back,
+            time_start_str=time_start_str,
+            time_end_str=time_end_str,
+        )
         ctd_last = _last_dt_from_processed(sliced)
         if ctd_last and (last_dt is None or ctd_last > last_dt):
             last_dt = ctd_last
@@ -1310,6 +1581,14 @@ async def get_slocum_chart_data(
         )
     is_ctd = variable in _SLOCUM_CTD_CHART_VARIABLES
     is_derived = variable in _SLOCUM_DERIVED_CHART_VARIABLES
+    display_start, display_end, fetch_start, fetch_end, load_hours = _resolve_fetch_window(
+        dataset_id,
+        hours_back=hours_back,
+        is_historical=is_historical,
+        start_date=start_date,
+        end_date=end_date,
+        has_derived=is_derived,
+    )
     try:
         result = await _load_bundle_result(
             dataset_id,
@@ -1318,6 +1597,9 @@ async def get_slocum_chart_data(
             is_historical=is_historical,
             start_date=start_date,
             end_date=end_date,
+            fetch_hours_back=load_hours,
+            fetch_start_date=fetch_start,
+            fetch_end_date=fetch_end,
         )
     except HTTPException:
         raise
@@ -1328,19 +1610,26 @@ async def get_slocum_chart_data(
             detail=f"Data fetch failed: {str(e)}",
         ) from e
 
-    recent = result.df if result.df is not None else pd.DataFrame()
-    if recent.empty or "Timestamp" not in recent.columns:
+    full_df = result.df if result.df is not None else pd.DataFrame()
+    if full_df.empty or "Timestamp" not in full_df.columns:
         return {
             "data": [],
             "cache_metadata": _merge_overage_metadata(_cache_metadata(), result.metadata),
         }
 
-    last_dt = _last_dt_from_processed(recent)
+    display_df, filter_start, filter_end = _anchored_display_slice(
+        full_df,
+        hours_back=hours_back,
+        time_start_str=display_start,
+        time_end_str=display_end,
+    )
+    last_dt = _last_dt_from_processed(display_df) or _last_dt_from_processed(full_df)
     if is_derived:
-        data = _build_derived_series(recent, variable, granularity_minutes)
+        derived_records = _build_derived_series(full_df, variable, granularity_minutes)
+        data = _filter_records_to_time_window(derived_records, filter_start, filter_end)
     else:
         value_col = _SLOCUM_VARIABLE_TO_COLUMN[variable]
-        if value_col not in recent.columns:
+        if value_col not in display_df.columns:
             return {
                 "data": [],
                 "cache_metadata": _merge_overage_metadata(
@@ -1348,7 +1637,11 @@ async def get_slocum_chart_data(
                     result.metadata,
                 ),
             }
-        data = _resample_series(recent, value_col, granularity_minutes)
+        data = _resample_series(
+            _chart_df_for_variable(display_df, variable, value_col),
+            value_col,
+            granularity_minutes,
+        )
     return {
         "data": data,
         "cache_metadata": _merge_overage_metadata(

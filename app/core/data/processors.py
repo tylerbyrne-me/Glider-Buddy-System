@@ -29,7 +29,11 @@ from .processor_utils import (
     initial_dataframe_setup,
     apply_common_processing,
 )
-from ..geo.coordinates import mask_null_island_coordinates
+from ..geo.coordinates import (
+    mask_implausible_slocum_track_coordinates,
+    mask_invalid_slocum_gps_status,
+    mask_null_island_coordinates,
+)
 
 
 # Create aliases for backward compatibility
@@ -825,8 +829,10 @@ def preprocess_slocum_track_df(df: pd.DataFrame) -> pd.DataFrame:
     )
     if df_processed.empty:
         return df_processed
-    # Ignore GPS-unlock (0,0), then drop rows with missing lat/lon
+    # Ignore GPS-unlock (0,0), invalid m_gps_status, and implausible jumps
     df_processed = mask_null_island_coordinates(df_processed)
+    df_processed = mask_invalid_slocum_gps_status(df_processed)
+    df_processed = mask_implausible_slocum_track_coordinates(df_processed)
     df_processed = df_processed.dropna(subset=["Latitude", "Longitude"])
     return df_processed
 
@@ -978,6 +984,7 @@ _SLOCUM_CHECKLIST_RENAME = {
 _SLOCUM_DASHBOARD_STEMS: dict[str, str] = {
     "latitude": "Latitude",
     "longitude": "Longitude",
+    "m_gps_status": "MGpsStatus",
     "m_depth": "MDepth",
     "m_altitude": "MAltitude",
     "m_raw_altitude": "MRawAltitude",
@@ -1200,7 +1207,7 @@ def preprocess_slocum_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
         Processed DataFrame with Timestamp and standardized numeric columns.
     """
     std_cols = [
-        "Latitude", "Longitude",
+        "Latitude", "Longitude", "MGpsStatus",
         "MDepth", "MAltitude", "MRawAltitude", "MWaterDepth",
         "CPitch", "MPitch", "MRoll", "CRoll",
         "CHeading", "MHeading", "CFin", "MFin",
@@ -1214,6 +1221,8 @@ def preprocess_slocum_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
         "MThrusterPower", "CThrusterOn",
         "SciDmonMsgByteCount",
     ]
+    # Enum statuses include negatives (e.g. -2); do not apply fill-value sentinels.
+    _gps_status_col = "MGpsStatus"
     df_processed = _initial_dataframe_setup(df, "Timestamp")
     if df_processed.empty:
         for col in std_cols:
@@ -1227,15 +1236,20 @@ def preprocess_slocum_dashboard_df(df: pd.DataFrame) -> pd.DataFrame:
     for std_name in std_cols:
         if std_name not in df_processed.columns:
             df_processed[std_name] = np.nan
-        df_processed[std_name] = _nan_slocum_sentinels(df_processed[std_name])
+        if std_name == _gps_status_col:
+            df_processed[std_name] = pd.to_numeric(df_processed[std_name], errors="coerce")
+        else:
+            df_processed[std_name] = _nan_slocum_sentinels(df_processed[std_name])
 
     # OceanTrack stores attitude in radians; always convert to degrees for charts.
     for col in _SLOCUM_ATTITUDE_RAD_TO_DEG:
         if col in df_processed.columns and df_processed[col].notna().any():
             df_processed[col] = df_processed[col] * (180.0 / math.pi)
 
-    # Mask GPS-unlock (0,0) without dropping rows (other sensors may still be valid).
+    # Mask GPS-unlock (0,0) and invalid m_gps_status without dropping rows.
     df_processed = mask_null_island_coordinates(df_processed)
+    df_processed = mask_invalid_slocum_gps_status(df_processed)
+    df_processed = mask_implausible_slocum_track_coordinates(df_processed)
 
     return df_processed
 

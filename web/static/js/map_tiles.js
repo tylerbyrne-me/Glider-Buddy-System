@@ -1,7 +1,10 @@
 /**
  * @file map_tiles.js
  * @description Theme-aware Leaflet base tile layers (OSM light / CARTO Dark Matter).
+ * Respects ui_preferences.map_style when set (match-theme | light | dark).
  */
+
+import { loadPrefs } from '/static/js/ui_preferences.js';
 
 const LIGHT_TILES = {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -25,8 +28,24 @@ export function isDarkTheme() {
     );
 }
 
+/**
+ * Whether map tiles should use the dark basemap.
+ * @param {boolean|null} forceDark Explicit override; null reads prefs + theme.
+ */
+export function shouldUseDarkTiles(forceDark = null) {
+    if (forceDark !== null) return Boolean(forceDark);
+    const prefs = loadPrefs();
+    if (prefs.map_style === 'dark') return true;
+    if (prefs.map_style === 'light') return false;
+    const root = document.documentElement;
+    const attr = root.getAttribute('data-map-style');
+    if (attr === 'dark') return true;
+    if (attr === 'light') return false;
+    return isDarkTheme();
+}
+
 export function getTileLayerConfig(forceDark = null) {
-    const useDark = forceDark === null ? isDarkTheme() : Boolean(forceDark);
+    const useDark = shouldUseDarkTiles(forceDark);
     return useDark ? { ...DARK_TILES } : { ...LIGHT_TILES };
 }
 
@@ -50,23 +69,26 @@ export function createThemedTileLayer(forceDark = null) {
  * @returns {MutationObserver}
  */
 export function observeThemeChange(onChange) {
-    let lastDark = isDarkTheme();
+    let lastDark = shouldUseDarkTiles();
     const observer = new MutationObserver((mutations) => {
         const themeChanged = mutations.some(
             (m) =>
                 m.type === 'attributes'
-                && (m.attributeName === 'data-theme' || m.attributeName === 'data-bs-theme')
+                && (
+                    m.attributeName === 'data-theme'
+                    || m.attributeName === 'data-bs-theme'
+                    || m.attributeName === 'data-map-style'
+                )
         );
         if (!themeChanged) return;
-        const nextDark = isDarkTheme();
+        const nextDark = shouldUseDarkTiles();
         if (nextDark === lastDark) return;
         lastDark = nextDark;
-        // Allow CSS variables to settle (same pattern as chart theme observers).
         window.setTimeout(() => onChange(nextDark), 50);
     });
     observer.observe(document.documentElement, {
         attributes: true,
-        attributeFilter: ['data-theme', 'data-bs-theme'],
+        attributeFilter: ['data-theme', 'data-bs-theme', 'data-map-style'],
     });
     return observer;
 }
@@ -89,7 +111,6 @@ export function swapMapTileLayer(map, layerHolder) {
     }
     const next = createThemedTileLayer();
     next.addTo(map);
-    // Keep tiles under overlays / tracks.
     if (typeof next.setZIndex === 'function') {
         next.setZIndex(0);
     }

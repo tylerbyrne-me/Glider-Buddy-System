@@ -9,13 +9,37 @@
         var rootEl = document.documentElement;
         if (!rootEl) return;
 
-        var storedTheme = null;
-        try { storedTheme = localStorage.getItem('theme'); } catch (e) {}
-        var systemPrefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-        var initialTheme = storedTheme || (systemPrefersDark ? 'dark' : 'light');
+        function systemPrefersDark() {
+          return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        }
 
-        rootEl.setAttribute('data-theme', initialTheme);
-        rootEl.setAttribute('data-bs-theme', initialTheme);
+        var prefs = null;
+        try {
+          var raw = localStorage.getItem('ui_preferences');
+          if (raw) prefs = JSON.parse(raw);
+        } catch (e) { prefs = null; }
+
+        var themeMode = (prefs && prefs.theme_mode) || null;
+        if (!themeMode) {
+          var legacy = null;
+          try { legacy = localStorage.getItem('theme'); } catch (e) {}
+          if (legacy === 'light' || legacy === 'dark') themeMode = legacy;
+          else themeMode = 'system';
+        }
+
+        var resolved = themeMode === 'system'
+          ? (systemPrefersDark() ? 'dark' : 'light')
+          : (themeMode === 'dark' ? 'dark' : 'light');
+
+        var accent = (prefs && prefs.accent) || 'default';
+        var density = (prefs && prefs.density) || 'comfortable';
+        var mapStyle = (prefs && prefs.map_style) || 'match-theme';
+
+        rootEl.setAttribute('data-theme', resolved);
+        rootEl.setAttribute('data-bs-theme', resolved);
+        rootEl.setAttribute('data-accent', accent);
+        rootEl.setAttribute('data-density', density);
+        rootEl.setAttribute('data-map-style', mapStyle);
       })();
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">

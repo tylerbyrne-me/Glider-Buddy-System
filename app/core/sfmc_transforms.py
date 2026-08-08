@@ -615,6 +615,9 @@ def normalize_dmon_asc_files(
           "summary": str,
         }
 
+    Optional per-file ``thruster_since_prev`` (bool | None) is added later by
+    ``enrich_dmon_asc_with_thruster`` (dashboard telemetry), not by this normalize.
+
     When ``window_start`` is set, files are kept for ``[window_start, now]``.
     Otherwise files are kept for the rolling ``window_hours`` ending at ``now``.
     """

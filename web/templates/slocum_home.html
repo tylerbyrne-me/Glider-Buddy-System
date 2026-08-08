@@ -122,6 +122,26 @@
                         </div>
                     </div>
 
+                    {% if feature_enabled('map_vector_layers') %}
+                    <!-- Static vector reference zones (GOSL DSZ / safe zones) -->
+                    <div id="vectorOverlaySection" class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label small mb-0">Reference zones</label>
+                        </div>
+                        <div class="btn-group btn-group-sm mb-2" role="group" aria-label="GOSL reference zone toggles">
+                            <input type="checkbox" class="btn-check" id="goslDszToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="goslDszToggle">
+                                <i class="fas fa-draw-polygon"></i> GOSL DSZ
+                            </label>
+                            <input type="checkbox" class="btn-check" id="goslSafeZonesToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="goslSafeZonesToggle">
+                                <i class="fas fa-shield-alt"></i> GOSL safe zones
+                            </label>
+                        </div>
+                        <small class="text-muted d-block">Deployment safety zones off Newfoundland.</small>
+                    </div>
+                    {% endif %}
+
                     {% if feature_enabled('weather_map_layers') %}
                     <!-- Wind weather overlay (Open-Meteo raster) -->
                     <div id="windWeatherSection" class="mb-3">

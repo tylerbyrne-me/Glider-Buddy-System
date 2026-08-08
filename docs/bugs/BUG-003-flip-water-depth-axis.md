@@ -31,3 +31,5 @@ When the plotted series is itself a depth / water-depth quantity, invert the val
 ## Resolution
 
 Fixed 2026-08-07. Plottable registry flag `invert_value_axis` on `water_depth_val` makes Plot-it place `m_water_depth` on the same inverted Depth axis as vehicle depth (no separate upright `y2`), with axis `min: 0`. Series payload also filters non-positive / spike water-depth samples via `filter_valid_water_depth_m` so `-1` no-lock values do not pull the scale below zero.
+
+Dashboard follow-up (same day): `slocumNavDepthChart` (`invertY`) also sets axis `min: 0`; bulk/single chart APIs filter `m_water_depth` with `filter_valid_water_depth_m` before resample so the Nav depth chart does not pad to ~-50.

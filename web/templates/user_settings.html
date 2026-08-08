@@ -70,6 +70,60 @@
 
                     <hr>
 
+                    <!-- Appearance Section -->
+                    <div class="mb-5">
+                        <h4 class="mb-3">
+                            <i class="fas fa-palette me-2"></i>Appearance
+                        </h4>
+                        <p class="text-muted small mb-3">Theme and display preferences sync across browsers when you are signed in. The banner Dark Mode switch sets Light or Dark and exits System.</p>
+                        <form id="appearanceForm">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="themeMode" class="form-label">Theme</label>
+                                    <select class="form-select" id="themeMode">
+                                        <option value="system">System</option>
+                                        <option value="light">Light</option>
+                                        <option value="dark">Dark</option>
+                                    </select>
+                                    <div class="form-text">System follows your OS light/dark setting.</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="accentPreset" class="form-label">Accent</label>
+                                    <select class="form-select" id="accentPreset">
+                                        <option value="default">Default</option>
+                                        <option value="teal">Teal</option>
+                                        <option value="high-contrast">High contrast</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="densityPreset" class="form-label">Density</label>
+                                    <select class="form-select" id="densityPreset">
+                                        <option value="comfortable">Comfortable</option>
+                                        <option value="compact">Compact</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="mapStylePref" class="form-label">Map basemap</label>
+                                    <select class="form-select" id="mapStylePref">
+                                        <option value="match-theme">Match theme</option>
+                                        <option value="light">Light (OSM)</option>
+                                        <option value="dark">Dark (CARTO)</option>
+                                    </select>
+                                    <div class="form-text">Independent of UI theme when not Match theme.</div>
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-end">
+                                <button type="submit" class="btn btn-primary" id="saveAppearanceBtn">
+                                    <i class="fas fa-save me-2"></i>Save Appearance
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <hr>
+
                     <!-- Password Change Section -->
                     <div class="mb-4">
                         <h4 class="mb-3">

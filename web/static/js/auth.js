@@ -1,39 +1,10 @@
 import { apiRequest, showToast, sanitizeLoginNextPath } from '/static/js/api.js';
+import { initThemeControls, applyServerPreferences } from '/static/js/ui_preferences.js';
 
 document.addEventListener('DOMContentLoaded', async function () { // Made async for getUserProfile
-    // --- Theme Switcher Logic ---
-    // Single source of truth for theme state.
+    // --- Theme / appearance prefs ---
     const themeSwitch = document.getElementById('themeSwitch');
-    const htmlEl = document.documentElement;
-    const themeAttributeNames = ['data-theme', 'data-bs-theme'];
-
-    const getPreferredTheme = () => {
-        const savedTheme = localStorage.getItem('theme');
-        if (savedTheme) return savedTheme;
-
-        const existingTheme = htmlEl.getAttribute('data-theme') || htmlEl.getAttribute('data-bs-theme');
-        if (existingTheme) return existingTheme;
-
-        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    };
-
-    const setTheme = (theme) => {
-        themeAttributeNames.forEach((attributeName) => htmlEl.setAttribute(attributeName, theme));
-        if (themeSwitch) {
-            themeSwitch.checked = (theme === 'dark');
-        }
-        localStorage.setItem('theme', theme);
-    };
-
-    // Set the initial theme when the page loads
-    setTheme(getPreferredTheme());
-
-    // Add a listener for the toggle switch
-    if (themeSwitch) {
-        themeSwitch.addEventListener('change', () => {
-            setTheme(themeSwitch.checked ? 'dark' : 'light');
-        });
-    }
+    initThemeControls(themeSwitch);
 
     // --- Global UTC Clock in Banner ---
     // This function is placed here in auth.js to run on every page.
@@ -201,6 +172,9 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
     const bodyRole = (document.body.dataset.userRole || '').trim();
 
     if (currentUserForBanner) {
+        if (currentUserForBanner.ui_preferences) {
+            applyServerPreferences(currentUserForBanner.ui_preferences, { themeSwitch });
+        }
         if (usernameDisplayBanner && currentUserForBanner.username) {
             usernameDisplayBanner.textContent = currentUserForBanner.username;
         }

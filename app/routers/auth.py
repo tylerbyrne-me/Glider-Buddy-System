@@ -241,6 +241,10 @@ class UserSelfUpdate(BaseModel):
         None,
         description="Admin-only Sensor Tracker API token.",
     )
+    ui_preferences: Optional[models.UiPreferences] = Field(
+        None,
+        description="Appearance preferences (theme_mode, accent, density, map_style).",
+    )
 
 
 class UserPasswordChange(BaseModel):
@@ -255,22 +259,26 @@ async def update_current_user(
     current_user: Annotated[models.User, Depends(get_current_active_user)],
     session: Annotated[SQLModelSession, Depends(get_db_session)],
 ):
-    """Update current user's personal information (full name, email)."""
+    """Update current user's personal information (full name, email, ui_preferences)."""
     auth.logger.info(
         f"User '{current_user.username}' updating their own information: {user_update.model_dump(exclude_unset=True)}"
     )
     
     update_data = user_update.model_dump(exclude_unset=True)
 
-    # Convert UserSelfUpdate to UserUpdateForAdmin for the existing function
-    admin_update = models.UserUpdateForAdmin(
-        full_name=user_update.full_name,
-        email=user_update.email,
-    )
-    
-    updated_user_in_db = auth.update_user_details_in_db(
-        session, current_user.username, admin_update
-    )
+    admin_kwargs = {}
+    if "full_name" in update_data:
+        admin_kwargs["full_name"] = user_update.full_name
+    if "email" in update_data:
+        admin_kwargs["email"] = user_update.email
+
+    if admin_kwargs:
+        admin_update = models.UserUpdateForAdmin(**admin_kwargs)
+        updated_user_in_db = auth.update_user_details_in_db(
+            session, current_user.username, admin_update
+        )
+    else:
+        updated_user_in_db = auth.get_user_from_db(session, current_user.username)
     
     if not updated_user_in_db:
         auth.logger.error(
@@ -281,6 +289,7 @@ async def update_current_user(
             detail="Failed to update user information"
         )
     
+    needs_commit = False
     if "sensor_tracker_token" in update_data:
         if current_user.role != models.UserRoleEnum.admin:
             raise HTTPException(
@@ -288,6 +297,14 @@ async def update_current_user(
                 detail="Only admins can update Sensor Tracker credentials.",
             )
         updated_user_in_db.sensor_tracker_token = update_data["sensor_tracker_token"] or None
+        needs_commit = True
+
+    if "ui_preferences" in update_data and user_update.ui_preferences is not None:
+        prefs = models.normalize_ui_preferences(user_update.ui_preferences)
+        updated_user_in_db.ui_preferences = prefs.model_dump()
+        needs_commit = True
+
+    if needs_commit:
         session.add(updated_user_in_db)
         session.commit()
         session.refresh(updated_user_in_db)

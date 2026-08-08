@@ -314,7 +314,7 @@ Some settings use JSON strings:
 - `REMOTE_MISSION_FOLDER_MAP_JSON` - Must be valid JSON
 - `ACTIVE_REALTIME_MISSIONS` - Must be valid JSON array
 - `FEATURE_TOGGLES_FILE` - Path to a JSON file (recommended; one toggle per line). Example: `config/feature_toggles.example.json`
-- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off.
+- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL DSZ / safe zones) on home maps.
 
 ### Public login map
 - Kill switch: `public_login_map` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON`
@@ -322,6 +322,12 @@ Some settings use JSON strings:
 - Optional: `TRUSTED_PROXY_COUNT` (int; default `0`) — how many rightmost `X-Forwarded-For` hops to trust for rate-limit client IP
 - Cache dir / TTL defaults live in `app/config.py` (`public_map_cache_dir`, `public_map_cache_ttl_seconds`, `public_map_warm_interval_minutes`, `public_map_max_missions`)
 - Ops detail: [Public login map how-to](./how-tos/public_login_map.md)
+
+### Static vector map layers (home overlays)
+- Kill switch: `map_vector_layers` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**)
+- Layer files: git-tracked under `config/map_layers/` (`map_layers_dir` in `app/config.py`)
+- Convert KML locally with `scripts/convert_map_layer_kml.py`; commit published GeoJSON + manifest — do not require prod to re-ingest
+- Ops detail: [Static vector map layers how-to](./how-tos/map_vector_layers.md)
 
 ### Path Values
 - Use forward slashes `/` even on Windows for `LOCAL_DATA_BASE_PATH`

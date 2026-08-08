@@ -762,21 +762,39 @@ function setSlocumDataSourceBadge(cacheMetadata) {
     const badge = document.getElementById('slocumDataSourceBadge');
     if (!badge) return;
     const source = cacheMetadata?.data_source || '';
+    const isStale = Boolean(cacheMetadata?.stale || cacheMetadata?.fallback_error);
     const labels = {
         mirror: { text: 'Source: 72h mirror', cls: 'text-bg-success' },
         overage_cache: { text: 'Source: temporary cache', cls: 'text-bg-info' },
         erddap_overage: { text: 'Source: ERDDAP (on demand)', cls: 'text-bg-warning' },
     };
-    const mapped = labels[source] || { text: 'Source: —', cls: 'text-bg-secondary' };
+    let mapped = labels[source] || { text: 'Source: —', cls: 'text-bg-secondary' };
+    if (isStale) {
+        mapped = {
+            text: 'Cached data — ERDDAP unreachable',
+            cls: 'text-bg-warning',
+        };
+    }
     badge.className = `badge ms-1 ${mapped.cls}`;
     badge.textContent = mapped.text;
-    if (cacheMetadata?.cache_expires_at) {
-        badge.title = `Expires: ${cacheMetadata.cache_expires_at}`;
-    } else if (source === 'mirror') {
-        badge.title = 'Loaded from the rolling local mirror.';
-    } else {
-        badge.title = 'Where the displayed data was loaded from.';
+    const tipParts = [];
+    if (cacheMetadata?.fallback_error) {
+        tipParts.push(`Fallback: ${cacheMetadata.fallback_error}`);
     }
+    if (cacheMetadata?.mirror_max) {
+        tipParts.push(`Mirror max: ${cacheMetadata.mirror_max}`);
+    }
+    if (cacheMetadata?.last_data_timestamp) {
+        tipParts.push(`Last data: ${cacheMetadata.last_data_timestamp}`);
+    }
+    if (cacheMetadata?.cache_expires_at) {
+        tipParts.push(`Expires: ${cacheMetadata.cache_expires_at}`);
+    } else if (!isStale && source === 'mirror') {
+        tipParts.push('Loaded from the rolling local mirror.');
+    } else if (!tipParts.length) {
+        tipParts.push('Where the displayed data was loaded from.');
+    }
+    badge.title = tipParts.join(' · ');
 }
 
 async function refreshCtdProfileCharts() {
@@ -874,7 +892,7 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
         const color = SERIES_COLORS[idx % SERIES_COLORS.length];
         const isBar = spec.type === 'bar';
         const styleProps = plotStyleDatasetProps(plotStyle, isBar);
-        datasets.push({
+        const ds = {
             type: isBar ? 'bar' : 'line',
             label: spec.label || spec.key,
             data: points,
@@ -889,7 +907,15 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
             borderWidth: 1.5,
             tension: 0.15,
             fill: false,
-        });
+        };
+        // Sparse ~hourly coulomb bars on a time axis render as 1px needles without a cap.
+        if (isBar) {
+            ds.barThickness = 'flex';
+            ds.maxBarThickness = 18;
+            ds.categoryPercentage = 0.9;
+            ds.barPercentage = 0.85;
+        }
+        datasets.push(ds);
     });
 
     if (showDepth) {
@@ -911,11 +937,14 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
     ensureDatasetHitRadius(datasets);
 
     const hasBar = datasets.some((ds) => ds.type === 'bar');
+    const invertY = !!chartCfg.invertY;
     const scales = {
         x: buildSlocumTimeScaleX(),
         y: {
             position: 'left',
-            reverse: !!chartCfg.invertY,
+            reverse: invertY,
+            // Depth / water-depth are non-negative; avoid Chart.js padding below 0 (e.g. -50).
+            ...(invertY ? { min: 0 } : {}),
             title: { display: !!chartCfg.yLabel, text: chartCfg.yLabel || '', color: chartTextColor },
             ticks: { color: chartTextColor },
             grid: { color: chartGridColor },
@@ -1172,7 +1201,7 @@ function renderDmonAscPanel(payload) {
     }
 
     if (!files.length) {
-        tbody.innerHTML = `<tr><td colspan="4" class="text-muted small">${
+        tbody.innerHTML = `<tr><td colspan="5" class="text-muted small">${
             configured ? (payload?.summary || 'No *.asc files found.') : 'SFMC not configured'
         }</td></tr>`;
         return;
@@ -1185,11 +1214,19 @@ function renderDmonAscPanel(payload) {
         const gapOver = Boolean(row.gap_over_threshold);
         const gapText = gap != null ? `${Number(gap).toFixed(1)}h` : '—';
         const rowClass = gapOver ? 'table-warning' : '';
+        const hasPrevious = Object.prototype.hasOwnProperty.call(row, 'gap_after_prev_hours');
+        let thrusterText = '—';
+        if (hasPrevious) {
+            if (row.thruster_since_prev === true) thrusterText = 'Yes';
+            else if (row.thruster_since_prev === false) thrusterText = 'No';
+            else thrusterText = 'No data';
+        }
         return `<tr class="${rowClass}">
             <td class="small font-monospace">${row.fileName || '—'}</td>
             <td class="small">${row.dateTimeModified || '—'}</td>
             <td class="small">${formatAscFileSize(row.fileSize)}</td>
             <td class="small${gapOver ? ' fw-semibold text-danger' : ''}">${gapText}</td>
+            <td class="small" title="Telemetry interval since previous *.asc offload">${thrusterText}</td>
         </tr>`;
     }).join('');
 }
@@ -1199,7 +1236,7 @@ async function refreshDmonAscPanel() {
     if (!datasetId) return;
     const tbody = document.getElementById('slocumDmonAscTableBody');
     if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="4" class="text-muted small">Loading…</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" class="text-muted small">Loading…</td></tr>';
     }
     try {
         const payload = await apiRequest(

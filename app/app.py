@@ -133,6 +133,7 @@ from .routers import slocum as slocum_router
 from .routers import slocum_deployments as slocum_deployments_router
 from .routers import slocum_reporting as slocum_reporting_router
 from .routers import slocum_checklists as slocum_checklists_router
+from .routers import wave_glider as wave_glider_router
 
 # Admin imports
 from .core.auth.admin_sqladmin import setup_sqladmin
@@ -298,6 +299,7 @@ app.include_router(slocum_router.router)
 app.include_router(slocum_deployments_router.router)
 app.include_router(slocum_reporting_router.router)
 app.include_router(slocum_checklists_router.router)
+app.include_router(wave_glider_router.router)
 
 # SQLAdmin will be initialized in startup_event with the app instance
 # No need to mount separately - it's integrated into the app during setup
@@ -2338,25 +2340,10 @@ async def _process_loaded_data_for_home_view(
         if found_primary_path_for_display:
             break
 
-    # Calculate summaries only for data that was actually loaded
-    # Initialize all sensor info with default empty values
-    power_info = {"values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []}
-    ctd_info = {"values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []}
-    weather_info = {"values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []}
-    wave_info = {"values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []}
-    vr2c_info = {"values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []}
-    fluorometer_info = {"values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []}
-    wg_vm4_info = {"values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []}
-    navigation_info = {"values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []}
-    ais_summary_data = []
-    ais_update_info = {"time_ago_str": "N/A", "latest_timestamp_str": "N/A"}
-    recent_errors_list = []
-    errors_update_info = {"time_ago_str": "N/A", "latest_timestamp_str": "N/A"}
-
-    # Get file modification times for each report type (when source file was last updated)
+    # Sensor-card summaries (shared builder used by SSR and soft-refresh API)
     from .core.data.data_service import get_cache_timestamp
-    
-    # Determine source preference from source_paths_map (check if any path indicates remote)
+    from app.platforms.wave_glider.summaries import build_wg_sensor_summaries_from_frames
+
     source_preference = None
     for path in source_paths_map.values():
         if "Remote:" in path:
@@ -2364,52 +2351,43 @@ async def _process_loaded_data_for_home_view(
             break
         elif "Local:" in path:
             source_preference = "local"
-    
-    # Only process data for sensors that were actually loaded
-    if "power" in data_frames and data_frames["power"] is not None:
-        power_file_mod_time = file_mod_times_map.get("power") or get_cache_timestamp("power", mission_id, source_preference)
-        power_info = summaries.get_power_status(
-            data_frames.get("power"),
-            data_frames.get("solar"),
-            power_file_mod_time,
-            theoretical_max_wh=theoretical_max_wh,
-        )
-        power_info["mini_trend"] = summaries.get_power_mini_trend(data_frames.get("power"))
 
-    if "ctd" in data_frames and data_frames["ctd"] is not None:
-        ctd_file_mod_time = file_mod_times_map.get("ctd") or get_cache_timestamp("ctd", mission_id, source_preference)
-        ctd_info = summaries.get_ctd_status(data_frames.get("ctd"), ctd_file_mod_time)
-        ctd_info["mini_trend"] = summaries.get_ctd_mini_trend(data_frames.get("ctd"))
-
-    if "weather" in data_frames and data_frames["weather"] is not None:
-        weather_file_mod_time = file_mod_times_map.get("weather") or get_cache_timestamp("weather", mission_id, source_preference)
-        weather_info = summaries.get_weather_status(data_frames.get("weather"), weather_file_mod_time)
-        weather_info["mini_trend"] = summaries.get_weather_mini_trend(data_frames.get("weather"))
-
-    if "waves" in data_frames and data_frames["waves"] is not None:
-        wave_file_mod_time = file_mod_times_map.get("waves") or get_cache_timestamp("waves", mission_id, source_preference)
-        wave_info = summaries.get_wave_status(data_frames.get("waves"), wave_file_mod_time)
-        wave_info["mini_trend"] = summaries.get_wave_mini_trend(data_frames.get("waves"))
-
-    if "vr2c" in data_frames and data_frames["vr2c"] is not None:
-        vr2c_file_mod_time = file_mod_times_map.get("vr2c") or get_cache_timestamp("vr2c", mission_id, source_preference)
-        vr2c_info = summaries.get_vr2c_status(data_frames.get("vr2c"), vr2c_file_mod_time)
-        vr2c_info["mini_trend"] = summaries.get_vr2c_mini_trend(data_frames.get("vr2c"))
-
-    if "fluorometer" in data_frames and data_frames["fluorometer"] is not None:
-        fluorometer_file_mod_time = file_mod_times_map.get("fluorometer") or get_cache_timestamp("fluorometer", mission_id, source_preference)
-        fluorometer_info = summaries.get_fluorometer_status(data_frames.get("fluorometer"), fluorometer_file_mod_time)
-        fluorometer_info["mini_trend"] = summaries.get_fluorometer_mini_trend(data_frames.get("fluorometer"))
-
-    if "wg_vm4" in data_frames and data_frames["wg_vm4"] is not None:
-        wg_vm4_file_mod_time = file_mod_times_map.get("wg_vm4") or get_cache_timestamp("wg_vm4", mission_id, source_preference)
-        wg_vm4_info = summaries.get_wg_vm4_status(data_frames.get("wg_vm4"), wg_vm4_file_mod_time)
-        wg_vm4_info["mini_trend"] = summaries.get_wg_vm4_mini_trend(data_frames.get("wg_vm4"))
-
-    if "telemetry" in data_frames and data_frames["telemetry"] is not None:
-        telemetry_file_mod_time = file_mod_times_map.get("telemetry") or get_cache_timestamp("telemetry", mission_id, source_preference)
-        navigation_info = summaries.get_navigation_status(data_frames.get("telemetry"), telemetry_file_mod_time)
-        navigation_info["mini_trend"] = summaries.get_navigation_mini_trend(data_frames.get("telemetry"))
+    sensor_summary_context = build_wg_sensor_summaries_from_frames(
+        data_frames,
+        enabled_cards=None,  # build for every report type present in loaded frames
+        file_mod_times_map=file_mod_times_map,
+        mission_id=mission_id,
+        source_preference=source_preference,
+        theoretical_max_wh=theoretical_max_wh,
+    )
+    power_info = sensor_summary_context.get("power_info") or {
+        "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
+    }
+    ctd_info = sensor_summary_context.get("ctd_info") or {
+        "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
+    }
+    weather_info = sensor_summary_context.get("weather_info") or {
+        "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
+    }
+    wave_info = sensor_summary_context.get("wave_info") or {
+        "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": [], "ess_state": None
+    }
+    vr2c_info = sensor_summary_context.get("vr2c_info") or {
+        "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
+    }
+    fluorometer_info = sensor_summary_context.get("fluorometer_info") or {
+        "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
+    }
+    wg_vm4_info = sensor_summary_context.get("wg_vm4_info") or {
+        "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
+    }
+    navigation_info = sensor_summary_context.get("navigation_info") or {
+        "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
+    }
+    ais_summary_data = []
+    ais_update_info = {"time_ago_str": "N/A", "latest_timestamp_str": "N/A"}
+    recent_errors_list = []
+    errors_update_info = {"time_ago_str": "N/A", "latest_timestamp_str": "N/A"}
 
     # Initialize AIS list variable (will be populated if AIS data exists)
     all_ais_list = []

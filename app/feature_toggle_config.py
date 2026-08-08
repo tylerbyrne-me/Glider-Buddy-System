@@ -31,6 +31,7 @@ DEFAULT_FEATURE_TOGGLES: dict[str, bool] = {
     "report_bathymetry_contours": True,
     "weather_map_layers": False,
     "iridium_map_layer": False,
+    "map_vector_layers": False,
     "slocum_auto_checklist_submit": False,
     "public_login_map": False,
     # Legacy / template toggles (often omitted from .env; default on)

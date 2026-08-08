@@ -3,7 +3,7 @@ SQLModel database table definitions for the Wave Glider Buddy System.
 """
 
 from datetime import datetime, timezone, date
-from typing import List, Optional, TYPE_CHECKING, Dict
+from typing import Any, List, Optional, TYPE_CHECKING, Dict
 
 from sqlalchemy import UniqueConstraint
 from sqlmodel import JSON, Column, Text
@@ -61,6 +61,11 @@ class UserInDB(SQLModel, table=True):
         default=True,
         index=True,
         description="Whether the user may access the Slocum Glider platform (when globally enabled).",
+    )
+    ui_preferences: Optional[Dict[str, Any]] = SQLModelField(
+        default=None,
+        sa_column=Column(JSON),
+        description="Per-user UI preferences (theme_mode, accent, density, map_style).",
     )
 
 

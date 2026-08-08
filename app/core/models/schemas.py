@@ -200,6 +200,27 @@ class MissionReportListResponse(BaseModel):
 # User Models
 # ============================================================================
 
+class UiPreferences(BaseModel):
+    """Per-user appearance preferences (theme, accent, density, map basemap)."""
+
+    theme_mode: Literal["light", "dark", "system"] = "system"
+    accent: Literal["default", "teal", "high-contrast"] = "default"
+    density: Literal["comfortable", "compact"] = "comfortable"
+    map_style: Literal["match-theme", "light", "dark"] = "match-theme"
+
+
+def normalize_ui_preferences(raw: Optional[Any] = None) -> UiPreferences:
+    """Coerce stored JSON / partial dicts into a full UiPreferences model."""
+    if raw is None:
+        return UiPreferences()
+    if isinstance(raw, UiPreferences):
+        return raw
+    if isinstance(raw, dict):
+        allowed = set(UiPreferences.model_fields.keys())
+        return UiPreferences.model_validate({k: v for k, v in raw.items() if k in allowed})
+    return UiPreferences()
+
+
 class UserBase(BaseModel):
     """Base user model."""
     username: str = Field(description="Unique username for the user.")
@@ -222,6 +243,12 @@ class User(UserBase):
     is_pic: bool = Field(False, description="Whether the user is eligible for PIC roster selection.")
     can_access_wave_glider: bool = Field(True, description="Whether the user may access Wave Glider.")
     can_access_slocum: bool = Field(True, description="Whether the user may access Slocum Glider.")
+    ui_preferences: UiPreferences = Field(default_factory=UiPreferences)
+
+    @field_validator("ui_preferences", mode="before")
+    @classmethod
+    def coerce_ui_preferences(cls, value: Any) -> UiPreferences:
+        return normalize_ui_preferences(value)
 
 
 class UserUpdateForAdmin(BaseModel):

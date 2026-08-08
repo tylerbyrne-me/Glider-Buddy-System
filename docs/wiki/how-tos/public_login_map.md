@@ -59,3 +59,7 @@ Without a Sensor Tracker row for a WG mission, Mission Title may still be the fo
 | `web/static/js/public_map.js` | Leaflet client |
 
 See also [architecture](../architecture.md) and [ENV_VARIABLES](../ENV_VARIABLES.md#public-login-map).
+
+## Out of scope (for now)
+
+Static vector reference zones (GOSL DSZ / safe zones under `config/map_layers/`) are **home-map only**. Wiring selected layers onto this public map is a near-term backlog item — see [map_vector_layers.md](./map_vector_layers.md) and [backlog](../../tasks/backlog.md).

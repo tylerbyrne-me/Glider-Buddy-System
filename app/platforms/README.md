@@ -13,7 +13,13 @@ app/platforms/
 
 ## Wave Glider (`app/platforms/wave_glider/`)
 
-Scaffold only. Put **new** Wave Glider–only business logic here. Existing WG pipelines stay in `app/core` (data/sync/stations/shared reporting) — do not big-bang relocate them.
+Put **new** Wave Glider–only business logic here. Existing WG pipelines stay in `app/core` (data/sync/stations/shared reporting) — do not big-bang relocate them.
+
+| Module | Role |
+|--------|------|
+| `summaries.py` | Left-nav sensor-card summaries + mini-trends (SSR + soft-refresh API). Reuses `app.core.data.summaries` helpers. |
+
+HTTP: [`app/routers/wave_glider.py`](../routers/wave_glider.py) — `GET /api/sensor-summaries/{mission_id}` (also via `/api/wave_glider/...` alias). Client: `web/static/js/dashboard.js` soft-refreshes cards/charts on cache advance (same UX pattern as Slocum).
 
 - **Later (optional):** peel one clear WG island (e.g. `stations/wg_vm4_*`) in a focused PR if the package boundary is paying off.
 - **Avoid:** moving all WG out of `app/core`; keep shared data loaders/sync, map/weather/bathy/iridium, models, and auth in core. Don’t couple module moves to a full `/api/wave_glider/` URL cutover.

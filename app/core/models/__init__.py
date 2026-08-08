@@ -82,6 +82,8 @@ from .schemas import (
     UserCreate,
     User,
     UserUpdateForAdmin,
+    UiPreferences,
+    normalize_ui_preferences,
     PasswordUpdate,
     Token,
     
@@ -243,6 +245,8 @@ __all__ = [
     "UserCreate",
     "User",
     "UserUpdateForAdmin",
+    "UiPreferences",
+    "normalize_ui_preferences",
     "PasswordUpdate",
     "Token",
     "StationMetadataCore",

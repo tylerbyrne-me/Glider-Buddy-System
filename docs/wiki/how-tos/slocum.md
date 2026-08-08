@@ -23,6 +23,8 @@ Public labels prefer Sensor Tracker platform name / mission title (not dataset a
 
 Active/historical mission dashboards (`/slocum/...`) show overview plus optional sensor cards (admin-configured per deployment). Chart cards share a time toolbar (hours / UTC range / resample / download) and per-chart toolkit: plot style, **Show depth** background overlay (`m_depth`), Ctrl+scroll zoom, pan, and Reset zoom.
 
+Left-nav summary cards soft-refresh via `GET /api/slocum/sensor-summaries/{dataset_id}` when mirror cache `last_data_timestamp` advances (same pattern as Wave Glider — see [architecture](../architecture.md#dashboard-summary-soft-refresh)).
+
 | Card | Notable series |
 |------|----------------|
 | CTD | Depth-vs-time profiles (temp / conductivity / density) with optional vehicle-depth overlay |
@@ -31,7 +33,7 @@ Active/historical mission dashboards (`/slocum/...`) show overview plus optional
 | Navigation | Heading, depth rate, depth/altimeter, speed, depth-averaged currents |
 | Vehicle Health | Vacuum; leak detect channels (main / forward / science) with **digifin** on a secondary Y axis; SFMC call length |
 | Dissolved Oxygen | Placeholder charts (data wiring TBD) |
-| DMON | `sci_dmon_msg_byte_count` over time; SFMC `from-glider` `*.asc` files (last 48h) with >16h gap highlight; left-nav green/red status dot (same style as Wave Glider Waves ESS); **Robots4Whales daily analyst review** (last 48h table + full-history collapse) when `robots4whales_url` is set on the deployment |
+| DMON | `sci_dmon_msg_byte_count` over time; SFMC `from-glider` `*.asc` files (last 48h) with >16h gap highlight and **Thruster since prev** Yes/No from dashboard `m_thruster_power` / `c_thruster_on` over each `[prev_mtime, this_mtime)` interval; left-nav green/red status dot (same style as Wave Glider Waves ESS); **Robots4Whales daily analyst review** (last 48h table + full-history collapse) when `robots4whales_url` is set on the deployment |
 
 ### Data path
 
@@ -41,7 +43,7 @@ Dashboard charts load from the rolling **dashboard** mirror under `data_store/sl
 2. Dashboard rename/stems + `preprocess_slocum_dashboard_df` std columns ([`app/core/data/processors.py`](../../app/core/data/processors.py))
 3. Chart allowlists in [`app/routers/slocum.py`](../../app/routers/slocum.py) (`_SLOCUM_VARIABLE_TO_COLUMN`, `_SLOCUM_CHART_VARIABLES`, CSV header)
 
-When preprocess/schema columns change, bump `BUNDLE_SCHEMA_VERSION` in [`app/platforms/slocum/bundle_registry.py`](../../app/platforms/slocum/bundle_registry.py) so mirrors rebuild. Current schema is **12** (includes digifin leak detect + thruster + DMON byte count). After deploy, wait for leader sync or force an admin mirror rebuild if new series stay empty.
+When preprocess/schema columns change, bump `BUNDLE_SCHEMA_VERSION` in [`app/platforms/slocum/bundle_registry.py`](../../app/platforms/slocum/bundle_registry.py) so mirrors rebuild. Current schema is **14** (includes digifin/thruster/DMON, `m_gps_status` invalid-fix masking, and implausible track-speed filtering from trusted GPS anchors). After deploy, wait for leader sync or force an admin mirror rebuild if new series stay empty.
 
 Shared chart UI helpers: `web/static/js/chart_*_utils.js`, `_chart_plot_controls.html`, `_chart_zoom_scripts.html`.
 
@@ -79,7 +81,7 @@ Generated via [`app/platforms/slocum/reports.py`](../../app/platforms/slocum/rep
 | Mission notes | Letter-keyed notes matched to the telemetry track (immediately after Telemetry) |
 | Battery | Daily Ah bars from `m_coulomb_amphr_total` (partial days rate-normalized / hatched); projections to 50/75/90/100% of checklist pack endurance |
 | CTD | Depth-vs-time cmocean profiles; optional filtered water-depth overlay |
-| DMON | Analyst-review table + ASC offloads for the **full report window** (SFMC listings paginated; inter-file gaps >16h highlighted; no live “hours since last” banner — [BUG-002](../../bugs/BUG-002-dmon-asc-gap-hours-since-last.md)) |
+| DMON | Analyst-review table + ASC offloads for the **full report window** (SFMC listings paginated; inter-file gaps >16h highlighted; thruster Yes/No per interval since previous `*.asc`; no live “hours since last” banner — [BUG-002](../../bugs/BUG-002-dmon-asc-gap-hours-since-last.md)) |
 
 Helpers: [`battery_report.py`](../../app/platforms/slocum/battery_report.py), [`sfmc_client.fetch_dmon_asc_files`](../../app/core/sfmc_client.py).
 
@@ -94,13 +96,23 @@ All Slocum endpoints require authentication (same as Wave Glider). When `slocum_
 | `GET /api/slocum/chart-data-bulk/{dataset_id}?variables=...` | Multi-variable dashboard chart series (mirror / overage). |
 | `GET /api/slocum/profile-data/{dataset_id}` | CTD depth-vs-time profile points (+ optional `depth_overlay` from dashboard `m_depth`). |
 | `GET /api/slocum/sfmc/connection-durations/{dataset_id}` | Cached SFMC surface-call durations (Vehicle Health). |
-| `GET /api/slocum/sfmc/dmon-asc-files/{dataset_id}` | Cached SFMC `from-glider` `*.asc` listing + gap flags (DMON card). |
+| `GET /api/slocum/sfmc/dmon-asc-files/{dataset_id}` | Cached SFMC `from-glider` `*.asc` listing + gap flags; enriches each file with `thruster_since_prev` from the 48h dashboard mirror (DMON card). |
 | `GET /api/slocum/dmon/review/{dataset_id}?recent_hours=48` | Cached Robots4Whales daily analyst-review detections (`recent` / `all`, site attribution; optional `start_date`/`end_date` ISO for reports). |
 | `PUT /api/slocum/deployments/{id}/robots4whales-url` | Admin: set/clear deployment page URL (`dcs.whoi.edu` `*.shtml`). |
 | `GET /api/slocum/checklists/{dataset_id}/series?item_id=...` | Checklist Plot-it time series (depth + value / multi-series). |
 | `GET /api/slocum/checklists/compare?reference_id=&other_id=` | Form-to-form checklist diff (`changed_item_ids`). |
 
 Dataset ID format: `{glider}_{YYYYMMDD}_{mission_id}_{realtime|delayed}` (e.g. `peggy_20250522_206_delayed`). The map endpoint returns points with `lat`, `lon`, `timestamp` for use with existing map/KML tools.
+
+### Map / track GPS quality
+
+Slocum map tracks are derived from the **dashboard** mirror (`latitude` / `longitude`), not a dedicated ERDDAP track pull. Before points reach the map (also KML, public map, weekly report track), preprocess / `dashboard_df_to_track_df` apply:
+
+1. Null-island `(0,0)` mask
+2. `m_gps_status` suppress for `{2, 3, -2}` (invalid fix / wrong sentence / best-guess invalid); keep `0`, `1`, `-1`
+3. Implausible-speed filter: only `m_gps_status == 0` advances the trusted anchor; intermediate (usually NaN-status) points implying **>3 kt** over **≥1 nm** are dropped; a later status-0 snap-back is kept
+
+`m_gps_status` is sparse in OceanTrack (often only on GPS sentence events), so step 3 is required for dead-reckoned outliers (see [BUG-005](../../bugs/BUG-005-slocum-invalid-gps-status-track-points.md)). Schema **14** includes these preprocess semantics.
 
 ## CLI
 

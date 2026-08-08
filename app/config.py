@@ -159,6 +159,9 @@ class Settings(BaseSettings):
     dmon_review_prefetch_enabled: bool = True
     dmon_review_http_timeout_seconds: float = 30.0
 
+    # --- Static vector map layers (GeoJSON overlays; git-tracked under config/) ---
+    map_layers_dir: Path = Path("config/map_layers")
+
     # --- Public login-page map (unauthenticated) ---
     public_map_cache_dir: Path = Path("data_store/public_map_cache")
     public_map_cache_ttl_seconds: int = 600  # 10 minutes

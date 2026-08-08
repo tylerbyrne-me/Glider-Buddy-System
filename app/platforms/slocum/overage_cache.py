@@ -269,6 +269,57 @@ def _slice_df(df: pd.DataFrame, start_utc: datetime, end_utc: datetime) -> pd.Da
     return out.loc[mask].sort_values("Timestamp").reset_index(drop=True)
 
 
+def _mirror_max_utc(mirror_df: pd.DataFrame) -> Optional[datetime]:
+    if mirror_df is None or mirror_df.empty or "Timestamp" not in mirror_df.columns:
+        return None
+    ts = pd.to_datetime(mirror_df["Timestamp"], utc=True)
+    mirror_max = ts.max()
+    if pd.isna(mirror_max):
+        return None
+    return pd.Timestamp(mirror_max).to_pydatetime()
+
+
+def _mirror_overlap_slice(
+    mirror_df: pd.DataFrame,
+    requested_start: datetime,
+    requested_end: datetime,
+) -> pd.DataFrame:
+    """Return mirror rows overlapping ``[requested_start, requested_end]`` (may be partial)."""
+    return _slice_df(mirror_df, requested_start, requested_end)
+
+
+def _mirror_result_metadata(
+    *,
+    dataset_id: str,
+    bundle: str,
+    sliced: pd.DataFrame,
+    requested_start: datetime,
+    requested_end: datetime,
+    norm_start: datetime,
+    norm_end: datetime,
+    mirror_df: pd.DataFrame,
+    stale: bool = False,
+    fallback_error: Optional[str] = None,
+) -> dict[str, Any]:
+    mirror_max = _mirror_max_utc(mirror_df)
+    meta: dict[str, Any] = {
+        "data_source": "mirror",
+        "dataset_id": dataset_id,
+        "bundle": bundle,
+        "requested_range": {"start": _iso_z(requested_start), "end": _iso_z(requested_end)},
+        "normalized_range": {"start": _iso_z(norm_start), "end": _iso_z(norm_end)},
+        "cache_created_at": None,
+        "cache_expires_at": None,
+        "row_count": len(sliced),
+        "stale": stale,
+    }
+    if mirror_max is not None:
+        meta["mirror_max"] = _iso_z(mirror_max)
+    if fallback_error:
+        meta["fallback_error"] = fallback_error
+    return meta
+
+
 def _decimation_for_request(bundle: str, start: datetime, end: datetime) -> Optional[int]:
     """
     ERDDAP orderByClosest minutes for overage fetches.
@@ -328,9 +379,18 @@ async def _finalize_bundle_merge(
     gap_start = mirror_max_dt - timedelta(minutes=1)
     gap_norm_start, gap_norm_end = normalize_overage_window(gap_start, requested_end)
     gap_decimation = _decimation_for_request(bundle, gap_norm_start, gap_norm_end)
-    gap_df = await _fetch_overage_window(
-        dataset_id, bundle, gap_norm_start, gap_norm_end, gap_decimation
-    )
+    try:
+        gap_df = await _fetch_overage_window(
+            dataset_id, bundle, gap_norm_start, gap_norm_end, gap_decimation
+        )
+    except Exception as err:
+        logger.warning(
+            "Overage gap fetch failed for %s/%s; serving mirror overlap: %s",
+            dataset_id,
+            bundle,
+            err,
+        )
+        return _mirror_overlap_slice(mirror_df, requested_start, requested_end)
     return _merge_for_response(mirror_df, gap_df, requested_start, requested_end)
 
 
@@ -484,7 +544,8 @@ async def get_bundle_dataframe(
     Return a DataFrame covering the requested window using:
     1) rolling mirror when it fully covers the window
     2) shared 24h overage cache for normalized windows
-    3) bounded ERDDAP fetch written into the overage cache
+    3) partial mirror overlap when ERDDAP is unreachable / not needed for interactive freshness
+    4) bounded ERDDAP fetch written into the overage cache (windows outside mirror)
     """
     requested_start = _ensure_utc(request.start_utc)
     requested_end = _ensure_utc(request.end_utc)
@@ -492,36 +553,47 @@ async def get_bundle_dataframe(
     bundle = get_bundle_spec(request.bundle).name
     dataset_id = resolve_slocum_dataset_id(request.dataset_id)
 
-    if ensure_mirror:
+    # Load mirror first so interactive reads can skip sync when disk already has data.
+    mirror_df = load_mirror_df(dataset_id, bundle)
+    mirror_has_rows = not mirror_df.empty and "Timestamp" in mirror_df.columns
+
+    if ensure_mirror and not (request.context == "interactive" and mirror_has_rows):
         try:
             await ensure_mirror_synced(dataset_id, hours_back=getattr(settings, "slocum_warm_hours", 24))
+            mirror_df = load_mirror_df(dataset_id, bundle)
+            mirror_has_rows = not mirror_df.empty and "Timestamp" in mirror_df.columns
         except Exception as err:
             logger.warning("Mirror sync before overage load failed for %s: %s", dataset_id, err)
 
-    mirror_df = load_mirror_df(dataset_id, bundle)
-    if not mirror_df.empty and "Timestamp" in mirror_df.columns:
+    if mirror_has_rows:
         ts = pd.to_datetime(mirror_df["Timestamp"], utc=True)
         mirror_max_dt = ts.max()
         if not pd.isna(mirror_max_dt) and mirror_max_dt < requested_start:
             # Mirror ends before the display window starts (stale tail / rounding).
             # Pull start back so partial mirror overlap is included instead of an empty chart.
-            requested_start = mirror_max_dt
+            requested_start = mirror_max_dt.to_pydatetime() if hasattr(mirror_max_dt, "to_pydatetime") else mirror_max_dt
+
     covers = mirror_covers_window(dataset_id, bundle, requested_start, requested_end)
     if covers:
         sliced = _slice_df(mirror_df, requested_start, requested_end)
         return OverageResult(
             df=sliced,
-            metadata={
-                "data_source": "mirror",
-                "dataset_id": dataset_id,
-                "bundle": bundle,
-                "requested_range": {"start": _iso_z(requested_start), "end": _iso_z(requested_end)},
-                "normalized_range": {"start": _iso_z(norm_start), "end": _iso_z(norm_end)},
-                "cache_created_at": None,
-                "cache_expires_at": None,
-                "row_count": len(sliced),
-            },
+            metadata=_mirror_result_metadata(
+                dataset_id=dataset_id,
+                bundle=bundle,
+                sliced=sliced,
+                requested_start=requested_start,
+                requested_end=requested_end,
+                norm_start=norm_start,
+                norm_end=norm_end,
+                mirror_df=mirror_df,
+                stale=False,
+            ),
         )
+
+    overlap = _mirror_overlap_slice(mirror_df, requested_start, requested_end)
+    mirror_max = _mirror_max_utc(mirror_df)
+    is_stale_tail = mirror_max is not None and mirror_max < requested_end
 
     decimation = _decimation_for_request(bundle, norm_start, norm_end)
     cache_key = build_overage_cache_key(
@@ -533,10 +605,35 @@ async def get_bundle_dataframe(
     if cached is not None:
         _STATS["hits"] += 1
         overage_df, meta = cached
-        merged = await _finalize_bundle_merge(
-            mirror_df, overage_df, requested_start, requested_end,
-            dataset_id=dataset_id, bundle=bundle,
-        )
+        try:
+            merged = await _finalize_bundle_merge(
+                mirror_df, overage_df, requested_start, requested_end,
+                dataset_id=dataset_id, bundle=bundle,
+            )
+        except Exception as err:
+            logger.warning(
+                "Overage merge failed for %s/%s; serving mirror overlap: %s",
+                dataset_id,
+                bundle,
+                err,
+            )
+            if not overlap.empty:
+                return OverageResult(
+                    df=overlap,
+                    metadata=_mirror_result_metadata(
+                        dataset_id=dataset_id,
+                        bundle=bundle,
+                        sliced=overlap,
+                        requested_start=requested_start,
+                        requested_end=requested_end,
+                        norm_start=norm_start,
+                        norm_end=norm_end,
+                        mirror_df=mirror_df,
+                        stale=True,
+                        fallback_error=str(err),
+                    ),
+                )
+            raise
         return OverageResult(
             df=merged,
             metadata={
@@ -549,7 +646,26 @@ async def get_bundle_dataframe(
                 "cache_created_at": meta.get("created_at"),
                 "cache_expires_at": meta.get("expires_at"),
                 "row_count": len(merged),
+                "stale": bool(is_stale_tail),
             },
+        )
+
+    # Prefer partial mirror over a live ERDDAP round-trip when the mirror already
+    # overlaps the requested window (typical realtime case: mirror minutes behind "now").
+    if not overlap.empty:
+        return OverageResult(
+            df=overlap,
+            metadata=_mirror_result_metadata(
+                dataset_id=dataset_id,
+                bundle=bundle,
+                sliced=overlap,
+                requested_start=requested_start,
+                requested_end=requested_end,
+                norm_start=norm_start,
+                norm_end=norm_end,
+                mirror_df=mirror_df,
+                stale=True,
+            ),
         )
 
     _STATS["misses"] += 1
@@ -574,17 +690,86 @@ async def get_bundle_dataframe(
             _IN_FLIGHT[cache_key] = task
 
     try:
-        overage_df, meta = await task
+        try:
+            overage_df, meta = await task
+        except Exception as err:
+            logger.warning(
+                "ERDDAP overage populate failed for %s/%s; serving mirror overlap: %s",
+                dataset_id,
+                bundle,
+                err,
+            )
+            if not overlap.empty:
+                return OverageResult(
+                    df=overlap,
+                    metadata=_mirror_result_metadata(
+                        dataset_id=dataset_id,
+                        bundle=bundle,
+                        sliced=overlap,
+                        requested_start=requested_start,
+                        requested_end=requested_end,
+                        norm_start=norm_start,
+                        norm_end=norm_end,
+                        mirror_df=mirror_df,
+                        stale=True,
+                        fallback_error=str(err),
+                    ),
+                )
+            raise
     finally:
         async with _get_in_flight_lock():
             current = _IN_FLIGHT.get(cache_key)
             if current is task:
                 _IN_FLIGHT.pop(cache_key, None)
 
-    merged = await _finalize_bundle_merge(
-        mirror_df, overage_df, requested_start, requested_end,
-        dataset_id=dataset_id, bundle=bundle,
-    )
+    try:
+        merged = await _finalize_bundle_merge(
+            mirror_df, overage_df, requested_start, requested_end,
+            dataset_id=dataset_id, bundle=bundle,
+        )
+    except Exception as err:
+        logger.warning(
+            "Overage finalize failed for %s/%s; serving mirror overlap: %s",
+            dataset_id,
+            bundle,
+            err,
+        )
+        if not overlap.empty:
+            return OverageResult(
+                df=overlap,
+                metadata=_mirror_result_metadata(
+                    dataset_id=dataset_id,
+                    bundle=bundle,
+                    sliced=overlap,
+                    requested_start=requested_start,
+                    requested_end=requested_end,
+                    norm_start=norm_start,
+                    norm_end=norm_end,
+                    mirror_df=mirror_df,
+                    stale=True,
+                    fallback_error=str(err),
+                ),
+            )
+        raise
+
+    # Empty ERDDAP response with no mirror overlap → empty result (outer layer may still fallback).
+    if merged.empty and not overlap.empty:
+        return OverageResult(
+            df=overlap,
+            metadata=_mirror_result_metadata(
+                dataset_id=dataset_id,
+                bundle=bundle,
+                sliced=overlap,
+                requested_start=requested_start,
+                requested_end=requested_end,
+                norm_start=norm_start,
+                norm_end=norm_end,
+                mirror_df=mirror_df,
+                stale=True,
+                fallback_error="ERDDAP returned no rows for overage window",
+            ),
+        )
+
     return OverageResult(
         df=merged,
         metadata={

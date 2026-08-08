@@ -70,18 +70,33 @@ Light/dark themes are CSS custom properties on `<html data-theme="...">` (also `
 | Bootstrap bridges | `--bs-card-bg`, `--bs-body-bg-rgb`, `--bs-border-color` | Keep Bootstrap components themed |
 | Comfort tokens | `--app-radius-md`, `--app-shadow-elevated`, `--app-alert-info-*`, `--app-map-frame-bg` | Shared components / maps |
 
-Shared UI classes live in [`web/static/css/custom.css`](../../web/static/css/custom.css): `.gbs-card`, `.gbs-hint`, `.gbs-empty-state`, `.platform-choice-card`. Page-specific stylesheets: [`web/static/css/pages/login.css`](../../web/static/css/pages/login.css), [`web/static/css/pages/admin.css`](../../web/static/css/pages/admin.css). Leaflet base tiles switch with theme via [`web/static/js/map_tiles.js`](../../web/static/js/map_tiles.js) (OSM light / CARTO Dark Matter).
+Additional DOM hooks (User Settings → Appearance):
 
-Theme preference is still client-only (`localStorage` + banner/login `#themeSwitch` in [`auth.js`](../../web/static/js/auth.js)); per-user DB prefs are a later phase.
+| Attribute | Values | Purpose |
+|-----------|--------|---------|
+| `data-accent` | `default`, `teal`, `high-contrast` | Remap `--app-primary` / `--app-accent` |
+| `data-density` | `comfortable`, `compact` | Placeholder: today only slightly tighter radius/shadow + `.gbs-card` / `.gbs-hint` padding — expand once desired app-wide density is defined |
+| `data-map-style` | `match-theme`, `light`, `dark` | Leaflet basemap override |
+
+Shared UI classes live in [`web/static/css/custom.css`](../../web/static/css/custom.css): `.gbs-card`, `.gbs-hint`, `.gbs-empty-state`, `.platform-choice-card`. Page-specific stylesheets: [`web/static/css/pages/login.css`](../../web/static/css/pages/login.css), [`web/static/css/pages/admin.css`](../../web/static/css/pages/admin.css). Leaflet tiles: [`web/static/js/map_tiles.js`](../../web/static/js/map_tiles.js) (OSM light / CARTO Dark Matter; respects `map_style`).
+
+Per-user prefs live in `users.ui_preferences` JSON and sync with `localStorage` via [`ui_preferences.js`](../../web/static/js/ui_preferences.js) / [`auth.js`](../../web/static/js/auth.js). Shape: `theme_mode` (`light` \| `dark` \| `system`), `accent`, `density`, `map_style`. Banner `#themeSwitch` forces light/dark (exits system). Unauthenticated pages stay localStorage-only.
 
 ## Patterns to follow
 
 - Data loading through the data service layer (see CODE_STANDARDS).
 - Feature toggles via `FEATURE_TOGGLES_FILE` (pretty JSON) or `FEATURE_TOGGLES_JSON` rather than hard-coding platform UI.
 - Weekly report visual style: [weekly_report_styleguide.md](./standards/weekly_report_styleguide.md).
+- **Dashboard left-nav summaries soft-refresh with charts** — do not rely on SSR + full `location.reload()` for realtime card/mini-trend/“Last data” freshness. Pattern (Wave Glider + Slocum):
+  1. Card contract: `{values, latest_timestamp_str, time_ago_str, mini_trend}` (optional extras like `ess_state`).
+  2. Builder in `app/platforms/{id}/summaries.py` (shared for SSR + JSON).
+  3. `GET /api/{platform_id}/sensor-summaries/{resource_id}` (WG: prefer `/api/wave_glider/...`; handler may live at legacy `/api/sensor-summaries/...` via alias).
+  4. On cache `last_data_timestamp` advance: quietly reload open charts **and** refresh summary cards/footers/mini-charts — no hard reload as the primary path.
+  5. When changing left-nav cards or timestamps, ask: *does this update live, or only on SSR?* See [architecture](./architecture.md#dashboard-summary-soft-refresh).
 
 ## Patterns to avoid
 
 - Circular imports via `from app.app import ...` in routers/core.
 - Gunicorn `--preload` in production — see [ADR 0002](../decisions/0002-no-gunicorn-preload.md).
 - Guessing project style — re-read this file and the linked standards instead.
+- Leaving mission-dashboard summary cards SSR-only while charts poll/live-fetch (causes “charts fresh, cards stale” lag).

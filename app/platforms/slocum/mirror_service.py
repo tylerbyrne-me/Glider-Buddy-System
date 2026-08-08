@@ -35,7 +35,11 @@ from app.core.utils import (
     unique_sibling_tmp_path,
     write_parquet_file_atomic,
 )
-from app.core.geo.coordinates import mask_null_island_coordinates
+from app.core.geo.coordinates import (
+    mask_implausible_slocum_track_coordinates,
+    mask_invalid_slocum_gps_status,
+    mask_null_island_coordinates,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -631,11 +635,12 @@ def dashboard_df_to_track_df(dashboard_df: pd.DataFrame) -> pd.DataFrame:
     if dashboard_df is None or dashboard_df.empty:
         return pd.DataFrame(columns=["Timestamp", "Latitude", "Longitude", "Depth"])
     cols = ["Timestamp"]
-    rename: dict[str, str] = {}
     if "Latitude" in dashboard_df.columns:
         cols.append("Latitude")
     if "Longitude" in dashboard_df.columns:
         cols.append("Longitude")
+    if "MGpsStatus" in dashboard_df.columns:
+        cols.append("MGpsStatus")
     depth_col = "MDepth" if "MDepth" in dashboard_df.columns else None
     if depth_col:
         cols.append(depth_col)
@@ -646,4 +651,8 @@ def dashboard_df_to_track_df(dashboard_df: pd.DataFrame) -> pd.DataFrame:
         track["Depth"] = pd.NA
     if "Latitude" in track.columns and "Longitude" in track.columns:
         track = mask_null_island_coordinates(track)
+        track = mask_invalid_slocum_gps_status(track)
+        track = mask_implausible_slocum_track_coordinates(track)
+    if "MGpsStatus" in track.columns:
+        track = track.drop(columns=["MGpsStatus"])
     return track.dropna(subset=["Latitude", "Longitude"], how="any")

@@ -16,4 +16,5 @@ Operational procedures, sensor guides, and admin quick starts.
 - [LLM chatbot troubleshooting example](./LLM_CHATBOT_TROUBLESHOOTING_EXAMPLE.md)
 - [Slocum integration (dashboard, ERDDAP, mirrors)](./slocum.md)
 - [Public login map](./public_login_map.md)
+- [Static vector map layers (GOSL / GeoJSON overlays)](./map_vector_layers.md)
 - [RAG document template](./DOCUMENT_TEMPLATE.md)

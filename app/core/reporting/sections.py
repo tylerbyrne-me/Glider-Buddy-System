@@ -1230,7 +1230,13 @@ def build_dmon_review_section(
             out.append(Spacer(1, 6))
             # Newest first, matching dashboard pilot scanning order.
             display_files = list(reversed(files))
-            asc_headers = ["File", "Modified (UTC)", "Size", "Gap after previous"]
+            asc_headers = [
+                "File",
+                "Modified (UTC)",
+                "Size",
+                "Gap after previous",
+                "Thruster since prev",
+            ]
             asc_rows: List[List[Any]] = []
             gap_row_indices: List[int] = []
 
@@ -1246,6 +1252,8 @@ def build_dmon_review_section(
                 if n < 1024 * 1024:
                     return f"{n / 1024:.1f} KB"
                 return f"{n / (1024 * 1024):.1f} MB"
+
+            from app.platforms.slocum.dmon_asc_thruster import format_thruster_since_prev
 
             for idx, row in enumerate(display_files):
                 if not isinstance(row, dict):
@@ -1266,6 +1274,14 @@ def build_dmon_review_section(
                         gap_row_indices.append(idx + 1)  # +1 for header row
                     else:
                         gap_cell = Paragraph(_escape_xml_text(gap_label), styles["TableCell"])
+                thruster_label = format_thruster_since_prev(
+                    row.get("thruster_since_prev"),
+                    has_previous="gap_after_prev_hours" in row,
+                )
+                thruster_cell = Paragraph(
+                    _escape_xml_text(thruster_label),
+                    styles["TableCell"],
+                )
                 asc_rows.append(
                     [
                         Paragraph(
@@ -1278,19 +1294,21 @@ def build_dmon_review_section(
                         ),
                         Paragraph(_escape_xml_text(_size_label(row.get("fileSize"))), styles["TableCell"]),
                         gap_cell,
+                        thruster_cell,
                     ]
                 )
 
             if asc_rows:
-                name_w = pw * 0.38
-                mod_w = pw * 0.28
-                size_w = pw * 0.12
-                gap_w = pw - name_w - mod_w - size_w
+                name_w = pw * 0.30
+                mod_w = pw * 0.24
+                size_w = pw * 0.10
+                gap_w = pw * 0.18
+                thruster_w = pw - name_w - mod_w - size_w - gap_w
                 asc_table = styled_data_table(
                     asc_headers,
                     asc_rows,
                     styles=styles,
-                    col_widths=[name_w, mod_w, size_w, gap_w],
+                    col_widths=[name_w, mod_w, size_w, gap_w, thruster_w],
                 )
                 if gap_row_indices:
                     asc_table.setStyle(

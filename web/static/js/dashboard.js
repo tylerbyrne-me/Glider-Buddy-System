@@ -1436,12 +1436,161 @@ document.addEventListener('DOMContentLoaded', async function() {
     const autoRefreshToggle = document.getElementById('autoRefreshToggleBanner');
     // Store cache timestamps for each report type
     const cacheTimestamps = new Map(); // reportType -> { cache_timestamp, last_data_timestamp, file_modification_time }
+    // Track which sensor categories have been loaded so soft refresh can reload them quietly.
+    // Declared early so cache-poll soft refresh can run before the rest of UI init.
+    const loadedCategories = new Set();
 
     // Cache polling for real-time missions
     // Note: Background cache refresh runs every 10 minutes (configured in .env)
     // Polling every 30 seconds ensures we detect updates within 30 seconds of cache refresh
     let cachePollInterval = null;
     const CACHE_POLL_INTERVAL_MS = 30000; // Poll every 30 seconds (cache refreshes every 10 min)
+
+    function formatCardSummaryValue(value, digits = 1) {
+        if (value === null || value === undefined || Number.isNaN(Number(value))) return 'N/A';
+        return Number(value).toFixed(digits);
+    }
+
+    function updateWgDetailLastDataFooter(category, summary) {
+        const detailView = document.getElementById(`detail-${category}`);
+        if (!detailView || !summary) return;
+        const footer = detailView.querySelector('.card-footer');
+        if (!footer) return;
+        const latest = summary.latest_timestamp_str || 'N/A';
+        const timeAgo = summary.time_ago_str || 'N/A';
+        if (latest !== 'N/A') {
+            footer.textContent = `Last data: ${latest} (${timeAgo})`;
+        } else {
+            footer.textContent = 'Last data: N/A';
+        }
+    }
+
+    function updateWgDetailLastDataFromTimestamp(category, isoTimestamp) {
+        if (!category || !isoTimestamp) return;
+        const detailView = document.getElementById(`detail-${category}`);
+        if (!detailView) return;
+        const footer = detailView.querySelector('.card-footer');
+        if (!footer) return;
+        const formatted = formatUtcDateTime(isoTimestamp);
+        if (!formatted || formatted === '-') {
+            footer.textContent = 'Last data: N/A';
+            return;
+        }
+        footer.textContent = `Last data: ${formatted}`;
+    }
+
+    function updateWgCardFromSummary(category, summary) {
+        const card = document.querySelector(`#left-nav-panel .summary-card[data-category="${category}"]`);
+        if (!card || !summary) return;
+
+        const values = summary.values || {};
+        const miniSummary = card.querySelector('.mini-summary');
+        const footer = card.querySelector('.summary-card-footer');
+
+        if (category === 'navigation' && miniSummary) {
+            const sog = values.SpeedOverGround != null ? `${formatCardSummaryValue(values.SpeedOverGround, 1)} kn` : 'N/A';
+            const pog = values.GliderHeading != null ? `${formatCardSummaryValue(values.GliderHeading, 0)} °` : 'N/A';
+            miniSummary.innerHTML = `SOG: ${sog}<br>POG: ${pog}`;
+        } else if (category === 'power' && miniSummary) {
+            const batt = values.BatteryPercentage != null ? `${formatCardSummaryValue(values.BatteryPercentage, 0)}%` : 'N/A';
+            const net = values.BatteryChargeRateW != null ? `${formatCardSummaryValue(values.BatteryChargeRateW, 1)} W` : 'N/A';
+            miniSummary.innerHTML = `Batt: ${batt}<br>Net: ${net}`;
+        } else if (category === 'ctd' && miniSummary) {
+            const temp = values.WaterTemperature != null ? `${formatCardSummaryValue(values.WaterTemperature, 1)} °C` : 'N/A';
+            const sal = values.Salinity != null ? `${formatCardSummaryValue(values.Salinity, 1)} PSU` : 'N/A';
+            miniSummary.innerHTML = `Temp: ${temp}<br>Sal: ${sal}`;
+        } else if (category === 'weather' && miniSummary) {
+            const air = values.AirTemperature != null ? `${formatCardSummaryValue(values.AirTemperature, 1)} °C` : 'N/A';
+            const wind = values.WindSpeed != null ? `${formatCardSummaryValue(values.WindSpeed, 1)} kt` : 'N/A';
+            miniSummary.innerHTML = `Air: ${air}<br>Wind: ${wind}`;
+        } else if (category === 'waves' && miniSummary) {
+            const hs = values.SignificantWaveHeight != null ? `${formatCardSummaryValue(values.SignificantWaveHeight, 1)} m` : 'N/A';
+            const dp = values.MeanDirectionDisplay != null ? values.MeanDirectionDisplay : 'N/A';
+            const dpClass = values.MeanDirectionStatus === 'outlier' ? ' class="text-warning"' : '';
+            const dpTitle = values.MeanDirectionStatus === 'outlier'
+                ? ' title="Latest data point was an invalid outlier (e.g., 9999)."'
+                : '';
+            miniSummary.innerHTML = `Hs: ${hs}<br>Dp: <span${dpTitle}${dpClass}>${dp}</span>`;
+            if (summary.ess_state) {
+                card.dataset.essState = summary.ess_state;
+            } else {
+                delete card.dataset.essState;
+            }
+            const titleEl = card.querySelector('h5');
+            if (titleEl) {
+                let essSpan = titleEl.querySelector('.ess-indicator');
+                if (summary.ess_state) {
+                    if (!essSpan) {
+                        essSpan = document.createElement('span');
+                        titleEl.appendChild(document.createTextNode(' '));
+                        titleEl.appendChild(essSpan);
+                    }
+                    essSpan.className = `ess-indicator ess-${summary.ess_state}`;
+                    const titles = {
+                        extreme: 'Extreme sea state (≥4.5 m) — figure-8 pattern required',
+                        increasing: 'Increasing seas (2.5–4.5 m)',
+                        calm: 'Calm seas (<2.5 m)',
+                    };
+                    essSpan.title = titles[summary.ess_state] || '';
+                    essSpan.setAttribute('aria-label', `Sea state: ${summary.ess_state}`);
+                } else if (essSpan) {
+                    essSpan.remove();
+                }
+            }
+        } else if (category === 'vr2c' && miniSummary) {
+            const dc = values.DetectionCount != null ? values.DetectionCount : 'N/A';
+            const pc = values.PingCount != null ? values.PingCount : 'N/A';
+            miniSummary.innerHTML = `DC: ${dc}<br>PC: ${pc}`;
+        } else if (category === 'fluorometer' && miniSummary) {
+            const c1 = values.C1_Avg != null ? formatCardSummaryValue(values.C1_Avg, 1) : 'N/A';
+            const temp = values.Temperature_Fluor != null ? `${formatCardSummaryValue(values.Temperature_Fluor, 1)} °C` : 'N/A';
+            miniSummary.innerHTML = `C1 Avg: ${c1}<br>Temp: ${temp}`;
+        } else if (category === 'wg_vm4' && miniSummary) {
+            const sn = values.SerialNumber != null ? values.SerialNumber : 'N/A';
+            const ch0 = values.Channel0DetectionCount != null ? values.Channel0DetectionCount : 'N/A';
+            miniSummary.innerHTML = `SN: ${sn}<br>Ch0 DC: ${ch0}`;
+        }
+
+        if (footer) {
+            footer.textContent = summary.time_ago_str || 'N/A';
+        }
+        const miniTrend = Array.isArray(summary.mini_trend) ? summary.mini_trend : [];
+        card.dataset.miniTrend = JSON.stringify(miniTrend);
+        updateWgDetailLastDataFooter(category, summary);
+    }
+
+    async function refreshWgSummaryCards() {
+        if (!missionId) return;
+        try {
+            const params = new URLSearchParams();
+            if (currentSource) params.set('source', currentSource);
+            if (currentSource === 'local' && currentLocalPath) {
+                params.set('local_path', currentLocalPath);
+            }
+            const qs = params.toString();
+            const sensors = await apiRequest(
+                `/api/wave_glider/sensor-summaries/${encodeURIComponent(missionId)}${qs ? `?${qs}` : ''}`,
+                'GET',
+            );
+            if (!sensors || typeof sensors !== 'object') return;
+            Object.entries(sensors).forEach(([category, summary]) => {
+                updateWgCardFromSummary(category, summary);
+            });
+            initializeMiniCharts();
+        } catch (err) {
+            console.debug('Wave Glider summary card refresh failed:', err);
+        }
+    }
+
+    function refreshAllLoadedWgChartsQuiet() {
+        loadedCategories.forEach((category) => {
+            const loader = getSensorLoader(category);
+            if (loader) loader();
+            if (category === 'waves') {
+                fetchAndRenderWaveSpectrum(missionId);
+            }
+        });
+    }
 
     async function pollCacheStatus() {
         // Debug logging
@@ -1537,11 +1686,14 @@ document.addEventListener('DOMContentLoaded', async function() {
                 }
             }
             
-            // If any cache was updated, force a full page refresh
+            // Soft refresh: update charts + summary cards without a full page reload
+            // (parity with Slocum). Fallback timer below still hard-reloads as safety net.
             if (cacheUpdated) {
-                console.log(`Cache refresh detected for: ${updatedReportTypes.join(', ')}. Reloading page...`);
-                // Use window.location.reload(true) to force a hard refresh (bypass cache)
-                window.location.reload(true);
+                console.log(
+                    `Cache refresh detected for: ${updatedReportTypes.join(', ')}. Soft-refreshing charts and summaries...`
+                );
+                refreshAllLoadedWgChartsQuiet();
+                refreshWgSummaryCards();
             } else {
                 console.debug('No cache updates detected in this poll');
             }
@@ -1672,6 +1824,20 @@ document.addEventListener('DOMContentLoaded', async function() {
                         last_data_timestamp: response.cache_metadata.last_data_timestamp,
                         file_modification_time: response.cache_metadata.file_modification_time
                     });
+                    // Keep detail "Last data" footer in sync when charts fetch fresh rows
+                    const footerCategory = reportType === 'telemetry' ? 'navigation' : reportType;
+                    if (
+                        response.cache_metadata.last_data_timestamp
+                        && [
+                            'navigation', 'power', 'ctd', 'weather', 'waves',
+                            'vr2c', 'fluorometer', 'wg_vm4',
+                        ].includes(footerCategory)
+                    ) {
+                        updateWgDetailLastDataFromTimestamp(
+                            footerCategory,
+                            response.cache_metadata.last_data_timestamp,
+                        );
+                    }
                 }
             } else {
                 // Legacy format (array directly) - backward compatibility
@@ -2282,9 +2448,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     // Mini charts: shared module (/static/js/mini_charts.js)
-
-    // Track which sensor categories have been loaded so we can refresh all when Resample/hours/date changes
-    const loadedCategories = new Set();
+    // loadedCategories is declared earlier (near cache polling) for soft-refresh.
     let isWgVm4OffloadSectionInitialized = false;
 
     // --- NEW: Left Panel Click Handler ---

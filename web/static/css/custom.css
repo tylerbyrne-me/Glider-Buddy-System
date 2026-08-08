@@ -1127,6 +1127,22 @@ footer .text-muted {
   color: inherit;
 }
 
+:root[data-density="compact"] .gbs-card > .card-header,
+:root[data-density="compact"] .gbs-card-header {
+  padding: 0.5rem 0.75rem;
+}
+
+:root[data-density="compact"] .gbs-card > .card-body,
+:root[data-density="compact"] .gbs-card-body {
+  padding: 0.65rem 0.85rem;
+}
+
+:root[data-density="compact"] .gbs-hint {
+  padding: 0.45rem 0.65rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+}
+
 .gbs-hint {
   background: var(--app-alert-info-bg);
   border: 1px solid var(--app-alert-info-border);

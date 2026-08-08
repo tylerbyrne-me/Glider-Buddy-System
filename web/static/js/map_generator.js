@@ -23,6 +23,10 @@ import {
     initIridiumOverlay,
     refreshIridiumLayerIfActive,
 } from '/static/js/iridium_map_layer.js';
+import {
+    bindVectorOverlayContext,
+    initVectorOverlay,
+} from '/static/js/vector_map_layer.js';
 
 /** All track polyline layers (Wave Glider + Slocum) for bbox / z-order helpers. */
 function getAllTrackLayers() {
@@ -260,6 +264,8 @@ function initializeMissionMap() {
     initWindOverlay();
     bindIridiumOverlayContext(missionMap, getIridiumObservers);
     initIridiumOverlay();
+    bindVectorOverlayContext(missionMap);
+    initVectorOverlay();
 }
 
 /**

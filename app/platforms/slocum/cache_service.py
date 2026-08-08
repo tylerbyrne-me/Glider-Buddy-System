@@ -138,6 +138,50 @@ def slice_processed_df(
     return df.loc[df["Timestamp"] > cutoff].copy()
 
 
+def _mirror_fallback_slice(
+    dataset_id: str,
+    bundle: str,
+    *,
+    hours_back: int,
+    time_start_str: Optional[str],
+    time_end_str: Optional[str],
+) -> tuple[pd.DataFrame, Optional[str]]:
+    """
+    Slice on-disk mirror for the requested window.
+
+    When the display window ends after the mirror tail, expand the slice end to
+    ``mirror_max`` so stale-but-usable rows are returned instead of an empty chart.
+    """
+    df = load_mirror_df(dataset_id, bundle)
+    if df.empty or "Timestamp" not in df.columns:
+        return pd.DataFrame(), None
+    use_date_range = bool(time_start_str and time_end_str)
+    slice_start = time_start_str
+    slice_end = time_end_str
+    mirror_max_iso: Optional[str] = None
+    ts = pd.to_datetime(df["Timestamp"], utc=True)
+    mirror_max = ts.max()
+    if pd.notna(mirror_max):
+        mirror_max_iso = pd.Timestamp(mirror_max).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if use_date_range and time_end_str:
+            end_dt = pd.to_datetime(time_end_str, utc=True)
+            if mirror_max < end_dt:
+                # Prefer overlap ending at mirror tail over empty [start, now] slice.
+                if time_start_str:
+                    start_dt = pd.to_datetime(time_start_str, utc=True)
+                    if mirror_max < start_dt:
+                        slice_start = mirror_max_iso
+                slice_end = mirror_max_iso
+    sliced = slice_processed_df(
+        df,
+        hours_back=hours_back,
+        use_date_range=use_date_range,
+        time_start_str=slice_start,
+        time_end_str=slice_end,
+    )
+    return sliced, mirror_max_iso
+
+
 async def get_cached_or_fetch_bundle_df(
     dataset_id: str,
     bundle: str,
@@ -188,25 +232,77 @@ async def get_cached_or_fetch_bundle_df(
             bundle,
             err,
         )
-        await ensure_mirror_synced(
+        # Read mirror first so outages do not wait on ensure_mirror_synced → ERDDAP.
+        sliced, mirror_max_iso = _mirror_fallback_slice(
             dataset_id,
-            hours_back=max(hours_back, getattr(settings, "slocum_mirror_retention_hours", 72)),
-        )
-        df = load_mirror_df(dataset_id, bundle)
-        if df.empty:
-            return None if not return_metadata else OverageResult(df=pd.DataFrame(), metadata={"data_source": "mirror", "error": str(err)})
-        use_date_range = bool(time_start_str and time_end_str)
-        sliced = slice_processed_df(
-            df,
+            bundle,
             hours_back=hours_back,
-            use_date_range=use_date_range,
             time_start_str=time_start_str,
             time_end_str=time_end_str,
         )
-        result = OverageResult(
-            df=sliced,
-            metadata={"data_source": "mirror", "fallback_error": str(err), "row_count": len(sliced)},
+        try:
+            await ensure_mirror_synced(
+                dataset_id,
+                hours_back=max(hours_back, getattr(settings, "slocum_mirror_retention_hours", 72)),
+            )
+        except Exception as sync_err:
+            logger.warning(
+                "Post-fallback mirror sync failed for %s/%s: %s",
+                dataset_id,
+                bundle,
+                sync_err,
+            )
+        if sliced.empty:
+            # Re-read after best-effort sync in case cold start just wrote parquet.
+            sliced, mirror_max_iso = _mirror_fallback_slice(
+                dataset_id,
+                bundle,
+                hours_back=hours_back,
+                time_start_str=time_start_str,
+                time_end_str=time_end_str,
+            )
+        if sliced.empty:
+            empty_meta: dict[str, Any] = {
+                "data_source": "mirror",
+                "error": str(err),
+                "stale": True,
+            }
+            if mirror_max_iso:
+                empty_meta["mirror_max"] = mirror_max_iso
+            return None if not return_metadata else OverageResult(df=pd.DataFrame(), metadata=empty_meta)
+        meta: dict[str, Any] = {
+            "data_source": "mirror",
+            "fallback_error": str(err),
+            "row_count": len(sliced),
+            "stale": True,
+        }
+        if mirror_max_iso:
+            meta["mirror_max"] = mirror_max_iso
+        result = OverageResult(df=sliced, metadata=meta)
+
+    # Empty primary result with a usable on-disk mirror → serve stale overlap.
+    if (
+        result is not None
+        and (result.df is None or result.df.empty)
+        and not (result.metadata or {}).get("fallback_error")
+    ):
+        sliced, mirror_max_iso = _mirror_fallback_slice(
+            dataset_id,
+            bundle,
+            hours_back=hours_back,
+            time_start_str=time_start_str,
+            time_end_str=time_end_str,
         )
+        if not sliced.empty:
+            meta = {
+                "data_source": "mirror",
+                "fallback_error": "Empty overage/ERDDAP result; served mirror overlap",
+                "row_count": len(sliced),
+                "stale": True,
+            }
+            if mirror_max_iso:
+                meta["mirror_max"] = mirror_max_iso
+            result = OverageResult(df=sliced, metadata=meta)
 
     if return_metadata:
         return result

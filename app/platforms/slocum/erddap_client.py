@@ -39,12 +39,13 @@ DEFAULT_VARIABLES = [
     "salinity",
 ]
 
-# Four variables for map track: time, lat, lon, depth
+# Four variables for map track: time, lat, lon, depth (+ gps status for fix QA)
 TRACK_VARIABLES = [
     "time",
     "latitude",
     "longitude",
     "depth",
+    "m_gps_status",
 ]
 
 # Variables for Slocum mission dashboard charts (includes lat/lon for map/forecast reuse)
@@ -52,6 +53,7 @@ SLOCUM_DASHBOARD_VARIABLES = [
     "time",
     "latitude",
     "longitude",
+    "m_gps_status",
     "m_depth",
     "m_altitude",
     "m_raw_altitude",

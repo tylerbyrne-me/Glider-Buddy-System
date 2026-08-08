@@ -21,7 +21,7 @@ from .erddap_client import (
 )
 
 # Bump when parquet schema / preprocess semantics change so overage keys invalidate.
-BUNDLE_SCHEMA_VERSION = "12"
+BUNDLE_SCHEMA_VERSION = "14"
 
 
 @dataclass(frozen=True)

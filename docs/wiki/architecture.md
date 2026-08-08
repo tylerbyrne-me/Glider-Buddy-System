@@ -1,6 +1,6 @@
 # Architecture
 
-_Last updated: 2026-08-06_
+_Last updated: 2026-08-08_
 
 ## One-paragraph summary
 
@@ -24,10 +24,11 @@ See [conventions](./conventions.md#product--platform-naming) and [ADR 0003](../d
 - **Routers** — HTTP endpoints only; depend on core/platforms/services, never the reverse (`app/routers/`)
 - **Services** — higher-level orchestration (knowledge base, reporting, sensor tracker, etc.) (`app/services/`)
 - **Sensor Tracker instruments** — sync stores `MissionInstrument` + nested `MissionSensor` in SQLite. Mission/deployment info APIs and home briefing load them via `app/core/mission_instruments.py` (`selectinload`). UI lists (dashboards, admin overviews, home) show nested sensors under each instrument when present; weekly reports use the same DB rows.
+- **UI preferences** — `users.ui_preferences` JSON (`theme_mode`, `accent`, `density`, `map_style`) on `GET`/`PUT /api/users/me`; client apply via `web/static/js/ui_preferences.js` + User Settings Appearance. Org-wide defaults not implemented yet.
 - **Mission reports** — PDF builders in `app/core/reporting/` (Wave Glider) and `app/platforms/slocum/reports.py` (Slocum). Automated weekly jobs use default options (goals + `include_in_report` comments only). User-generated reports may pass ephemeral `expanded_notes` that render as **Additional notes** after the Mission details “Publication, attribution, and data” table (not stored in-app).
 - **Web assets** — Jinja templates in `web/templates/` and static files in `web/static/` (wired in `app/core/templates.py` / `app/app.py`); Python form helpers in `app/forms/`
 - **CLI** — admin/ops scripts such as station CSV import (`app/cli/`)
-- **Data on disk** — mission CSVs under `data/`; weather/bathy/iridium/slocum/public-map caches under `data_store/`
+- **Data on disk** — mission CSVs under `data/`; weather/bathy/iridium/slocum/public-map caches under `data_store/`; static vector map GeoJSON under `config/map_layers/`
 - **Scheduler** — APScheduler jobs for cache refresh, weekly reports, weather/bathy/iridium/slocum/public-map warm + cleanup (leader only; see [ADR 0001](../decisions/0001-gunicorn-leader-lock.md))
 - **Public login map** — optional unauthenticated Leaflet map on `/login.html` (feature toggle `public_login_map`). Only missions with admin `public_map_enabled` **and** listed in `ACTIVE_REALTIME_MISSIONS` / `ACTIVE_SLOCUM_DATASETS` appear. Slocum entries may use short aliases via `SLOCUM_DATASET_ALIAS_MAP_JSON` (same idea as Wave Glider `REMOTE_MISSION_FOLDER_MAP_JSON` mission keys). APIs under `/api/public/*` return lat/lon/timestamp (plus Slocum waypoint); optional gated weekly PDF via `/api/public/reports/.../latest`. Popup labels use shared `resolve_public_mission_labels()` (Sensor Tracker → deployment → telemetry/folder hints) so Wave Glider and Slocum share the same **Platform Name** / **Mission Title** rules. Login UI centers the map in the non-banner viewport (~75% size) with Refresh / Download KML under the map. Disk cache: `data_store/public_map_cache/`; leader job `system_public_map_warm_job`. Distinct from auth token Live KML (`/api/kml/live/{token}`). Ops: [Public login map how-to](./how-tos/public_login_map.md).
 
@@ -39,13 +40,36 @@ Remote/local sources → sync (leader) → data/ + data_store caches
 Client → FastAPI routers → core/services → cached telemetry / SQLite → HTML/JSON
 ```
 
-Typical dashboard path: select mission → load/summarize telemetry from cache (warm on demand if needed) → charts and status widgets. Map overlays (weather, Iridium) use feature toggles and disk caches with TTL/cleanup jobs.
+Typical dashboard path: select mission → load/summarize telemetry from cache (warm on demand if needed) → charts and status widgets. Map overlays (weather, Iridium, static vector zones) use feature toggles; weather/Iridium use `data_store/` caches with TTL/cleanup jobs, while reference GeoJSON lives under git-tracked `config/map_layers/`.
+
+### Static vector map layers
+
+Toggleable Leaflet polygons (e.g. GOSL DSZ / safe zones) for home maps on all platforms (`map_vector_layers` feature toggle). Ops how-to: [map_vector_layers.md](./how-tos/map_vector_layers.md).
+
+- **On disk** — [`config/map_layers/`](../../config/map_layers/): `manifest.json`, `published/*.geojson`, optional `sources/*.kml` (git-tracked; convert locally, deploy via git — prod does not re-ingest KML at runtime)
+- **Ingest** — [`scripts/convert_map_layer_kml.py`](../../scripts/convert_map_layer_kml.py) (geopandas + pyogrio) splits KML placemarks into published GeoJSON + updates the manifest
+- **API** — `GET /api/map/layers` (catalog), `GET /api/map/layers/{id}` (GeoJSON + ETag); gated by `map_vector_layers`
+- **Client** — [`web/static/js/vector_map_layer.js`](../../web/static/js/vector_map_layer.js) on WG/Slocum home maps via `map_generator.js` (pane under tracks)
+- **Not yet** — public login map overlays; PDF report maps (`plot_telemetry_page_with_notes`); catalog-driven toggles / per-mission “always show” (see [backlog](../tasks/backlog.md))
+
+### Dashboard summary soft refresh
+
+Left-nav summary cards, mini-trends, and detail “Last data” footers must stay on the same freshness path as main charts. Both platforms soft-refresh on cache advance (no full page reload as the primary path):
+
+| Platform | Cache status | Summaries API | Builder | Client |
+|----------|--------------|---------------|---------|--------|
+| Wave Glider | `/api/cache-status/{mission}` | `/api/wave_glider/sensor-summaries/{mission}` → `/api/sensor-summaries/{mission}` | `app/platforms/wave_glider/summaries.py` | `web/static/js/dashboard.js` |
+| Slocum | `/api/slocum/cache-status/{dataset}` | `/api/slocum/sensor-summaries/{dataset}` | `app/platforms/slocum/summaries.py` | `web/static/js/slocum_dashboard.js` |
+
+Shared card JSON shape: `{values, latest_timestamp_str, time_ago_str, mini_trend}` (WG waves may add `ess_state`). SSR and the JSON API use the same builder. Chart fetches may also update detail footers from `cache_metadata.last_data_timestamp`.
+
+**New platform checklist:** package builder → `/api/{id}/sensor-summaries/...` → poll cache → refresh charts + cards (reuse `mini_charts.js`). Card HTML formatting stays platform-specific until a shared formatter exists. Convention: [conventions](./conventions.md#patterns-to-follow).
 
 Slocum weekly PDFs (`app/platforms/slocum/reports.py`): Mission Summary includes Distance (period) + Distance (total), Average water depth (prefer filtered `m_water_depth`, else ETOPO 2022 along track), Battery power (pack type + V stats), CTD oceanographic KPIs, and (when DMON review is available) confirmed detection-day tallies per whale species. Telemetry track is colored by SFMC-style surfacing speed (distance ÷ time between depth-detected surfacings; 0–1.1 kt cmocean speed) — the public SFMC Bearer API does not expose Surfacings `speedMap`, so the report reproduces that panel’s formula from the ERDDAP track. A dedicated Battery page follows telemetry: UTC daily Δ of `m_coulomb_amphr_total` (complete-day solid bars + cumulative twin axis; partial days hatched after ΔAh÷hours×24; projection Ah/day prefers complete days) and linear projections to 50/75/90/100% of checklist pack endurance Ah. CTD pages use depth-vs-time cmocean profile scatters with an optional filtered `m_water_depth` bathymetry overlay (rejects ≤0 / `-1` sentinels and local spikes); Dashboard sensors charts are omitted. The DMON Whale detections page adds SFMC `*.asc` offload/gap accounting (dashboard-style, gaps >16h highlighted; listings paginate past SFMC’s 20-file page size and clip to the report window).
 
 ### Slocum resolution
 
-Slocum mirror and overage fetches store **full ERDDAP resolution** by default (active and historical). Time thinning for charts/CSV is pilot-controlled via the dashboard **Resample** control (`granularity_minutes`). `slocum_erddap_decimation_minutes` defaults to `0` (ops escape hatch only). CTD/checklist bundles never use ERDDAP time decimation. Dashboard/checklist preprocess use exact+stem column rename so ERDDAP unit suffixes (e.g. `c_heading (rad)`, `m_coulomb_amphr_total (amp hrs)`, digifin/thruster/DMON unit variants) map to chart columns; bump `BUNDLE_SCHEMA_VERSION` when rename/preprocess semantics change so mirrors rebuild (currently **12** for digifin + thruster + DMON byte count). Shared chart toolkit (style, depth overlay, zoom/pan/reset) lives in `web/static/js/chart_*_utils.js` and `_chart_plot_controls.html`. Daily checklist Plot-it and side-by-side compare are documented in [Slocum how-to](./how-tos/slocum.md#daily-pilot-checklist). DMON sensor card (admin-toggled) adds `sci_dmon_msg_byte_count` charts plus SFMC `from-glider` `*.asc` gap checks (left-nav green/red status dot via the same `.ess-indicator` CSS as Wave Glider Waves ESS); Science checklist ASC/gap items appear only when `dmon` is enabled. When `SlocumDeployment.robots4whales_url` is set, a leader job every 12h caches Robots4Whales daily analyst-review HTML under `data_store/dmon_review_cache/` for the DMON dashboard and weekly PDF section ([ADR 0004](../decisions/0004-dmon-robots4whales-review-cache.md)). Optional CLS Argos/Kinéis api-telemetry credentials (`ARGOS_USERNAME` / `ARGOS_PASSWORD`) plus per-deployment `argos_id` (CLS `deviceRef`) drive an on-demand Argos Doppler vs glider GPS separation check on the daily checklist (20 km default; cache under `data_store/argos_cache/`).
+Slocum mirror and overage fetches store **full ERDDAP resolution** by default (active and historical). Interactive reads prefer the rolling 72h disk mirror (partial overlap with `stale` metadata) over a live ERDDAP round-trip when the mirror already covers part of the window; ERDDAP outages therefore keep charts/maps populated from `data_store/slocum_cache/` instead of blanking. Time thinning for charts/CSV is pilot-controlled via the dashboard **Resample** control (`granularity_minutes`). `slocum_erddap_decimation_minutes` defaults to `0` (ops escape hatch only). CTD/checklist bundles never use ERDDAP time decimation. Dashboard/checklist preprocess use exact+stem column rename so ERDDAP unit suffixes (e.g. `c_heading (rad)`, `m_coulomb_amphr_total (amp hrs)`, digifin/thruster/DMON unit variants) map to chart columns; bump `BUNDLE_SCHEMA_VERSION` when rename/preprocess semantics change so mirrors rebuild (currently **14** for digifin + thruster + DMON + `m_gps_status` invalid-fix masking + implausible track-speed filtering). Shared chart toolkit (style, depth overlay, zoom/pan/reset) lives in `web/static/js/chart_*_utils.js` and `_chart_plot_controls.html`. Daily checklist Plot-it and side-by-side compare are documented in [Slocum how-to](./how-tos/slocum.md#daily-pilot-checklist). DMON sensor card (admin-toggled) adds `sci_dmon_msg_byte_count` charts plus SFMC `from-glider` `*.asc` gap checks (left-nav green/red status dot via the same `.ess-indicator` CSS as Wave Glider Waves ESS); Science checklist ASC/gap items appear only when `dmon` is enabled. When `SlocumDeployment.robots4whales_url` is set, a leader job every 12h caches Robots4Whales daily analyst-review HTML under `data_store/dmon_review_cache/` for the DMON dashboard and weekly PDF section ([ADR 0004](../decisions/0004-dmon-robots4whales-review-cache.md)). Optional CLS Argos/Kinéis api-telemetry credentials (`ARGOS_USERNAME` / `ARGOS_PASSWORD`) plus per-deployment `argos_id` (CLS `deviceRef`) drive an on-demand Argos Doppler vs glider GPS separation check on the daily checklist (20 km default; cache under `data_store/argos_cache/`).
 
 ## Key files / entry points
 
@@ -55,9 +79,12 @@ Slocum mirror and overage fetches store **full ERDDAP resolution** by default (a
 | `app/config.py` | Settings / env-backed configuration |
 | `app/core/platforms/` | Product brand + platform registry |
 | `app/platforms/slocum/` | Slocum ERDDAP, mirrors, checklists, deployments |
+| `app/platforms/wave_glider/summaries.py` | WG left-nav sensor summaries (SSR + soft-refresh API) |
+| `app/routers/wave_glider.py` | WG APIs under `/api/...` (also via `/api/wave_glider/...` alias) |
 | `app/core/infra/logging_config.py` | Root logging, request IDs |
 | `app/core/data/` | Data service / telemetry loading |
 | `app/core/public_map_service.py` | Public login-map allowlist, shared popup labels, bundle cache, static KML |
+| `app/core/geo/map_layers.py` | Static vector layer catalog + GeoJSON reads (`config/map_layers/`) |
 | `app/core/mission_aliases.py` | Env-backed mission/dataset alias resolution (Slocum + future platforms) |
 | `app/routers/public_map.py` | Unauthenticated `/api/public/map/*` + report gate |
 | `web/templates/login.html` / `web/static/js/public_map.js` | Public login map UI (centered map, bottom toolbar) |

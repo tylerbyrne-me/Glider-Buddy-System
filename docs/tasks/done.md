@@ -3,8 +3,19 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-08 — BUG-004: ERDDAP outage serves 72h mirror / stale overlap (`stale` metadata + UI badge); map timeout mirror fallback — [BUG-004](../bugs/BUG-004-erddap-outage-mirror-fallback.md)
+- [x] 2026-08-08 — BUG-005: Coulomb daily AmpHr lookback widen for bulk, date-range, and single chart paths — [BUG-005](../bugs/BUG-005-coulomb-daily-needs-gt-24h.md)
+- [x] 2026-08-08 — DMON ASC thruster column: Yes/No for thruster activity since previous `*.asc` using dashboard `MThrusterPower` / `CThrusterOn` over `[prev_mtime, this_mtime)`; dashboard table + weekly PDF ASC section
+
+- [x] 2026-08-08 — Vector map layers docs wrap-up: how-to [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md); architecture / ENV / wiki index links; near-term home/public follow-ups + PDF report layers deferred on [backlog](backlog.md)
+- [x] 2026-08-07 — GOSL vector map layers: KML→GeoJSON ingest (`scripts/convert_map_layer_kml.py`), git-tracked `config/map_layers/`, `GET /api/map/layers` + GeoJSON, dual toggles (DSZ / safe zones) on WG+Slocum home maps via `vector_map_layer.js` (`map_vector_layers` feature toggle)
+- [x] 2026-08-07 — BUG-005 follow-up: mask implausible Slocum track jumps from trusted GPS0 (Fundy ~20–30 nm NaN-status DR cluster); `BUNDLE_SCHEMA_VERSION` **14** — [BUG-005](../bugs/BUG-005-slocum-invalid-gps-status-track-points.md)
+- [x] 2026-08-07 — BUG-005: suppress Slocum track points with invalid `m_gps_status` (2, 3, -2); dashboard ERDDAP wishlist + preprocess + `dashboard_df_to_track_df`; `BUNDLE_SCHEMA_VERSION` **13** — [BUG-005](../bugs/BUG-005-slocum-invalid-gps-status-track-points.md)
+- [x] 2026-08-07 — Wave Glider summary soft refresh: shared `app/platforms/wave_glider/summaries.py` builder; `GET /api/sensor-summaries/{mission}` (+ `/api/wave_glider/...` alias); `dashboard.js` updates left-nav cards / mini-trends / Last data footers and reloads charts on cache advance instead of full page reload (parity with Slocum)
 - [x] 2026-08-07 — Mission wrap-up expanded notes (ephemeral v1): optional toggle on user-generated WG weekly/EOM + Slocum weekly report UIs; free text embedded after "Publication, attribution, and data" in Mission details; automated scheduler reports unchanged; persistent in-app briefing storage deferred
 - [x] 2026-08-07 — BUG-003: checklist Plot-it shares inverted Depth axis for `m_water_depth` (`invert_value_axis`; axis min 0; filter invalid water-depth samples) — [BUG-003](../bugs/BUG-003-flip-water-depth-axis.md)
+- [x] 2026-08-07 — Dashboard Nav depth chart: same water-depth axis floor (`min: 0` when `invertY`) + filter `m_water_depth` in chart series API (avoids Chart.js ~-50 padding) — [BUG-003](../bugs/BUG-003-flip-water-depth-axis.md)
+- [x] 2026-08-07 — Theme Phase B+C: `users.ui_preferences` JSON + User Settings Appearance (`theme_mode` light/dark/system, accent, density, map_style); `ui_preferences.js` sync with localStorage; accent/density CSS + map_tiles override. Org theme defaults deferred
 - [x] 2026-08-06 — Nested Sensor Tracker sensors in UI: APIs return `MissionInstrumentRead.sensors`; shared `sensor_tracker_instruments.js` + home Jinja list nested sensors under instruments (same DB data reports already use)
 - [x] 2026-08-06 — Phase A UI tokens + comfort (no DB): Bootstrap bridges in `themes.css`; `.gbs-card` / `.gbs-hint` / `.gbs-empty-state`; login + admin page CSS extraction; theme-aware Leaflet tiles (`map_tiles.js`); admin overview empty states; equal platform-choice cards
 
