@@ -3,10 +3,17 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-09 — Vector map layers wrap-up: full FMA set documented; how-to / architecture / ENV / wiki index refreshed; one-shot `_fetch_remaining_fma.py` removed; backlog updated (remaining follow-ups + fishery notices ↔ FMA map integration + toggle UI polish) — [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md)
+- [x] 2026-08-09 — DFO Atlantic FMA set completed: scallop, capelin, mackerel, herring, squid, crab, salmon, snow crab, northern shrimp (22/23; OBJECTID 19 upstream 500) + catalog-driven home toggles — [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md)
+- [x] 2026-08-09 — NAVWARN map layer: CCG NIS HTML scrape + disk cache (`navwarn_cache.py`), `GET /api/map/navwarn/active|areas` + cache admin, dual toggles on WG+Slocum home maps (`navwarn_map_layer.js`), 30m incremental prefetch + daily re-validate — how-to [navwarn_map_layer.md](../wiki/how-tos/navwarn_map_layer.md)
+- [x] 2026-08-09 — NAVWARN two-tier refresh: 30m page-1 incremental (no prune) + daily full-catalog reconcile (prune, details only for new IDs); empty/truncated escalates to reconcile
 - [x] 2026-08-08 — BUG-004: ERDDAP outage serves 72h mirror / stale overlap (`stale` metadata + UI badge); map timeout mirror fallback — [BUG-004](../bugs/BUG-004-erddap-outage-mirror-fallback.md)
 - [x] 2026-08-08 — BUG-005: Coulomb daily AmpHr lookback widen for bulk, date-range, and single chart paths — [BUG-005](../bugs/BUG-005-coulomb-daily-needs-gt-24h.md)
 - [x] 2026-08-08 — DMON ASC thruster column: Yes/No for thruster activity since previous `*.asc` using dashboard `MThrusterPower` / `CThrusterOn` over `[prev_mtime, this_mtime)`; dashboard table + weekly PDF ASC section
 
+- [x] 2026-08-09 — DFO Atlantic FMA Crab + Snow Crab overlays from [egisp MapServer](https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer) (layers 16/22); ArcGIS JSON fallback + small page size for flaky GeoJSON queries
+- [x] 2026-08-09 — NOAA Shipping Lanes (NW Atlantic) map layer: ArcGIS ENC snapshot via `fetch_map_layer_arcgis.py` (`--bbox=-72,40,-50,52`) → `noaa_shipping_lanes_nw_atlantic` + home toggle
+- [x] 2026-08-09 — DFO Lobster LFAs (2022) map layer: ArcGIS REST snapshot via `scripts/fetch_map_layer_arcgis.py` → `dfo_lobster_lfa_2022` GeoJSON + home-map toggle (all LFAs)
 - [x] 2026-08-08 — Vector map layers docs wrap-up: how-to [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md); architecture / ENV / wiki index links; near-term home/public follow-ups + PDF report layers deferred on [backlog](backlog.md)
 - [x] 2026-08-07 — GOSL vector map layers: KML→GeoJSON ingest (`scripts/convert_map_layer_kml.py`), git-tracked `config/map_layers/`, `GET /api/map/layers` + GeoJSON, dual toggles (DSZ / safe zones) on WG+Slocum home maps via `vector_map_layer.js` (`map_vector_layers` feature toggle)
 - [x] 2026-08-07 — BUG-005 follow-up: mask implausible Slocum track jumps from trusted GPS0 (Fundy ~20–30 nm NaN-status DR cluster); `BUNDLE_SCHEMA_VERSION` **14** — [BUG-005](../bugs/BUG-005-slocum-invalid-gps-status-track-points.md)

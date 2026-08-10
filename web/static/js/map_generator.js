@@ -27,6 +27,10 @@ import {
     bindVectorOverlayContext,
     initVectorOverlay,
 } from '/static/js/vector_map_layer.js';
+import {
+    bindNavwarnOverlayContext,
+    initNavwarnOverlay,
+} from '/static/js/navwarn_map_layer.js';
 
 /** All track polyline layers (Wave Glider + Slocum) for bbox / z-order helpers. */
 function getAllTrackLayers() {
@@ -266,6 +270,8 @@ function initializeMissionMap() {
     initIridiumOverlay();
     bindVectorOverlayContext(missionMap);
     initVectorOverlay();
+    bindNavwarnOverlayContext(missionMap);
+    initNavwarnOverlay();
 }
 
 /**

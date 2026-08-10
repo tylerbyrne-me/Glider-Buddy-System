@@ -167,6 +167,8 @@ With gunicorn `-w 2`, only the **leader** worker (fcntl lock on `data_store/.app
   - `system_bathy_cache_cleanup_job`
   - `system_iridium_tle_prefetch_job` (every 2h when `iridium_map_layer` is on)
   - `system_iridium_tle_cleanup_job` (daily :25 UTC; runs even if the feature is off)
+ - `system_navwarn_prefetch_job` (every 30m when `navwarn_map_layer` is on; incremental page-1)
+ - `system_navwarn_cleanup_job` (daily :30 UTC; stranded temps + catalog reconcile when feature on)
   - `system_dmon_review_prefetch_job` (every 12h; Robots4Whales DMON analyst-review cache for deployments with `dmon` card + `robots4whales_url`)
 
 The other worker serves HTTP; cache warms on demand. Admin **scheduler status** API returns an empty job list on non-leader workers (scheduler lives on the leader only).
@@ -175,7 +177,7 @@ If the public URL is not `:8080` on this host, an external load balancer may imp
 
 ### `data_store` cache inventory (disk pressure)
 
-Leader jobs that reclaim disk: `system_weather_map_cleanup_job` (daily :15 UTC), `system_bathy_cache_cleanup_job` (daily :20 UTC), `system_iridium_tle_cleanup_job` (daily :25 UTC), `slocum_overage_cleanup_job` (every 6h; TTL + quota + orphan mirror dirs + stranded mirror `*.tmp`). Prefetch (`system_weather_map_prefetch_job`, `system_iridium_tle_prefetch_job`) stays gated by the matching feature toggles.
+Leader jobs that reclaim disk: `system_weather_map_cleanup_job` (daily :15 UTC), `system_bathy_cache_cleanup_job` (daily :20 UTC), `system_iridium_tle_cleanup_job` (daily :25 UTC), `system_navwarn_cleanup_job` (daily :30 UTC), `slocum_overage_cleanup_job` (every 6h; TTL + quota + orphan mirror dirs + stranded mirror `*.tmp`). Prefetch (`system_weather_map_prefetch_job`, `system_iridium_tle_prefetch_job`, `system_navwarn_prefetch_job`) stays gated by the matching feature toggles.
 
 ```bash
 # Size by top-level cache
@@ -193,6 +195,10 @@ ls /home/cove/Glider-Buddy-System/data_store/bathy_cache 2>/dev/null | wc -l
 du -sh /home/cove/Glider-Buddy-System/data_store/iridium_cache 2>/dev/null
 ls -la /home/cove/Glider-Buddy-System/data_store/iridium_cache 2>/dev/null
 
+# NAVWARN cache (active_warnings.geojson + areas.geojson; HTML scrape of nis.ccg-gcc.gc.ca)
+du -sh /home/cove/Glider-Buddy-System/data_store/navwarn_cache 2>/dev/null
+ls -la /home/cove/Glider-Buddy-System/data_store/navwarn_cache 2>/dev/null
+
 # DMON Robots4Whales review cache (one JSON per mission_key)
 du -sh /home/cove/Glider-Buddy-System/data_store/dmon_review_cache 2>/dev/null
 ls /home/cove/Glider-Buddy-System/data_store/dmon_review_cache 2>/dev/null | wc -l
@@ -202,14 +208,15 @@ du -sh /home/cove/Glider-Buddy-System/data_store/slocum_cache 2>/dev/null
 find /home/cove/Glider-Buddy-System/data_store/slocum_cache -name '*.tmp' 2>/dev/null | wc -l
 
 # Confirm feature toggle / cleanup jobs on leader
-# FEATURE_TOGGLES_JSON weather_map_layers / iridium_map_layer; admin scheduler UI or:
-sudo journalctl -u gliderbuddy --since "1 day ago" | grep -E 'Weather map cleanup|Bathymetry cache cleanup|Iridium TLE prefetch|Iridium TLE cleanup|Slocum overage cleanup|orphan mirror|CelesTrak|upstream_ttl_gate'
+# FEATURE_TOGGLES_JSON weather_map_layers / iridium_map_layer / navwarn_map_layer; admin scheduler UI or:
+sudo journalctl -u gliderbuddy --since "1 day ago" | grep -E 'Weather map cleanup|Bathymetry cache cleanup|Iridium TLE prefetch|Iridium TLE cleanup|NAVWARN prefetch|NAVWARN cleanup|Slocum overage cleanup|orphan mirror|CelesTrak|upstream_ttl_gate'
 ```
 
 One-time reclaim (safe; rebuilds on next use):
 - Weather: `rm -rf data_store/weather_cache/responses` — admin `GET/POST /api/map/weather/cache/status|purge`
 - Bathy: `rm -rf data_store/bathy_cache/*.npz` — admin `GET/POST /api/reporting/bathy-cache/status|purge`
 - Iridium: `rm -rf data_store/iridium_cache` — admin `GET/POST /api/map/iridium/cache/status|purge` (`force_all=true` wipes TLEs + rate-limit gate). Ensure the directory is owned by the service user (`cove`) and writable; atomic renames use a copy fallback on NFS/SELinux, but leftover `*.tmp` files usually mean a prior permission failure — remove them after fixing ownership (`chown -R cove:cove data_store/iridium_cache`).
+- NAVWARN: `rm -rf data_store/navwarn_cache` — admin `GET/POST /api/map/navwarn/cache/status|purge` (`force_all=true` wipes GeoJSON + rate-limit gate). Keep owned by `cove:cove`.
 - Slocum mirror: ensure `data_store/slocum_cache` is owned by `cove:cove` (`chown -R cove:cove data_store/slocum_cache`). `os.replace` warnings with `errno=13` on `*.parquet.*.tmp` → `*.parquet` are expected on NFS/SELinux; the copy fallback still updates data. Stranded temps are reclaimed by `slocum_overage_cleanup_job` (or `find data_store/slocum_cache -name '*.tmp' -delete` after fixing ownership).
 - Mission CSV sync (`data/<mission_id>/`): same rename quirk — keep owned by `cove:cove` (`chown -R cove:cove data`). Sync uses copy fallback after `os.replace` refusal; clean stranded `*.tmp` with `find data -name '*.tmp' -delete`.
 

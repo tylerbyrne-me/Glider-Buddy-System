@@ -1676,6 +1676,50 @@ async def run_iridium_tle_cleanup_job():
         record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
+async def run_navwarn_prefetch_job():
+    """Leader job: refresh CCG NAVWARN cache when stale (incremental)."""
+    job_id = "system_navwarn_prefetch_job"
+    logger.info("AUTOMATED: Prefetching NAVWARN cache...")
+    try:
+        from .core.geo.navwarn_cache import prefetch_navwarn_cache
+
+        summary = await prefetch_navwarn_cache(force_full=False)
+        logger.info("AUTOMATED: NAVWARN prefetch finished: %s", summary)
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            str(summary) if summary is not None else "Prefetch finished",
+        )
+    except Exception as exc:
+        logger.error("AUTOMATED: NAVWARN prefetch failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
+
+
+async def run_navwarn_cleanup_job():
+    """Leader job: reclaim stranded temps + daily full re-validate (even if feature off for purge)."""
+    job_id = "system_navwarn_cleanup_job"
+    logger.info("AUTOMATED: Cleaning NAVWARN cache...")
+    try:
+        from .core.geo.navwarn_cache import run_navwarn_cleanup
+
+        summary = await run_navwarn_cleanup()
+        purge = summary.get("purge") if isinstance(summary, dict) else {}
+        logger.info(
+            "AUTOMATED: NAVWARN cleanup finished (removed=%s, freed_bytes=%s)",
+            (purge or {}).get("removed_files"),
+            (purge or {}).get("freed_bytes"),
+        )
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            str(summary) if summary is not None else "Cleanup finished",
+            counts=purge if isinstance(purge, dict) else None,
+        )
+    except Exception as exc:
+        logger.error("AUTOMATED: NAVWARN cleanup failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
+
+
 async def run_dmon_review_prefetch_job():
     """Leader job: refresh Robots4Whales DMON analyst-review cache for eligible deployments."""
     job_id = "system_dmon_review_prefetch_job"
@@ -2073,6 +2117,34 @@ async def startup_event():
             "Iridium TLE cache cleanup scheduled daily at %02d:25 UTC",
             iridium_cleanup_hour,
         )
+        navwarn_prefetch_minutes = max(
+            5, int(getattr(settings, "navwarn_prefetch_interval_minutes", 30) or 30)
+        )
+        scheduler.add_job(
+            run_navwarn_prefetch_job,
+            "interval",
+            minutes=navwarn_prefetch_minutes,
+            id="system_navwarn_prefetch_job",
+        )
+        logger.info(
+            "NAVWARN prefetch scheduled every %s minutes",
+            navwarn_prefetch_minutes,
+        )
+        navwarn_cleanup_hour = int(
+            getattr(settings, "navwarn_cleanup_cron_hour", cleanup_hour)
+        )
+        scheduler.add_job(
+            run_navwarn_cleanup_job,
+            "cron",
+            hour=navwarn_cleanup_hour,
+            minute=30,
+            timezone="UTC",
+            id="system_navwarn_cleanup_job",
+        )
+        logger.info(
+            "NAVWARN cache cleanup scheduled daily at %02d:30 UTC",
+            navwarn_cleanup_hour,
+        )
         dmon_review_hours = max(
             1, int(getattr(settings, "dmon_review_prefetch_interval_hours", 12) or 12)
         )
@@ -2153,9 +2225,21 @@ async def startup_event():
             await run_iridium_tle_cleanup_job()
         except Exception as exc:
             logger.warning("STARTUP: Initial Iridium TLE cache cleanup failed: %s", exc)
+        try:
+            from .core.geo.navwarn_cache import purge_navwarn_cache
+
+            purge_summary = purge_navwarn_cache(force_all=False)
+            logger.info(
+                "STARTUP: NAVWARN stranded-cache purge (removed=%s)",
+                purge_summary.get("removed_files"),
+            )
+        except Exception as exc:
+            logger.warning("STARTUP: Initial NAVWARN cache purge failed: %s", exc)
         # Warm Iridium TLEs in background if stale (respects disk TTL / rate gate).
         asyncio.create_task(run_iridium_tle_prefetch_job())
         logger.info("STARTUP: Iridium TLE prefetch scheduled in background")
+        asyncio.create_task(run_navwarn_prefetch_job())
+        logger.info("STARTUP: NAVWARN prefetch scheduled in background")
         asyncio.create_task(run_dmon_review_prefetch_job())
         logger.info("STARTUP: DMON Robots4Whales review prefetch scheduled in background")
         asyncio.create_task(run_public_map_warm_job())

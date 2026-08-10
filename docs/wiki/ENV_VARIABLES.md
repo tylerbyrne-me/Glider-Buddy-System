@@ -314,7 +314,7 @@ Some settings use JSON strings:
 - `REMOTE_MISSION_FOLDER_MAP_JSON` - Must be valid JSON
 - `ACTIVE_REALTIME_MISSIONS` - Must be valid JSON array
 - `FEATURE_TOGGLES_FILE` - Path to a JSON file (recommended; one toggle per line). Example: `config/feature_toggles.example.json`
-- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL DSZ / safe zones) on home maps.
+- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL, DFO fishery areas, NOAA shipping lanes) on home maps. Include `"navwarn_map_layer": true` to enable CCG NAVWARN overlays on home maps.
 
 ### Public login map
 - Kill switch: `public_login_map` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON`
@@ -325,9 +325,16 @@ Some settings use JSON strings:
 
 ### Static vector map layers (home overlays)
 - Kill switch: `map_vector_layers` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**)
-- Layer files: git-tracked under `config/map_layers/` (`map_layers_dir` in `app/config.py`)
-- Convert KML locally with `scripts/convert_map_layer_kml.py`; commit published GeoJSON + manifest — do not require prod to re-ingest
+- Layer files: git-tracked under `config/map_layers/` (`map_layers_dir` in `app/config.py`) — GOSL zones, DFO LFAs/FMAs, NOAA shipping lanes
+- Convert/fetch locally: `scripts/convert_map_layer_kml.py` (KML), `scripts/fetch_map_layer_arcgis.py` (ArcGIS REST); commit `published/` + `manifest.json` (+ optional `sources/`) — do not require prod to re-ingest
 - Ops detail: [Static vector map layers how-to](./how-tos/map_vector_layers.md)
+
+### NAVWARN map layer (home overlays)
+- Kill switch: `navwarn_map_layer` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**)
+- Cache: `navwarn_cache_dir` (default `data_store/navwarn_cache`), TTLs `navwarn_cache_ttl_seconds` / `navwarn_areas_ttl_seconds`, rate gate `navwarn_upstream_min_interval_seconds`
+- Search paging: reconcile walks `page=1..N` until empty (upstream ~50/page); incremental prefetch uses page 1 only; safety ceilings `navwarn_search_max_hits` (default 5000) and `navwarn_search_max_pages` (default 100)
+- Prefetch interval: `navwarn_prefetch_interval_minutes` (default 30); cleanup cron hour `navwarn_cleanup_cron_hour` (daily reconcile)
+- Ops detail: [NAVWARN map layer how-to](./how-tos/navwarn_map_layer.md)
 
 ### Path Values
 - Use forward slashes `/` even on Windows for `LOCAL_DATA_BASE_PATH`

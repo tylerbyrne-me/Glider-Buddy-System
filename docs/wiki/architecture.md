@@ -40,18 +40,28 @@ Remote/local sources → sync (leader) → data/ + data_store caches
 Client → FastAPI routers → core/services → cached telemetry / SQLite → HTML/JSON
 ```
 
-Typical dashboard path: select mission → load/summarize telemetry from cache (warm on demand if needed) → charts and status widgets. Map overlays (weather, Iridium, static vector zones) use feature toggles; weather/Iridium use `data_store/` caches with TTL/cleanup jobs, while reference GeoJSON lives under git-tracked `config/map_layers/`.
+Typical dashboard path: select mission → load/summarize telemetry from cache (warm on demand if needed) → charts and status widgets. Map overlays (weather, Iridium, NAVWARN, static vector zones) use feature toggles; weather/Iridium/NAVWARN use `data_store/` caches with TTL/cleanup jobs, while reference GeoJSON lives under git-tracked `config/map_layers/`.
 
 ### Static vector map layers
 
-Toggleable Leaflet polygons (e.g. GOSL DSZ / safe zones) for home maps on all platforms (`map_vector_layers` feature toggle). Ops how-to: [map_vector_layers.md](./how-tos/map_vector_layers.md).
+Toggleable Leaflet polygons (GOSL zones, DFO LFAs/FMAs, NOAA shipping lanes) for home maps on all platforms (`map_vector_layers` feature toggle; catalog-driven toggles). Ops how-to: [map_vector_layers.md](./how-tos/map_vector_layers.md).
 
-- **On disk** — [`config/map_layers/`](../../config/map_layers/): `manifest.json`, `published/*.geojson`, optional `sources/*.kml` (git-tracked; convert locally, deploy via git — prod does not re-ingest KML at runtime)
-- **Ingest** — [`scripts/convert_map_layer_kml.py`](../../scripts/convert_map_layer_kml.py) (geopandas + pyogrio) splits KML placemarks into published GeoJSON + updates the manifest
+- **On disk** — [`config/map_layers/`](../../config/map_layers/): `manifest.json`, `published/*.geojson`, optional `sources/` (KML + ArcGIS fetch metadata; git-tracked; convert/fetch locally, deploy via git — prod does not re-ingest at runtime)
+- **Ingest** — [`scripts/convert_map_layer_kml.py`](../../scripts/convert_map_layer_kml.py) (KML) and [`scripts/fetch_map_layer_arcgis.py`](../../scripts/fetch_map_layer_arcgis.py) (ArcGIS REST Feature Layer → GeoJSON snapshot); publish under `config/map_layers/`
 - **API** — `GET /api/map/layers` (catalog), `GET /api/map/layers/{id}` (GeoJSON + ETag); gated by `map_vector_layers`
-- **Client** — [`web/static/js/vector_map_layer.js`](../../web/static/js/vector_map_layer.js) on WG/Slocum home maps via `map_generator.js` (pane under tracks)
-- **Not yet** — public login map overlays; PDF report maps (`plot_telemetry_page_with_notes`); catalog-driven toggles / per-mission “always show” (see [backlog](../tasks/backlog.md))
+- **Client** — [`web/static/js/vector_map_layer.js`](../../web/static/js/vector_map_layer.js) on WG/Slocum home maps via `map_generator.js` (catalog-driven toggles; pane under tracks)
+- **Shipped overlays** — GOSL DSZ/safe zones; DFO lobster LFAs; DFO Atlantic FMAs (crab, snow crab, scallop, capelin, mackerel, herring, squid, salmon, northern shrimp); NOAA NW Atlantic shipping lanes
+- **Not yet** — public login map overlays; PDF report maps (`plot_telemetry_page_with_notes`); per-mission `default_on` / “always show”; fishery notices/openings linked to FMA polygons (see [backlog](../tasks/backlog.md))
 
+### NAVWARN map layer
+
+Toggleable CCG navigational-warning overlays for home maps (`navwarn_map_layer` feature toggle). Ops how-to: [navwarn_map_layer.md](./how-tos/navwarn_map_layer.md).
+
+- **Upstream** — HTML scrape of `nis.ccg-gcc.gc.ca` (no public JSON search API); active message geometries + area reference polygons
+- **Cache** — `data_store/navwarn_cache/` (`active_warnings.geojson`, `areas.geojson`, rate-limit gate); 30 min incremental (page 1) prefetch + daily catalog reconcile
+- **API** — `GET /api/map/navwarn/active|areas` (GeoJSON + ETag), cache status/purge; gated by `navwarn_map_layer`
+- **Client** — [`web/static/js/navwarn_map_layer.js`](../../web/static/js/navwarn_map_layer.js) on WG/Slocum home maps (pane z-index 360)
+- **Not yet** — public login map; radius circles (units unconfirmed); catalog-driven toggles
 ### Dashboard summary soft refresh
 
 Left-nav summary cards, mini-trends, and detail “Last data” footers must stay on the same freshness path as main charts. Both platforms soft-refresh on cache advance (no full page reload as the primary path):

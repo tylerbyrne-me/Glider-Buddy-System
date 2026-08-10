@@ -594,7 +594,11 @@ def fetch_dataset_time_extent(
 
     Uses allDatasets metadata when available; falls back to orderByMax probe for max time.
     Results are cached briefly to avoid repeated metadata hits.
+    Alias keys from ``SLOCUM_DATASET_ALIAS_MAP_JSON`` are resolved before probing ERDDAP.
     """
+    from app.core.mission_aliases import resolve_slocum_dataset_id
+
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
     now = time.monotonic()
     if use_cache and dataset_id in _EXTENT_CACHE:
         min_iso, max_iso, cached_at = _EXTENT_CACHE[dataset_id]

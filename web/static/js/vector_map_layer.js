@@ -2,8 +2,7 @@
  * @file vector_map_layer.js
  * @description Static GeoJSON reference-zone overlays for home-page Leaflet maps.
  *
- * Catalog + geometry from /api/map/layers (feature toggle map_vector_layers).
- * GOSL DSZ and safe-zone toggles share one catalog fetch and per-layer cache.
+ * Builds toggles from GET /api/map/layers (feature toggle map_vector_layers).
  */
 
 import { showToast, fetchWithAuth } from '/static/js/api.js';
@@ -12,6 +11,23 @@ import { isDarkTheme } from '/static/js/map_tiles.js';
 const CATALOG_URL = '/api/map/layers';
 const REFERENCE_ZONES_PANE = 'referenceZonesPane';
 const REFERENCE_ZONES_PANE_Z = 350;
+
+/** Prefer a stable display order when present in the catalog. */
+const LAYER_ORDER = [
+    'gosl_dsz',
+    'gosl_safe_zones',
+    'dfo_lobster_lfa_2022',
+    'dfo_fma_crab',
+    'dfo_fma_snow_crab',
+    'dfo_fma_scallop',
+    'dfo_fma_capelin',
+    'dfo_fma_mackerel',
+    'dfo_fma_herring',
+    'dfo_fma_squid',
+    'dfo_fma_salmon',
+    'dfo_fma_northern_shrimp',
+    'noaa_shipping_lanes_nw_atlantic',
+];
 
 /** @type {import('leaflet').Map | null} */
 let missionMapRef = null;
@@ -24,11 +40,6 @@ const geojsonCache = new Map();
 
 /** @type {Map<string, import('leaflet').GeoJSON>} layerId -> Leaflet layer */
 const activeLayers = new Map();
-
-const TOGGLE_BINDINGS = [
-    { toggleId: 'goslDszToggle', layerId: 'gosl_dsz' },
-    { toggleId: 'goslSafeZonesToggle', layerId: 'gosl_safe_zones' },
-];
 
 /**
  * @param {import('leaflet').Map} map
@@ -59,6 +70,29 @@ async function loadCatalog() {
     const payload = await response.json();
     catalogCache = Array.isArray(payload?.layers) ? payload.layers : [];
     return catalogCache;
+}
+
+function sortCatalog(layers) {
+    const orderIndex = new Map(LAYER_ORDER.map((id, i) => [id, i]));
+    return [...layers].sort((a, b) => {
+        const ai = orderIndex.has(a.id) ? orderIndex.get(a.id) : 1000;
+        const bi = orderIndex.has(b.id) ? orderIndex.get(b.id) : 1000;
+        if (ai !== bi) return ai - bi;
+        return String(a.name || a.id).localeCompare(String(b.name || b.id));
+    });
+}
+
+function shortLabel(entry) {
+    const name = String(entry?.name || entry?.id || 'Layer');
+    return name
+        .replace(/^DFO FMA\s+/i, '')
+        .replace(/^DFO Lobster\s+/i, 'Lobster ')
+        .replace(/^NOAA Shipping Lanes.*/i, 'NOAA Shipping')
+        .replace(/^GOSL\s+/i, 'GOSL ');
+}
+
+function toggleIdForLayer(layerId) {
+    return `vectorLayerToggle_${String(layerId).replace(/[^A-Za-z0-9_-]/g, '_')}`;
 }
 
 function findCatalogEntry(layerId) {
@@ -100,8 +134,25 @@ function resolveStyle(catalogEntry) {
 }
 
 function bindFeaturePopup(feature, layer) {
-    const name = feature?.properties?.name || feature?.properties?.Name || 'Zone';
-    layer.bindPopup(`<strong>${escapeHtml(String(name))}</strong>`);
+    const props = feature?.properties || {};
+    const name =
+        props.name
+        || props.Name
+        || props.area_fma
+        || props.OBJNAM
+        || (props.LFA != null ? `LFA ${props.LFA}` : null)
+        || props.THEMELAYER
+        || 'Zone';
+    const theme = props.THEMELAYER && String(props.THEMELAYER) !== String(name)
+        ? `<br><small>${escapeHtml(String(props.THEMELAYER))}</small>`
+        : '';
+    const species = props.species && String(props.species).trim()
+        ? `<br><small>Species: ${escapeHtml(String(props.species))}</small>`
+        : '';
+    const mls = props.MLS != null && String(props.MLS).trim()
+        ? `<br><small>MLS: ${escapeHtml(String(props.MLS))}</small>`
+        : '';
+    layer.bindPopup(`<strong>${escapeHtml(String(name))}</strong>${theme}${species}${mls}`);
 }
 
 function escapeHtml(value) {
@@ -148,8 +199,60 @@ async function enableLayer(layerId) {
     activeLayers.set(layerId, leafletLayer);
 }
 
+function wireToggle(toggle, layerId) {
+    toggle.addEventListener('change', async () => {
+        if (!toggle.checked) {
+            removeLayer(layerId);
+            return;
+        }
+        try {
+            await enableLayer(layerId);
+        } catch (error) {
+            const message = error?.message || 'Unknown error';
+            showToast(`Map layer error (${layerId}): ${message}`, 'danger');
+            toggle.checked = false;
+            removeLayer(layerId);
+        }
+    });
+}
+
+function renderCatalogToggles(layers) {
+    const group = document.getElementById('vectorLayerToggleGroup');
+    if (!group) {
+        return;
+    }
+    group.replaceChildren();
+    const sorted = sortCatalog(layers.filter((entry) => entry && entry.id));
+    if (!sorted.length) {
+        const empty = document.createElement('small');
+        empty.className = 'text-muted';
+        empty.textContent = 'No reference layers in catalog.';
+        group.appendChild(empty);
+        return;
+    }
+    for (const entry of sorted) {
+        const toggleId = toggleIdForLayer(entry.id);
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.className = 'btn-check';
+        input.id = toggleId;
+        input.autocomplete = 'off';
+        input.dataset.layerId = entry.id;
+
+        const label = document.createElement('label');
+        label.className = 'btn btn-outline-primary';
+        label.htmlFor = toggleId;
+        label.title = entry.description || entry.name || entry.id;
+        label.textContent = shortLabel(entry);
+
+        group.appendChild(input);
+        group.appendChild(label);
+        wireToggle(input, entry.id);
+    }
+}
+
 /**
- * Wire GOSL DSZ / safe-zone toggles when the feature-gated section is present.
+ * Build catalog toggles when the feature-gated section is present.
  */
 export function initVectorOverlay() {
     const section = document.getElementById('vectorOverlaySection');
@@ -157,24 +260,16 @@ export function initVectorOverlay() {
         return;
     }
 
-    for (const binding of TOGGLE_BINDINGS) {
-        const toggle = document.getElementById(binding.toggleId);
-        if (!toggle) {
-            continue;
-        }
-        toggle.addEventListener('change', async () => {
-            if (!toggle.checked) {
-                removeLayer(binding.layerId);
-                return;
-            }
-            try {
-                await enableLayer(binding.layerId);
-            } catch (error) {
-                const message = error?.message || 'Unknown error';
-                showToast(`Map layer error (${binding.layerId}): ${message}`, 'danger');
-                toggle.checked = false;
-                removeLayer(binding.layerId);
+    loadCatalog()
+        .then((layers) => {
+            renderCatalogToggles(layers);
+        })
+        .catch((error) => {
+            const message = error?.message || 'Unknown error';
+            showToast(`Unable to load map layer catalog: ${message}`, 'danger');
+            const group = document.getElementById('vectorLayerToggleGroup');
+            if (group) {
+                group.innerHTML = '<small class="text-danger">Failed to load layer catalog.</small>';
             }
         });
-    }
 }

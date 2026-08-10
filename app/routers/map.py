@@ -19,7 +19,7 @@ import httpx
 from ..core.auth import get_current_active_user, get_current_admin_user, require_platform_access
 from ..core import models
 from ..core.geo.map_utils import prepare_track_points, generate_kml_from_track_points, get_track_bounds
-from ..core.geo import weather_map_cache, iridium_tle_cache
+from ..core.geo import weather_map_cache, iridium_tle_cache, navwarn_cache
 from ..core.geo import map_layers as map_layers_service
 from ..core.data.processors import preprocess_telemetry_df
 from ..core.data.data_service import get_data_service
@@ -1053,6 +1053,125 @@ async def purge_iridium_tle_cache(
     summary = iridium_tle_cache.purge_iridium_cache(force_all=force_all)
     logger.info(
         "Admin '%s' purged Iridium TLE cache (force_all=%s, removed=%s, freed_bytes=%s)",
+        current_admin.username,
+        force_all,
+        summary.get("removed_files"),
+        summary.get("freed_bytes"),
+    )
+    return summary
+
+
+def _require_navwarn_map_layer() -> None:
+    if not is_feature_enabled("navwarn_map_layer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="NAVWARN map layer is disabled (feature_toggles.navwarn_map_layer).",
+        )
+
+
+@router.get("/api/map/navwarn/active")
+async def get_navwarn_active(
+    request: Request,
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Return cached GeoJSON of active published NAVWARN geometries."""
+    _require_navwarn_map_layer()
+    try:
+        body, etag, _collection = await navwarn_cache.get_active_warnings_geojson()
+    except RuntimeError as exc:
+        message = str(exc)
+        logger.warning("NAVWARN active cache unavailable: %s", message)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "NAVWARN active warnings cache is empty. Retry later, or ask an admin "
+                "to check GET /api/map/navwarn/cache/status."
+            ),
+        ) from exc
+    except Exception as exc:
+        logger.error("Failed to load NAVWARN active warnings: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load NAVWARN active warnings from cache or upstream.",
+        ) from exc
+
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match.strip() == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+
+    return Response(
+        content=body,
+        media_type="application/geo+json",
+        headers={
+            "ETag": etag,
+            "Cache-Control": "private, max-age=300",
+        },
+    )
+
+
+@router.get("/api/map/navwarn/areas")
+async def get_navwarn_areas(
+    request: Request,
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Return cached GeoJSON of NAVWARN area reference polygons."""
+    _require_navwarn_map_layer()
+    try:
+        body, etag, _collection = await navwarn_cache.get_areas_geojson()
+    except RuntimeError as exc:
+        message = str(exc)
+        logger.warning("NAVWARN areas cache unavailable: %s", message)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "NAVWARN areas cache is empty. Retry later, or ask an admin to check "
+                "GET /api/map/navwarn/cache/status."
+            ),
+        ) from exc
+    except Exception as exc:
+        logger.error("Failed to load NAVWARN areas: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to load NAVWARN areas from cache or upstream.",
+        ) from exc
+
+    if_none_match = request.headers.get("if-none-match")
+    if if_none_match and if_none_match.strip() == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+
+    return Response(
+        content=body,
+        media_type="application/geo+json",
+        headers={
+            "ETag": etag,
+            "Cache-Control": "private, max-age=3600",
+        },
+    )
+
+
+@router.get("/api/map/navwarn/cache/status")
+async def get_navwarn_cache_status(
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Return NAVWARN disk cache statistics for debugging."""
+    if not is_feature_enabled("navwarn_map_layer"):
+        if current_user.role != models.UserRoleEnum.admin:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="NAVWARN map layer is disabled (feature_toggles.navwarn_map_layer).",
+            )
+    return JSONResponse(content=navwarn_cache.get_cache_status())
+
+
+@router.post("/api/map/navwarn/cache/purge")
+async def purge_navwarn_cache_endpoint(
+    force_all: bool = Query(False, description="Remove all NAVWARN cache files."),
+    current_admin: models.User = Depends(get_current_admin_user),
+):
+    """Admin: purge NAVWARN disk cache (does not contact upstream)."""
+    summary = navwarn_cache.purge_navwarn_cache(force_all=force_all)
+    logger.info(
+        "Admin '%s' purged NAVWARN cache (force_all=%s, removed=%s, freed_bytes=%s)",
         current_admin.username,
         force_all,
         summary.get("removed_files"),

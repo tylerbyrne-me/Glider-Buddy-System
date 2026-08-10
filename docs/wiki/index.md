@@ -9,7 +9,8 @@ Start here. This folder is the source of truth for "how does this work."
 - [Conventions](./conventions.md) — coding/naming rules (links to detailed standards)
 - [Environment variables](./ENV_VARIABLES.md) — config reference
 - [Public login map](./how-tos/public_login_map.md) — unauthenticated login-page tracks / KML / labels
-- [Static vector map layers](./how-tos/map_vector_layers.md) — GOSL GeoJSON overlays on home maps (KML ingest + deploy)
+- [Static vector map layers](./how-tos/map_vector_layers.md) — GOSL / DFO FMA & LFA / NOAA shipping GeoJSON overlays on home maps (KML + ArcGIS ingest)
+- [NAVWARN map layer](./how-tos/navwarn_map_layer.md) — CCG navigational warnings on home maps (HTML scrape + cache)
 - [Glossary template](./GLOSSARY_TEMPLATE.md) — RAG/glossary authoring
 - [Module templates](./MODULE_TEMPLATES_README.md) — module scaffolding notes
 

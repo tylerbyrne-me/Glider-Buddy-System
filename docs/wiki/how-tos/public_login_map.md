@@ -62,4 +62,4 @@ See also [architecture](../architecture.md) and [ENV_VARIABLES](../ENV_VARIABLES
 
 ## Out of scope (for now)
 
-Static vector reference zones (GOSL DSZ / safe zones under `config/map_layers/`) are **home-map only**. Wiring selected layers onto this public map is a near-term backlog item — see [map_vector_layers.md](./map_vector_layers.md) and [backlog](../../tasks/backlog.md).
+Static vector reference zones (GOSL / DFO FMA & LFA / NOAA shipping under `config/map_layers/`) are **home-map only**. Wiring selected layers onto this public map is a backlog item — see [map_vector_layers.md](./map_vector_layers.md) and [backlog](../../tasks/backlog.md).

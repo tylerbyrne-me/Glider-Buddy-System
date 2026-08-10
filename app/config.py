@@ -78,7 +78,8 @@ class Settings(BaseSettings):
 
     # Feature Toggles — prefer FEATURE_TOGGLES_FILE (pretty JSON) over FEATURE_TOGGLES_JSON (inline).
     # See config/feature_toggles.example.json. wave_glider_specific_nav: WG-only nav items.
-    # iridium_map_layer: home Leaflet Iridium overlay. public_login_map: unauthenticated /login map.
+    # iridium_map_layer: home Leaflet Iridium overlay. navwarn_map_layer: CCG NAVWARN overlay.
+    # public_login_map: unauthenticated /login map.
     feature_toggles_file: Optional[Path] = None
     feature_toggles_json: str = default_feature_toggles_json()
 
@@ -158,6 +159,22 @@ class Settings(BaseSettings):
     dmon_review_prefetch_interval_hours: int = 12
     dmon_review_prefetch_enabled: bool = True
     dmon_review_http_timeout_seconds: float = 30.0
+
+    # --- CCG NAVWARN map overlay cache (home-page Leaflet layer) ---
+    # Scraped from nis.ccg-gcc.gc.ca HTML (no public JSON search API).
+    navwarn_cache_dir: Path = Path("data_store/navwarn_cache")
+    navwarn_cache_ttl_seconds: int = 1800  # 30 min for active warnings
+    navwarn_areas_ttl_seconds: int = 86400  # 24 h for area reference polygons
+    # Upstream hard-caps ~50 results per HTML page; we walk page=1..N until empty.
+    # This setting is a safety ceiling on total IDs collected (not the per-page maxHits).
+    navwarn_search_max_hits: int = 5000
+    navwarn_search_max_pages: int = 100
+    navwarn_upstream_min_interval_seconds: int = 300  # rate gate between refresh cycles
+    navwarn_prefetch_enabled: bool = True
+    navwarn_prefetch_interval_minutes: int = 30
+    navwarn_cleanup_cron_hour: int = 7  # UTC
+    navwarn_http_timeout_seconds: float = 45.0
+    navwarn_detail_concurrency: int = 5
 
     # --- Static vector map layers (GeoJSON overlays; git-tracked under config/) ---
     map_layers_dir: Path = Path("config/map_layers")

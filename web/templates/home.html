@@ -424,22 +424,40 @@
                     <!-- Track Info -->
                     <div id="mapTrackInfo" class="mb-3"></div>
                     {% if feature_enabled('map_vector_layers') %}
-                    <!-- Static vector reference zones (GOSL DSZ / safe zones) -->
+                    <!-- Static vector reference zones (catalog-driven toggles) -->
                     <div id="vectorOverlaySection" class="mb-3">
                         <div class="d-flex justify-content-between align-items-center mb-2">
                             <label class="form-label small mb-0">Reference zones</label>
                         </div>
-                        <div class="btn-group btn-group-sm mb-2" role="group" aria-label="GOSL reference zone toggles">
-                            <input type="checkbox" class="btn-check" id="goslDszToggle" autocomplete="off">
-                            <label class="btn btn-outline-primary" for="goslDszToggle">
-                                <i class="fas fa-draw-polygon"></i> GOSL DSZ
+                        <div id="vectorLayerToggleGroup" class="btn-group btn-group-sm mb-2 flex-wrap" role="group" aria-label="Reference zone toggles">
+                            <small class="text-muted">Loading layers…</small>
+                        </div>
+                        <small class="text-muted d-block">GOSL zones, DFO lobster LFAs / fisheries management areas, and NOAA ENC shipping lanes. DFO FMA layers are cartographic reference only.</small>
+                    </div>
+                    {% endif %}
+                    {% if feature_enabled('navwarn_map_layer') %}
+                    <!-- CCG NAVWARN overlays (active warnings + area reference polygons) -->
+                    <div id="navwarnOverlaySection" class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label small mb-0">NAVWARN Overlay</label>
+                            <a href="https://nis.ccg-gcc.gc.ca/public/rest/messages/en/search" target="_blank" rel="noopener" class="text-decoration-none small">
+                                <i class="fas fa-external-link-alt"></i> CCG NAVWARN
+                            </a>
+                        </div>
+                        <div class="btn-group btn-group-sm mb-2" role="group" aria-label="NAVWARN overlay toggles">
+                            <input type="checkbox" class="btn-check" id="navwarnActiveToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="navwarnActiveToggle">
+                                <i class="fas fa-exclamation-triangle"></i> Active NAVWARNs
                             </label>
-                            <input type="checkbox" class="btn-check" id="goslSafeZonesToggle" autocomplete="off">
-                            <label class="btn btn-outline-primary" for="goslSafeZonesToggle">
-                                <i class="fas fa-shield-alt"></i> GOSL safe zones
+                            <input type="checkbox" class="btn-check" id="navwarnAreasToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="navwarnAreasToggle">
+                                <i class="fas fa-draw-polygon"></i> NAVWARN areas
                             </label>
                         </div>
-                        <small class="text-muted d-block">Deployment safety zones off Newfoundland.</small>
+                        <small class="text-muted d-block mb-1">
+                            Canadian Coast Guard navigational warnings (published) and series-level area boundaries.
+                        </small>
+                        <small id="navwarnStatusLine" class="text-muted d-block"></small>
                     </div>
                     {% endif %}
                     {% if feature_enabled('slocum_platform') %}

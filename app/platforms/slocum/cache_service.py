@@ -101,7 +101,8 @@ def parse_slocum_time_window(
             use_date_range,
         )
     if is_historical:
-        _, max_dt = fetch_dataset_time_extent(dataset_id)
+        resolved_for_extent = resolve_slocum_dataset_id(dataset_id)
+        _, max_dt = fetch_dataset_time_extent(resolved_for_extent)
         if max_dt is None:
             time_end = datetime.now(timezone.utc)
         else:
