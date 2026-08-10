@@ -1,0 +1,308 @@
+{
+  "layers": [
+    {
+      "id": "gosl_dsz",
+      "name": "GOSL DSZ",
+      "description": "Deployment Safety Zones (DSZ) off Newfoundland.",
+      "platforms": [],
+      "path": "published/gosl_dsz.geojson",
+      "style": {
+        "color": "#dc3545",
+        "weight": 2,
+        "opacity": 0.9,
+        "fillColor": "#dc3545",
+        "fillOpacity": 0.08
+      },
+      "bounds": [
+        -65.00034706827348,
+        48.39899410457546,
+        -62.00033987348222,
+        49.67534211758921
+      ]
+    },
+    {
+      "id": "gosl_safe_zones",
+      "name": "GOSL safe zones",
+      "description": "GOSL safe operating lanes / zones off Newfoundland.",
+      "platforms": [],
+      "path": "published/gosl_safe_zones.geojson",
+      "style": {
+        "color": "#198754",
+        "weight": 2,
+        "opacity": 0.9,
+        "fillColor": "#198754",
+        "fillOpacity": 0.12
+      },
+      "bounds": [
+        -64.82684838662387,
+        48.45528587582933,
+        -62.00247370984236,
+        49.54423324400718
+      ]
+    },
+    {
+      "id": "dfo_lobster_lfa_2022",
+      "name": "DFO Lobster LFAs (2022)",
+      "description": "DFO Maritimes lobster fishing areas (LFAs), 2022 snapshot from egisp.dfo-mpo.gc.ca open data.",
+      "platforms": [],
+      "path": "published/dfo_lobster_lfa_2022.geojson",
+      "style": {
+        "color": "#6c757d",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#adb5bd",
+        "fillOpacity": 0.08
+      },
+      "bounds": [
+        -67.41609100006295,
+        42.350000000131715,
+        -57.83235500021714,
+        47.83327800003037
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/historical_lobster_fishing_districts_maritimes_region/MapServer/14"
+      }
+    },
+    {
+      "id": "noaa_shipping_lanes_nw_atlantic",
+      "name": "NOAA Shipping Lanes (NW Atlantic)",
+      "description": "NOAA ENC shipping lanes and regulations clipped to NW Atlantic / Maritimes approaches.",
+      "platforms": [],
+      "path": "published/noaa_shipping_lanes_nw_atlantic.geojson",
+      "style": {
+        "color": "#9b59b6",
+        "weight": 1.5,
+        "opacity": 0.9,
+        "fillColor": "#9b59b6",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -73.08767790000002,
+        40.32197439999999,
+        -67.14119699999998,
+        44.459137
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://encdirect.noaa.gov/arcgis/rest/services/NavigationChartData/MarineTransportation/MapServer/0"
+      }
+    },
+    {
+      "id": "dfo_fma_crab",
+      "name": "DFO FMA Crab",
+      "description": "DFO Atlantic Fisheries Management Areas - Crab polygons (egisp open data). Cartographic reference only; not for navigation or enforcement.",
+      "platforms": [],
+      "path": "published/dfo_fma_crab.geojson",
+      "style": {
+        "color": "#fd7e14",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#fd7e14",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -71.49999897574936,
+        41.07978115117257,
+        -47.70472249969079,
+        60.274075379345184
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/16"
+      }
+    },
+    {
+      "id": "dfo_fma_snow_crab",
+      "name": "DFO FMA Snow Crab",
+      "description": "DFO Atlantic Fisheries Management Areas - Snow Crab polygons (egisp open data). Cartographic reference only; not for navigation or enforcement.",
+      "platforms": [],
+      "path": "published/dfo_fma_snow_crab.geojson",
+      "style": {
+        "color": "#0dcaf0",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#0dcaf0",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -67.7425038397289,
+        39.00000824705468,
+        -46.49999230694271,
+        61.00001158024344
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/22"
+      }
+    },
+    {
+      "id": "dfo_fma_scallop",
+      "name": "DFO FMA Scallop",
+      "description": "DFO Atlantic Fisheries Management Areas - Scallop polygons (egisp open data). Cartographic reference only; not for navigation or enforcement.",
+      "platforms": [],
+      "path": "published/dfo_fma_scallop.geojson",
+      "style": {
+        "color": "#20c997",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#20c997",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -70.736,
+        40.043,
+        -47.705,
+        60.274
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/1"
+      }
+    },
+    {
+      "id": "dfo_fma_capelin",
+      "name": "DFO FMA Capelin",
+      "description": "DFO Atlantic Fisheries Management Areas - Capelin polygons (egisp open data). Cartographic reference only; not for navigation or enforcement.",
+      "platforms": [],
+      "path": "published/dfo_fma_capelin.geojson",
+      "style": {
+        "color": "#ffc107",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#ffc107",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -71.49999897574936,
+        40.04771805989572,
+        -47.704789539163805,
+        60.999999999113335
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/4"
+      }
+    },
+    {
+      "id": "dfo_fma_mackerel",
+      "name": "DFO FMA Mackerel",
+      "description": "DFO Atlantic Fisheries Management Areas - Mackerel polygons (egisp open data). Cartographic reference only; not for navigation or enforcement.",
+      "platforms": [],
+      "path": "published/dfo_fma_mackerel.geojson",
+      "style": {
+        "color": "#6610f2",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#6610f2",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -71.49999897574936,
+        40.04771805989572,
+        -47.704789539163805,
+        60.999999999113335
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/7"
+      }
+    },
+    {
+      "id": "dfo_fma_herring",
+      "name": "DFO FMA Herring",
+      "description": "DFO Atlantic Fisheries Management Areas - Herring polygons (egisp open data). Cartographic reference only; not for navigation or enforcement.",
+      "platforms": [],
+      "path": "published/dfo_fma_herring.geojson",
+      "style": {
+        "color": "#d63384",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#d63384",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -71.49999897574936,
+        40.04771805989572,
+        -47.704789539163805,
+        60.999999999113335
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/10"
+      }
+    },
+    {
+      "id": "dfo_fma_squid",
+      "name": "DFO FMA Squid",
+      "description": "DFO Atlantic Fisheries Management Areas - Squid polygons (egisp open data). Cartographic reference only; not for navigation or enforcement.",
+      "platforms": [],
+      "path": "published/dfo_fma_squid.geojson",
+      "style": {
+        "color": "#6f42c1",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#6f42c1",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -71.49999897574936,
+        40.04771805989572,
+        -47.704789539163805,
+        60.999999999113335
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/13"
+      }
+    },
+    {
+      "id": "dfo_fma_salmon",
+      "name": "DFO FMA Atlantic Salmon",
+      "description": "DFO Atlantic Fisheries Management Areas - Atlantic Salmon polygons (egisp open data). Cartographic reference only; not for navigation or enforcement.",
+      "platforms": [],
+      "path": "published/dfo_fma_salmon.geojson",
+      "style": {
+        "color": "#198754",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#198754",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -67.7425038397289,
+        40.047726386870494,
+        -47.70478206158739,
+        61.00001158024344
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/19"
+      }
+    },
+    {
+      "id": "dfo_fma_northern_shrimp",
+      "name": "DFO FMA Northern Shrimp",
+      "description": "DFO Atlantic Fisheries Management Areas - Northern Shrimp polygons (egisp open data). Cartographic reference only; not for navigation or enforcement. Snapshot omits OBJECTID 19 (upstream query 500).",
+      "platforms": [],
+      "path": "published/dfo_fma_northern_shrimp.geojson",
+      "style": {
+        "color": "#0d6efd",
+        "weight": 1.5,
+        "opacity": 0.85,
+        "fillColor": "#0d6efd",
+        "fillOpacity": 0.06
+      },
+      "bounds": [
+        -80.0,
+        40.048,
+        -47.702,
+        78.167
+      ],
+      "source": {
+        "type": "arcgis_feature_layer",
+        "url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/25"
+      }
+    }
+  ]
+}

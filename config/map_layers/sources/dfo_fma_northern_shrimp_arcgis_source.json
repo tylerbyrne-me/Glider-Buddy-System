@@ -1,0 +1,15 @@
+{
+  "fetched_at_utc": "2026-08-09T23:45:00Z",
+  "source_url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/25",
+  "query": {
+    "where": "OBJECTID IN (1..23 except 19)",
+    "outFields": "OBJECTID,area_fma,species,comments,Area_km2",
+    "f": "json",
+    "outSR": 4326,
+    "bbox_wsen": null,
+    "notes": "Fetched per OBJECTID after paginated queries 500'd. OBJECTID 19 still returns upstream 500 and is omitted."
+  },
+  "simplify_tolerance_deg": 0.05,
+  "feature_count": 22,
+  "published_bytes": 3757673
+}

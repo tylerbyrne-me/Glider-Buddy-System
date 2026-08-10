@@ -78,6 +78,9 @@ secrets/
 *.json
 *.txt
 !requirements.txt
+!config/feature_toggles.example.json
+!config/map_layers/manifest.json
+!config/map_layers/sources/*.json
 *.png
 *.jpg
 *.pdf

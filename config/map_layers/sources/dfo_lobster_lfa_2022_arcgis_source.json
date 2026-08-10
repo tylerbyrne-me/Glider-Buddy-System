@@ -1,0 +1,13 @@
+{
+  "fetched_at_utc": "2026-08-09T21:29:27Z",
+  "source_url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/historical_lobster_fishing_districts_maritimes_region/MapServer/14",
+  "query": {
+    "where": "1=1",
+    "outFields": "*",
+    "f": "geojson",
+    "outSR": 4326
+  },
+  "feature_count": 14,
+  "simplify_tolerance_deg": 0.001,
+  "published_bytes": 960110
+}

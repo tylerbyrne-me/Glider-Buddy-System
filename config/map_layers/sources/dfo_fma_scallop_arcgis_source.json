@@ -1,0 +1,14 @@
+{
+  "fetched_at_utc": "2026-08-09T23:35:31Z",
+  "source_url": "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/open_data_donnees_ouvertes/atlantic_fisheries_management_areas/MapServer/1",
+  "query": {
+    "where": "1=1",
+    "outFields": "*",
+    "f": "geojson",
+    "outSR": 4326,
+    "bbox_wsen": null
+  },
+  "simplify_tolerance_deg": 0.002,
+  "feature_count": 32,
+  "published_bytes": 22240616
+}

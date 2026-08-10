@@ -37,7 +37,9 @@ config/map_layers/
 
 Config setting: `map_layers_dir` (default `config/map_layers`) in [`app/config.py`](../../../app/config.py).
 
-**Deploy model:** convert/fetch on a developer/ops machine → commit `published/` + `manifest.json` (+ `sources/` notes) → production gets layers via the normal git deploy. Runtime does **not** need geopandas/pyogrio or live ArcGIS access; the API only reads published GeoJSON.
+**Deploy model:** convert/fetch on a developer/ops machine → commit `published/` + **`manifest.json`** (+ `sources/` notes) → production gets layers via the normal git deploy. Runtime does **not** need geopandas/pyogrio or live ArcGIS access; the API only reads published GeoJSON.
+
+**Required for toggles:** `config/map_layers/manifest.json` must be on the server. GeoJSON alone is not enough — an empty catalog (“No reference layers in catalog”) usually means the manifest was never deployed (historically blocked by root `.gitignore` `*.json`; exceptions now allow this path).
 
 ## Ingest
 

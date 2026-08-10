@@ -226,7 +226,8 @@ function renderCatalogToggles(layers) {
     if (!sorted.length) {
         const empty = document.createElement('small');
         empty.className = 'text-muted';
-        empty.textContent = 'No reference layers in catalog.';
+        empty.textContent =
+            'No reference layers in catalog (manifest missing or empty on server).';
         group.appendChild(empty);
         return;
     }

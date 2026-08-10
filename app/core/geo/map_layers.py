@@ -80,7 +80,11 @@ def load_manifest() -> MapLayerManifest:
     """Load and validate config/map_layers/manifest.json."""
     path = _manifest_path()
     if not path.is_file():
-        logger.warning("Map layers manifest missing: %s", path)
+        logger.warning(
+            "Map layers manifest missing: %s (catalog will be empty until "
+            "manifest.json is deployed; check .gitignore does not exclude it)",
+            path.resolve(),
+        )
         return MapLayerManifest()
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
