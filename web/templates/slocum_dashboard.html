@@ -219,7 +219,10 @@
                   <strong>Weekly Report:</strong>
                   <a href="#" id="overviewWeeklyReportLink" target="_blank" rel="noopener noreferrer"></a>
                 </div>
-                <div id="overviewWeeklyReportList" class="small" style="display: none;"></div>
+                <div id="overviewEndReportContainer" style="display: none;">
+                  <strong>End of Mission Report:</strong>
+                  <a href="#" id="overviewEndReportLink" target="_blank" rel="noopener noreferrer"></a>
+                </div>
                 <div id="overviewNoReports" class="text-muted small">No reports available yet.</div>
               </div>
 
@@ -414,6 +417,10 @@
                 <option value="30">30 min</option>
                 <option value="60">60 min</option>
               </select>
+            </div>
+            <div class="form-check form-check-inline mb-0">
+              <input class="form-check-input" type="checkbox" id="slocumOutlierSuppress" title="Hide chart points with |z-score| &gt; 2.5 (display only; does not change stored data).">
+              <label class="form-check-label small" for="slocumOutlierSuppress" title="Hide chart points with |z-score| &gt; 2.5 (display only).">Hide outliers</label>
             </div>
             <div class="dropdown">
               <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">

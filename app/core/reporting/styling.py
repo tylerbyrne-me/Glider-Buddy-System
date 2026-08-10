@@ -267,7 +267,7 @@ class DataPeriodBanner(Flowable):
 
 
 class KPI:
-    __slots__ = ("label", "value", "unit", "trend")
+    __slots__ = ("label", "value", "unit", "trend", "flagged")
 
     def __init__(
         self,
@@ -275,23 +275,32 @@ class KPI:
         value: str,
         unit: str = "",
         trend: Optional[Literal["up", "down"]] = None,
+        flagged: bool = False,
     ):
         self.label = label
         self.value = value
         self.unit = unit
         self.trend = trend
+        self.flagged = bool(flagged)
+
+
+OUTLIER_SUPPRESS_FOOTNOTE = "* Outliers suppressed (|z| &gt; 2.5)."
 
 
 def _format_kpi_value_html(
     value: str,
     unit: str = "",
     trend: Optional[Literal["up", "down"]] = None,
+    *,
+    flagged: bool = False,
 ) -> str:
     esc_val = (value or "").replace("&", "&amp;").replace("<", "&lt;")
     parts = [esc_val]
     if unit:
         esc_unit = unit.replace("&", "&amp;").replace("<", "&lt;")
         parts.append(f' <font size="7">{esc_unit}</font>')
+    if flagged:
+        parts.append('<font size="7">*</font>')
     if trend == "up":
         parts.append(f' <font color="#15803D" size="7">▲</font>')
     elif trend == "down":
@@ -311,7 +320,10 @@ def kpi_row_table(kpis: Sequence[KPI], styles: dict[str, ParagraphStyle]) -> Tab
         esc_label = (k.label or "").replace("&", "&amp;").replace("<", "&lt;")
         row_labels.append(Paragraph(f"<b>{esc_label}</b>", label_style))
         row_vals.append(
-            Paragraph(_format_kpi_value_html(k.value, k.unit, k.trend), value_style)
+            Paragraph(
+                _format_kpi_value_html(k.value, k.unit, k.trend, flagged=k.flagged),
+                value_style,
+            )
         )
     inner_w = A4_PORTRAIT[0] - 2 * MARGIN_SIDE
     col_w = inner_w / len(kpis)
@@ -329,6 +341,19 @@ def kpi_row_table(kpis: Sequence[KPI], styles: dict[str, ParagraphStyle]) -> Tab
         )
     )
     return t
+
+
+def append_outlier_suppress_footnote(
+    out: List[Any],
+    kpis: Sequence[KPI],
+    styles: dict[str, ParagraphStyle],
+    *,
+    force: bool = False,
+) -> None:
+    """Append the shared outlier-suppress caption when any KPI is flagged (or force)."""
+    if force or any(getattr(k, "flagged", False) for k in kpis):
+        out.append(Spacer(1, 4))
+        out.append(Paragraph(OUTLIER_SUPPRESS_FOOTNOTE, styles["Caption"]))
 
 
 class NoteCard(Flowable):

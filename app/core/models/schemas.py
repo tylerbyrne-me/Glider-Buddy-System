@@ -200,13 +200,61 @@ class MissionReportListResponse(BaseModel):
 # User Models
 # ============================================================================
 
+AccentId = Literal[
+    "default",
+    "teal",
+    "high-contrast",
+    "slate",
+    "ocean",
+    "seafoam",
+    "amber",
+]
+PlatformAccentValue = Literal[
+    "inherit",
+    "default",
+    "teal",
+    "high-contrast",
+    "slate",
+    "ocean",
+    "seafoam",
+    "amber",
+]
+_KNOWN_PLATFORM_ACCENT_KEYS = frozenset({"wave_glider", "slocum"})
+_ACCENT_IDS = frozenset(
+    {"default", "teal", "high-contrast", "slate", "ocean", "seafoam", "amber"}
+)
+
+
+class PlatformAccents(BaseModel):
+    """Optional per-platform accent overrides (inherit = use general accent)."""
+
+    wave_glider: PlatformAccentValue = "inherit"
+    slocum: PlatformAccentValue = "inherit"
+
+
 class UiPreferences(BaseModel):
     """Per-user appearance preferences (theme, accent, density, map basemap)."""
 
     theme_mode: Literal["light", "dark", "system"] = "system"
-    accent: Literal["default", "teal", "high-contrast"] = "default"
+    accent: AccentId = "default"
+    platform_accents: PlatformAccents = Field(default_factory=PlatformAccents)
     density: Literal["comfortable", "compact"] = "comfortable"
     map_style: Literal["match-theme", "light", "dark"] = "match-theme"
+
+
+def _normalize_platform_accents(raw: Any) -> Dict[str, str]:
+    """Keep only known platforms; coerce bad values to inherit."""
+    out = {"wave_glider": "inherit", "slocum": "inherit"}
+    if not isinstance(raw, dict):
+        return out
+    for key, value in raw.items():
+        if key not in _KNOWN_PLATFORM_ACCENT_KEYS:
+            continue
+        if value in _ACCENT_IDS or value == "inherit":
+            out[key] = value
+        else:
+            out[key] = "inherit"
+    return out
 
 
 def normalize_ui_preferences(raw: Optional[Any] = None) -> UiPreferences:
@@ -216,8 +264,12 @@ def normalize_ui_preferences(raw: Optional[Any] = None) -> UiPreferences:
     if isinstance(raw, UiPreferences):
         return raw
     if isinstance(raw, dict):
-        allowed = set(UiPreferences.model_fields.keys())
-        return UiPreferences.model_validate({k: v for k, v in raw.items() if k in allowed})
+        payload = {k: v for k, v in raw.items() if k in UiPreferences.model_fields}
+        if "accent" in payload and payload["accent"] not in _ACCENT_IDS:
+            payload["accent"] = "default"
+        if "platform_accents" in payload:
+            payload["platform_accents"] = _normalize_platform_accents(payload["platform_accents"])
+        return UiPreferences.model_validate(payload)
     return UiPreferences()
 
 
@@ -1218,6 +1270,7 @@ class SlocumDeploymentRead(BaseModel):
     document_url: Optional[str] = None
     robots4whales_url: Optional[str] = None
     weekly_report_url: Optional[str] = None
+    end_of_mission_report_url: Optional[str] = None
     public_map_enabled: bool = False
     public_weekly_report_enabled: bool = False
     enabled_sensor_cards: Optional[str] = None

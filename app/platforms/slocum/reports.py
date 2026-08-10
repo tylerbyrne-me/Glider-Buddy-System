@@ -21,7 +21,7 @@ from app.core import models, utils
 from app.core.mission_aliases import resolve_slocum_dataset_id, resolved_slocum_mission_key
 from app.core.geo.bathymetry import fetch_etopo_bathymetry, sample_depth_m_from_grid
 from app.core.geo.coordinates import drop_null_island_rows
-from app.core.data.processors import filter_valid_water_depth_m
+from app.core.data.processors import filter_valid_water_depth_m, suppress_zscore_outliers
 from app.core.plotting import plot_slocum_ctd_profile_for_report, report_pdf_rc_context
 from app.core.sfmc_transforms import normalize_dmon_asc_files
 from app.core.utils import slocum_mission_key
@@ -277,14 +277,18 @@ def normalize_slocum_track_for_report(track_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _numeric_stat_summary(series: pd.Series) -> Optional[dict]:
-    values = pd.to_numeric(series, errors="coerce").dropna()
+    cleaned, n = suppress_zscore_outliers(series)
+    values = cleaned.dropna()
     if values.empty:
         return None
-    return {
+    out = {
         "avg": float(values.mean()),
         "min": float(values.min()),
         "max": float(values.max()),
     }
+    if n > 0:
+        out["outliers_suppressed"] = True
+    return out
 
 
 def resolve_battery_pack_label(deployment: Optional[models.SlocumDeployment]) -> Optional[str]:
@@ -306,9 +310,14 @@ def compute_average_water_depth(
 ) -> Optional[dict[str, Any]]:
     """Prefer mean ``MWaterDepth``; else mean ETOPO 2022 depth at track fixes."""
     if not dashboard_df.empty and "MWaterDepth" in dashboard_df.columns:
-        values = filter_valid_water_depth_m(dashboard_df["MWaterDepth"]).dropna()
-        if not values.empty:
-            return {"avg": float(values.mean()), "source": "m_water_depth"}
+        values = filter_valid_water_depth_m(dashboard_df["MWaterDepth"])
+        cleaned, n = suppress_zscore_outliers(values)
+        finite = cleaned.dropna()
+        if not finite.empty:
+            out = {"avg": float(finite.mean()), "source": "m_water_depth"}
+            if n > 0:
+                out["outliers_suppressed"] = True
+            return out
 
     if telemetry_df is None or telemetry_df.empty:
         return None

@@ -1067,6 +1067,10 @@ class SlocumDeployment(SQLModel, table=True):
         default=None,
         description="URL to the latest generated Slocum weekly report PDF.",
     )
+    end_of_mission_report_url: Optional[str] = SQLModelField(
+        default=None,
+        description="URL to the latest generated Slocum end-of-mission report PDF.",
+    )
     public_map_enabled: bool = SQLModelField(
         default=False,
         index=True,

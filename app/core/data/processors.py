@@ -771,6 +771,97 @@ WATER_DEPTH_SPIKE_ABS_M = 10.0
 WATER_DEPTH_SPIKE_FRAC = 0.30
 WATER_DEPTH_ROLL_WINDOW = 11
 
+OUTLIER_Z_THRESHOLD = 2.5
+OUTLIER_Z_MIN_SAMPLES = 10
+
+# Column-name substrings skipped by prepare_report_numeric_frame (circular / non-linear).
+_OUTLIER_SKIP_COLUMN_TOKENS = (
+    "heading",
+    "course",
+    "direction",
+    "compass",
+    "bearing",
+    "yaw",
+    "pitch",
+    "roll",
+    "latitude",
+    "longitude",
+    "lat",
+    "lon",
+)
+
+
+def suppress_zscore_outliers(
+    series: pd.Series,
+    *,
+    threshold: float = OUTLIER_Z_THRESHOLD,
+    min_samples: int = OUTLIER_Z_MIN_SAMPLES,
+) -> tuple[pd.Series, int]:
+    """Return a copy with |z-score| > threshold set to NaN (display/report only).
+
+    Does not mutate the input series or any on-disk mirror/ERDDAP store.
+    Requires at least ``min_samples`` finite values; otherwise returns a copy unchanged.
+    """
+    values = pd.to_numeric(series, errors="coerce")
+    finite = values.dropna()
+    if len(finite) < int(min_samples):
+        return values.copy(), 0
+    std = float(finite.std(ddof=0))
+    if not np.isfinite(std) or std == 0.0:
+        return values.copy(), 0
+    mean = float(finite.mean())
+    z = (values - mean) / std
+    mask = z.abs() > float(threshold)
+    suppressed = int(mask.fillna(False).sum())
+    if suppressed <= 0:
+        return values.copy(), 0
+    return values.mask(mask), suppressed
+
+
+def _column_skips_zscore(column: str) -> bool:
+    name = str(column or "").strip().lower()
+    if not name:
+        return True
+    return any(token in name for token in _OUTLIER_SKIP_COLUMN_TOKENS)
+
+
+def prepare_report_numeric_frame(
+    df: pd.DataFrame,
+    columns: Optional[List[str]] = None,
+    *,
+    threshold: float = OUTLIER_Z_THRESHOLD,
+    min_samples: int = OUTLIER_Z_MIN_SAMPLES,
+) -> tuple[pd.DataFrame, bool]:
+    """Copy ``df`` and apply z-score suppression to selected numeric columns.
+
+    When ``columns`` is None, all numeric columns that are not in the skip list
+    are processed. Returns ``(cleaned_df, any_suppressed)``.
+    """
+    if df is None or df.empty:
+        return (df.copy() if df is not None else pd.DataFrame()), False
+    out = df.copy()
+    if columns is None:
+        candidates = [
+            c
+            for c in out.columns
+            if pd.api.types.is_numeric_dtype(out[c]) and not _column_skips_zscore(str(c))
+        ]
+    else:
+        candidates = [
+            c
+            for c in columns
+            if c in out.columns and not _column_skips_zscore(str(c))
+        ]
+    any_suppressed = False
+    for col in candidates:
+        cleaned, n = suppress_zscore_outliers(
+            out[col], threshold=threshold, min_samples=min_samples
+        )
+        if n > 0:
+            any_suppressed = True
+            out[col] = cleaned
+    return out, any_suppressed
+
 
 def filter_valid_water_depth_m(
     series: pd.Series,

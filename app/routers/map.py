@@ -21,6 +21,7 @@ from ..core import models
 from ..core.geo.map_utils import prepare_track_points, generate_kml_from_track_points, get_track_bounds
 from ..core.geo import weather_map_cache, iridium_tle_cache, navwarn_cache
 from ..core.geo import map_layers as map_layers_service
+from ..core.geo import vessel_density as vessel_density_service
 from ..core.data.processors import preprocess_telemetry_df
 from ..core.data.data_service import get_data_service
 from app.platforms.slocum.cache_service import (
@@ -821,6 +822,60 @@ def _require_map_vector_layers() -> None:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Vector map layers are disabled (feature_toggles.map_vector_layers).",
         )
+
+
+def _require_vessel_density_map_layer() -> None:
+    if not is_feature_enabled("vessel_density_map_layer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Vessel density map layer is disabled (feature_toggles.vessel_density_map_layer).",
+        )
+
+
+@router.get("/api/map/vessel-density/meta")
+async def get_vessel_density_meta(
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Month catalog + attribution for the AIS vessel-density overlay."""
+    _require_vessel_density_map_layer()
+    return JSONResponse(content=vessel_density_service.build_meta())
+
+
+@router.get("/api/map/vessel-density/export")
+async def export_vessel_density_tile(
+    layer_id: int = Query(..., description="MapServer layer id (7–18 monthly All-types)"),
+    bbox: str = Query(..., description="west,south,east,north in EPSG:4326"),
+    size: str = Query("256,256", description="width,height pixels (max 512)"),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Proxy a transparent PNG export from the DFO AIS vessel-density MapServer."""
+    _require_vessel_density_map_layer()
+    try:
+        body, cache_status = await vessel_density_service.fetch_export_png(
+            layer_id=layer_id,
+            bbox=bbox,
+            size=size,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.error("Vessel density export failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to fetch vessel density image from upstream.",
+        ) from exc
+
+    return Response(
+        content=body,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "X-Vessel-Density-Cache": cache_status,
+        },
+    )
 
 
 @router.get("/api/map/layers")

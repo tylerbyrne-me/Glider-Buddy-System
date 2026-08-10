@@ -79,6 +79,7 @@ class Settings(BaseSettings):
     # Feature Toggles — prefer FEATURE_TOGGLES_FILE (pretty JSON) over FEATURE_TOGGLES_JSON (inline).
     # See config/feature_toggles.example.json. wave_glider_specific_nav: WG-only nav items.
     # iridium_map_layer: home Leaflet Iridium overlay. navwarn_map_layer: CCG NAVWARN overlay.
+    # vessel_density_map_layer: DFO AIS vessel-density MapServer rasters (monthly).
     # public_login_map: unauthenticated /login map.
     feature_toggles_file: Optional[Path] = None
     feature_toggles_json: str = default_feature_toggles_json()
@@ -178,6 +179,17 @@ class Settings(BaseSettings):
 
     # --- Static vector map layers (GeoJSON overlays; git-tracked under config/) ---
     map_layers_dir: Path = Path("config/map_layers")
+
+    # --- DFO AIS vessel density (home-page MapServer raster proxy) ---
+    vessel_density_mapserver_url: str = (
+        "https://egisp.dfo-mpo.gc.ca/arcgis/rest/services/"
+        "open_data_donnees_ouvertes/"
+        "nw_atlantic_vessel_density_2025_ais_densite_des_navires_nw_atlantique_2025_sia/"
+        "MapServer"
+    )
+    vessel_density_cache_dir: Path = Path("data_store/vessel_density_cache")
+    vessel_density_cache_ttl_seconds: int = 3600  # 1 h tile export cache
+    vessel_density_http_timeout_seconds: float = 45.0
 
     # --- Public login-page map (unauthenticated) ---
     public_map_cache_dir: Path = Path("data_store/public_map_cache")

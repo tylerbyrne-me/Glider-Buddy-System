@@ -80,6 +80,70 @@ export function seriesHasPlottableData(records) {
     });
 }
 
+/** Whole-series |z| threshold for display-only outlier suppression. */
+export const OUTLIER_Z_THRESHOLD = 2.5;
+export const OUTLIER_Z_MIN_SAMPLES = 10;
+
+const OUTLIER_SKIP_FIELD_RE = /heading|course|direction|compass|bearing|yaw|pitch|roll|latitude|longitude|\blat\b|\blon\b/i;
+
+/**
+ * True when a series field/key/label should not use z-score masking (circular / geo).
+ * @param {string|null|undefined} fieldOrLabel
+ * @returns {boolean}
+ */
+export function shouldSkipOutlierSuppress(fieldOrLabel) {
+    return OUTLIER_SKIP_FIELD_RE.test(String(fieldOrLabel || ''));
+}
+
+/**
+ * Mask Chart.js points whose y has |z-score| > threshold (display-only).
+ * Non-finite / null y values are preserved as-is (gaps). Short series are unchanged.
+ * @param {Array<{ x?: unknown, y?: number|null }>|null|undefined} points
+ * @param {{ threshold?: number, minSamples?: number }} [options]
+ * @returns {{ points: Array<{ x?: unknown, y?: number|null }>, suppressedCount: number }}
+ */
+export function maskOutlierPointsByZScore(points, options = {}) {
+    const threshold = options.threshold ?? OUTLIER_Z_THRESHOLD;
+    const minSamples = options.minSamples ?? OUTLIER_Z_MIN_SAMPLES;
+    if (!Array.isArray(points) || !points.length) {
+        return { points: Array.isArray(points) ? points.slice() : [], suppressedCount: 0 };
+    }
+    const finiteIdx = [];
+    const finiteVals = [];
+    for (let i = 0; i < points.length; i += 1) {
+        const y = points[i]?.y;
+        if (typeof y === 'number' && Number.isFinite(y)) {
+            finiteIdx.push(i);
+            finiteVals.push(y);
+        }
+    }
+    if (finiteVals.length < minSamples) {
+        return { points: points.slice(), suppressedCount: 0 };
+    }
+    let sum = 0;
+    for (const v of finiteVals) sum += v;
+    const mean = sum / finiteVals.length;
+    let varSum = 0;
+    for (const v of finiteVals) {
+        const d = v - mean;
+        varSum += d * d;
+    }
+    const std = Math.sqrt(varSum / finiteVals.length);
+    if (!Number.isFinite(std) || std === 0) {
+        return { points: points.slice(), suppressedCount: 0 };
+    }
+    const out = points.map((p) => ({ ...p }));
+    let suppressedCount = 0;
+    for (const i of finiteIdx) {
+        const z = Math.abs((out[i].y - mean) / std);
+        if (z > threshold) {
+            out[i] = { ...out[i], y: null };
+            suppressedCount += 1;
+        }
+    }
+    return { points: out, suppressedCount };
+}
+
 /**
  * Draw a centered no-data message on a canvas (destroys any prior chart content).
  * @param {string} canvasId

@@ -27,7 +27,8 @@ class UserSettings {
         if (appearanceForm) {
             appearanceForm.addEventListener('submit', (e) => this.handleAppearanceSave(e));
             // Live preview while adjusting (local only until Save).
-            ['themeMode', 'accentPreset', 'densityPreset', 'mapStylePref'].forEach((id) => {
+            // Platform overrides do not restyle this page (no data-platform).
+            ['themeMode', 'accentPreset', 'densityPreset', 'mapStylePref', 'accentWaveGlider', 'accentSlocum'].forEach((id) => {
                 const el = document.getElementById(id);
                 if (el) {
                     el.addEventListener('change', () => {
@@ -63,6 +64,10 @@ class UserSettings {
         return normalizePrefs({
             theme_mode: document.getElementById('themeMode')?.value,
             accent: document.getElementById('accentPreset')?.value,
+            platform_accents: {
+                wave_glider: document.getElementById('accentWaveGlider')?.value || 'inherit',
+                slocum: document.getElementById('accentSlocum')?.value || 'inherit',
+            },
             density: document.getElementById('densityPreset')?.value,
             map_style: document.getElementById('mapStylePref')?.value,
         });
@@ -74,10 +79,14 @@ class UserSettings {
         const accent = document.getElementById('accentPreset');
         const density = document.getElementById('densityPreset');
         const mapStyle = document.getElementById('mapStylePref');
+        const accentWg = document.getElementById('accentWaveGlider');
+        const accentSlocum = document.getElementById('accentSlocum');
         if (themeMode) themeMode.value = normalized.theme_mode;
         if (accent) accent.value = normalized.accent;
         if (density) density.value = normalized.density;
         if (mapStyle) mapStyle.value = normalized.map_style;
+        if (accentWg) accentWg.value = normalized.platform_accents.wave_glider || 'inherit';
+        if (accentSlocum) accentSlocum.value = normalized.platform_accents.slocum || 'inherit';
     }
 
     async loadUserData() {

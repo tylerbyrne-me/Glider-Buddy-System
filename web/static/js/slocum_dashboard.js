@@ -40,6 +40,8 @@ import {
     recordsToPoints as recordsToPointsShared,
     drawNoDataOnCanvas,
     buildTimeScaleX,
+    maskOutlierPointsByZScore,
+    shouldSkipOutlierSuppress,
 } from '/static/js/chart_time_series_utils.js';
 import { renderSensorTrackerInstrumentColumns } from '/static/js/sensor_tracker_instruments.js';
 
@@ -456,6 +458,30 @@ function setGranularityControlEnabled(isEnabled) {
     el.title = isEnabled
         ? 'Set the data resampling interval.'
         : 'Resampling is not applied to CTD depth profiles.';
+}
+
+function setOutlierSuppressControlEnabled(isEnabled) {
+    const el = document.getElementById('slocumOutlierSuppress');
+    if (!el) return;
+    el.disabled = !isEnabled;
+    el.style.opacity = isEnabled ? '1' : '0.5';
+    const label = document.querySelector('label[for="slocumOutlierSuppress"]');
+    const title = isEnabled
+        ? 'Hide chart points with |z-score| > 2.5 (display only; does not change stored data).'
+        : 'Outlier suppress is not applied to CTD depth profiles.';
+    el.title = title;
+    if (label) label.title = title;
+}
+
+function isSlocumOutlierSuppressEnabled() {
+    const el = document.getElementById('slocumOutlierSuppress');
+    return Boolean(el && !el.disabled && el.checked);
+}
+
+function maybeMaskOutlierPoints(points, fieldOrLabel) {
+    if (!isSlocumOutlierSuppressEnabled()) return points;
+    if (shouldSkipOutlierSuppress(fieldOrLabel)) return points;
+    return maskOutlierPointsByZScore(points).points;
 }
 
 function colorForValue(value, min, max, stops) {
@@ -887,7 +913,8 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
 
     const datasets = [];
     (chartCfg.series || []).forEach((spec, idx) => {
-        const points = recordsToPoints(seriesPayload?.[spec.key] || []);
+        let points = recordsToPoints(seriesPayload?.[spec.key] || []);
+        points = maybeMaskOutlierPoints(points, spec.key || spec.label);
         if (!points.length) return;
         const color = SERIES_COLORS[idx % SERIES_COLORS.length];
         const isBar = spec.type === 'bar';
@@ -919,7 +946,8 @@ function renderTimeSeriesChart(category, chartCfg, seriesPayload) {
     });
 
     if (showDepth) {
-        const depthPoints = recordsToPoints(seriesPayload?.m_depth || []);
+        let depthPoints = recordsToPoints(seriesPayload?.m_depth || []);
+        depthPoints = maybeMaskOutlierPoints(depthPoints, 'm_depth');
         if (depthPoints.length) {
             datasets.push(buildBackgroundOverlayDataset({
                 points: depthPoints,
@@ -1615,7 +1643,9 @@ function handleLeftPanelClicks() {
             setSharedChartToolbarVisible(isChartCategory);
             // CTD profiles must keep full resolution; time-mean resample would destroy structure.
             // DO placeholder has no live series yet — keep resample enabled for consistency.
-            setGranularityControlEnabled(!isOverview && category !== 'ctd');
+            const chartsEnabled = !isOverview && category !== 'ctd';
+            setGranularityControlEnabled(chartsEnabled);
+            setOutlierSuppressControlEnabled(chartsEnabled);
             activeChartCategory = isOverview ? null : category;
             if (category === 'ctd') loadCtdProfileCharts();
             if (TIME_SERIES_CATEGORIES.includes(category)) loadTimeSeriesCategory(category);
@@ -2054,44 +2084,37 @@ function renderSensorTrackerOverview(deployment, instruments) {
     }
 }
 
-async function loadSlocumReports() {
-    const datasetId = getDatasetId();
+function renderSlocumMissionReports(deployment) {
     const weeklyContainer = document.getElementById('overviewWeeklyReportContainer');
     const weeklyLink = document.getElementById('overviewWeeklyReportLink');
-    const weeklyList = document.getElementById('overviewWeeklyReportList');
+    const endContainer = document.getElementById('overviewEndReportContainer');
+    const endLink = document.getElementById('overviewEndReportLink');
     const noReports = document.getElementById('overviewNoReports');
-    if (!datasetId) return;
-    try {
-        const payload = await apiRequest(`/api/slocum/reporting/datasets/${encodeURIComponent(datasetId)}/reports`, 'GET');
-        const reports = payload?.reports || [];
-        if (!reports.length) {
-            if (weeklyContainer) weeklyContainer.style.display = 'none';
-            if (weeklyList) weeklyList.style.display = 'none';
-            if (noReports) noReports.style.display = 'block';
-            return;
-        }
-        if (noReports) noReports.style.display = 'none';
-        const latest = reports[0];
-        if (weeklyContainer && weeklyLink) {
-            weeklyLink.href = latest.url;
-            weeklyLink.textContent = latest.filename;
-            weeklyContainer.style.display = 'block';
-        }
-        if (weeklyList && reports.length > 1) {
-            weeklyList.innerHTML = '<div class="mt-1"><strong>All reports:</strong></div><ul class="mb-0">'
-                + reports.map((r) => `<li><a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.filename)}</a></li>`).join('')
-                + '</ul>';
-            weeklyList.style.display = 'block';
-        } else if (weeklyList) {
-            weeklyList.style.display = 'none';
-        }
-    } catch (error) {
-        if (weeklyContainer) weeklyContainer.style.display = 'none';
-        if (weeklyList) weeklyList.style.display = 'none';
-        if (noReports) {
-            noReports.style.display = 'block';
-            noReports.textContent = `Failed to load reports: ${error.message}`;
-        }
+    const weeklyReportUrl = deployment?.weekly_report_url || null;
+    const endReportUrl = deployment?.end_of_mission_report_url || null;
+    let hasReports = false;
+
+    if (weeklyReportUrl && weeklyContainer && weeklyLink) {
+        weeklyLink.href = weeklyReportUrl;
+        weeklyLink.textContent = weeklyReportUrl.split('/').pop();
+        weeklyContainer.style.display = 'block';
+        hasReports = true;
+    } else if (weeklyContainer) {
+        weeklyContainer.style.display = 'none';
+    }
+
+    if (endReportUrl && endContainer && endLink) {
+        endLink.href = endReportUrl;
+        endLink.textContent = endReportUrl.split('/').pop();
+        endContainer.style.display = 'block';
+        hasReports = true;
+    } else if (endContainer) {
+        endContainer.style.display = 'none';
+    }
+
+    if (noReports) {
+        noReports.style.display = hasReports ? 'none' : 'block';
+        noReports.textContent = 'No reports available yet.';
     }
 }
 
@@ -2104,6 +2127,7 @@ async function loadSlocumOverview() {
         currentDeploymentId = info?.deployment?.id || null;
         setDeploymentActionsEnabled(Boolean(currentDeploymentId));
         renderPlanDocument(info?.deployment?.document_url || null);
+        renderSlocumMissionReports(info?.deployment || null);
         renderSensorTrackerOverview(info?.sensor_tracker_deployment || null, info?.sensor_tracker_instruments || []);
         renderMissionNotes(info?.notes || []);
         renderMissionGoals(info?.goals || []);
@@ -2115,6 +2139,7 @@ async function loadSlocumOverview() {
         console.error('Failed to load Slocum overview:', error);
         showToast(`Failed to load overview: ${error.message}`, 'danger');
         renderMediaEmpty(`Failed to load media: ${error.message}`);
+        renderSlocumMissionReports(null);
     }
 }
 
@@ -2528,9 +2553,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     setGranularityControlEnabled(true);
+    setOutlierSuppressControlEnabled(true);
     updateChartColorVariables();
     loadSlocumOverview();
-    loadSlocumReports();
     bindSlocumOverviewInteractions();
     bindSlocumChecklistTab();
     watchThemeForCharts();
@@ -2551,6 +2576,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (activeChartCategory && activeChartCategory !== 'ctd') {
                 refreshAllLoadedCharts();
             }
+        });
+    }
+
+    const outlierSuppress = document.getElementById('slocumOutlierSuppress');
+    if (outlierSuppress) {
+        outlierSuppress.addEventListener('change', () => {
+            // Display-only: re-render from cache without refetch.
+            timeSeriesLoaded.forEach((category) => reRenderCategoryFromCache(category));
         });
     }
 

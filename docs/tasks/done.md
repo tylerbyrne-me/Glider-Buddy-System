@@ -3,6 +3,12 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-09 — Outlier suppress (|z| > 2.5): dashboard Hide outliers toggle (WG per-card + Slocum toolbar); automated report KPI/plot suppression with `*` + footnote; shared `processors.suppress_zscore_outliers` + JS `maskOutlierPointsByZScore` — display/report only
+- [x] 2026-08-09 — Slocum dashboard overview Mission Reports: latest weekly + EOM only via `weekly_report_url` / `end_of_mission_report_url` (WG parity); removed `overviewWeeklyReportList` disk listing; added `SlocumDeployment.end_of_mission_report_url` (null until EOM generation ships)
+
+- [x] 2026-08-09 — Accent UI polish: cache-bust `themes.css`/`auth.js`/`user_settings.js` via `app_version`; include theme assets in static version token; `--bs-primary-rgb` on accent packs; seafoam light distinct from teal
+- [x] 2026-08-09 — Accent expansion + platform overrides: ocean palette (`slate`/`ocean`/`seafoam`/`amber`); `platform_accents` for Wave Glider / Slocum (inherit = general); Settings Appearance split General vs Platform accents
+- [x] 2026-08-09 — AIS vessel density (2025) home overlay: DFO egisp MapServer monthly All-types rasters (layers 7–18), export proxy + tile cache, parent toggle + exclusive month radios (`vessel_density_map_layer`) — [vessel_density_map_layer.md](../wiki/how-tos/vessel_density_map_layer.md)
 - [x] 2026-08-09 — Vector map layers wrap-up: full FMA set documented; how-to / architecture / ENV / wiki index refreshed; one-shot `_fetch_remaining_fma.py` removed; backlog updated (remaining follow-ups + fishery notices ↔ FMA map integration + toggle UI polish) — [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md)
 - [x] 2026-08-09 — DFO Atlantic FMA set completed: scallop, capelin, mackerel, herring, squid, crab, salmon, snow crab, northern shrimp (22/23; OBJECTID 19 upstream 500) + catalog-driven home toggles — [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md)
 - [x] 2026-08-09 — NAVWARN map layer: CCG NIS HTML scrape + disk cache (`navwarn_cache.py`), `GET /api/map/navwarn/active|areas` + cache admin, dual toggles on WG+Slocum home maps (`navwarn_map_layer.js`), 30m incremental prefetch + daily re-validate — how-to [navwarn_map_layer.md](../wiki/how-tos/navwarn_map_layer.md)

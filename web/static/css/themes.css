@@ -77,6 +77,7 @@
   --bs-body-color: var(--app-text);
   --bs-body-bg-rgb: 240, 240, 244;
   --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 18, 52, 102;
   --bs-secondary: var(--app-secondary);
   --bs-primary-dark: rgb(14, 40, 79);
   --bs-secondary-dark: #5c636a;
@@ -188,6 +189,7 @@
   --bs-body-color: var(--app-text);
   --bs-body-bg-rgb: 11, 15, 20;
   --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 18, 52, 102;
   --bs-secondary: #6c757d;
   --bs-primary-dark: rgb(14, 40, 79);
   --bs-secondary-dark: #5c636a;
@@ -211,6 +213,7 @@
   --app-active-card-accent: #0f766e;
   --app-active-card-text: #134e4a;
   --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 15, 118, 110;
   --bs-primary-dark: #115e59;
   --primary: var(--app-primary);
   --accent: var(--app-accent);
@@ -233,6 +236,7 @@
   --app-active-card-accent: #14b8a6;
   --app-active-card-text: #ccfbf1;
   --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 20, 184, 166;
   --bs-primary-dark: #0f766e;
   --primary: var(--app-primary);
   --accent: var(--app-accent);
@@ -264,6 +268,7 @@
   --bs-body-color: #000000;
   --bs-body-bg-rgb: 255, 255, 255;
   --bs-primary: #000000;
+  --bs-primary-rgb: 0, 0, 0;
   --bs-primary-dark: #000000;
   --bs-card-bg: #ffffff;
   --bs-border-color: #000000;
@@ -303,6 +308,7 @@
   --bs-body-color: #ffffff;
   --bs-body-bg-rgb: 0, 0, 0;
   --bs-primary: #ffffff;
+  --bs-primary-rgb: 255, 255, 255;
   --bs-primary-dark: #e5e5e5;
   --bs-card-bg: #0a0a0a;
   --bs-border-color: #ffffff;
@@ -321,6 +327,192 @@
   --active-card-border: var(--app-active-card-border);
   --active-card-accent: var(--app-active-card-accent);
   --active-card-text: var(--app-active-card-text);
+}
+
+/* Ocean palette accents */
+
+:root[data-theme="light"][data-accent="slate"],
+:root[data-bs-theme="light"][data-accent="slate"] {
+  --app-primary: #475569;
+  --app-accent: #64748b;
+  --app-navbar-bg: #334155;
+  --app-footer-bg: #334155;
+  --app-active-card-bg: #f1f5f9;
+  --app-active-card-border: #94a3b8;
+  --app-active-card-accent: #475569;
+  --app-active-card-text: #0f172a;
+  --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 71, 85, 105;
+  --bs-primary-dark: #334155;
+  --primary: var(--app-primary);
+  --accent: var(--app-accent);
+  --active-card-bg: var(--app-active-card-bg);
+  --active-card-border: var(--app-active-card-border);
+  --active-card-accent: var(--app-active-card-accent);
+  --active-card-text: var(--app-active-card-text);
+  --navbar-bg: var(--app-navbar-bg);
+  --footer-bg: var(--app-footer-bg);
+}
+
+:root[data-theme="dark"][data-accent="slate"],
+:root[data-bs-theme="dark"][data-accent="slate"] {
+  --app-primary: #94a3b8;
+  --app-accent: #cbd5e1;
+  --app-navbar-bg: #1e293b;
+  --app-footer-bg: #1e293b;
+  --app-active-card-bg: #1e293b;
+  --app-active-card-border: #475569;
+  --app-active-card-accent: #94a3b8;
+  --app-active-card-text: #f1f5f9;
+  --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 148, 163, 184;
+  --bs-primary-dark: #64748b;
+  --primary: var(--app-primary);
+  --accent: var(--app-accent);
+  --active-card-bg: var(--app-active-card-bg);
+  --active-card-border: var(--app-active-card-border);
+  --active-card-accent: var(--app-active-card-accent);
+  --active-card-text: var(--app-active-card-text);
+  --navbar-bg: var(--app-navbar-bg);
+  --footer-bg: var(--app-footer-bg);
+}
+
+:root[data-theme="light"][data-accent="ocean"],
+:root[data-bs-theme="light"][data-accent="ocean"] {
+  --app-primary: #0369a1;
+  --app-accent: #0ea5e9;
+  --app-navbar-bg: #075985;
+  --app-footer-bg: #075985;
+  --app-active-card-bg: #e0f2fe;
+  --app-active-card-border: #7dd3fc;
+  --app-active-card-accent: #0369a1;
+  --app-active-card-text: #0c4a6e;
+  --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 3, 105, 161;
+  --bs-primary-dark: #075985;
+  --primary: var(--app-primary);
+  --accent: var(--app-accent);
+  --active-card-bg: var(--app-active-card-bg);
+  --active-card-border: var(--app-active-card-border);
+  --active-card-accent: var(--app-active-card-accent);
+  --active-card-text: var(--app-active-card-text);
+  --navbar-bg: var(--app-navbar-bg);
+  --footer-bg: var(--app-footer-bg);
+}
+
+:root[data-theme="dark"][data-accent="ocean"],
+:root[data-bs-theme="dark"][data-accent="ocean"] {
+  --app-primary: #38bdf8;
+  --app-accent: #7dd3fc;
+  --app-navbar-bg: #075985;
+  --app-footer-bg: #075985;
+  --app-active-card-bg: #0c4a6e;
+  --app-active-card-border: #0369a1;
+  --app-active-card-accent: #38bdf8;
+  --app-active-card-text: #e0f2fe;
+  --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 56, 189, 248;
+  --bs-primary-dark: #0284c7;
+  --primary: var(--app-primary);
+  --accent: var(--app-accent);
+  --active-card-bg: var(--app-active-card-bg);
+  --active-card-border: var(--app-active-card-border);
+  --active-card-accent: var(--app-active-card-accent);
+  --active-card-text: var(--app-active-card-text);
+  --navbar-bg: var(--app-navbar-bg);
+  --footer-bg: var(--app-footer-bg);
+}
+
+:root[data-theme="light"][data-accent="seafoam"],
+:root[data-bs-theme="light"][data-accent="seafoam"] {
+  --app-primary: #047857;
+  --app-accent: #34d399;
+  --app-navbar-bg: #065f46;
+  --app-footer-bg: #065f46;
+  --app-active-card-bg: #ecfdf5;
+  --app-active-card-border: #6ee7b7;
+  --app-active-card-accent: #047857;
+  --app-active-card-text: #064e3b;
+  --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 4, 120, 87;
+  --bs-primary-dark: #065f46;
+  --primary: var(--app-primary);
+  --accent: var(--app-accent);
+  --active-card-bg: var(--app-active-card-bg);
+  --active-card-border: var(--app-active-card-border);
+  --active-card-accent: var(--app-active-card-accent);
+  --active-card-text: var(--app-active-card-text);
+  --navbar-bg: var(--app-navbar-bg);
+  --footer-bg: var(--app-footer-bg);
+}
+
+:root[data-theme="dark"][data-accent="seafoam"],
+:root[data-bs-theme="dark"][data-accent="seafoam"] {
+  --app-primary: #34d399;
+  --app-accent: #6ee7b7;
+  --app-navbar-bg: #064e3b;
+  --app-footer-bg: #064e3b;
+  --app-active-card-bg: #064e3b;
+  --app-active-card-border: #059669;
+  --app-active-card-accent: #34d399;
+  --app-active-card-text: #ecfdf5;
+  --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 52, 211, 153;
+  --bs-primary-dark: #10b981;
+  --primary: var(--app-primary);
+  --accent: var(--app-accent);
+  --active-card-bg: var(--app-active-card-bg);
+  --active-card-border: var(--app-active-card-border);
+  --active-card-accent: var(--app-active-card-accent);
+  --active-card-text: var(--app-active-card-text);
+  --navbar-bg: var(--app-navbar-bg);
+  --footer-bg: var(--app-footer-bg);
+}
+
+:root[data-theme="light"][data-accent="amber"],
+:root[data-bs-theme="light"][data-accent="amber"] {
+  --app-primary: #b45309;
+  --app-accent: #f59e0b;
+  --app-navbar-bg: #92400e;
+  --app-footer-bg: #92400e;
+  --app-active-card-bg: #fffbeb;
+  --app-active-card-border: #fcd34d;
+  --app-active-card-accent: #b45309;
+  --app-active-card-text: #78350f;
+  --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 180, 83, 9;
+  --bs-primary-dark: #92400e;
+  --primary: var(--app-primary);
+  --accent: var(--app-accent);
+  --active-card-bg: var(--app-active-card-bg);
+  --active-card-border: var(--app-active-card-border);
+  --active-card-accent: var(--app-active-card-accent);
+  --active-card-text: var(--app-active-card-text);
+  --navbar-bg: var(--app-navbar-bg);
+  --footer-bg: var(--app-footer-bg);
+}
+
+:root[data-theme="dark"][data-accent="amber"],
+:root[data-bs-theme="dark"][data-accent="amber"] {
+  --app-primary: #fbbf24;
+  --app-accent: #fcd34d;
+  --app-navbar-bg: #78350f;
+  --app-footer-bg: #78350f;
+  --app-active-card-bg: #451a03;
+  --app-active-card-border: #b45309;
+  --app-active-card-accent: #fbbf24;
+  --app-active-card-text: #fffbeb;
+  --bs-primary: var(--app-primary);
+  --bs-primary-rgb: 251, 191, 36;
+  --bs-primary-dark: #d97706;
+  --primary: var(--app-primary);
+  --accent: var(--app-accent);
+  --active-card-bg: var(--app-active-card-bg);
+  --active-card-border: var(--app-active-card-border);
+  --active-card-accent: var(--app-active-card-accent);
+  --active-card-text: var(--app-active-card-text);
+  --navbar-bg: var(--app-navbar-bg);
+  --footer-bg: var(--app-footer-bg);
 }
 
 /* --- Density --- */

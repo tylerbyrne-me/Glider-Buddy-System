@@ -31,6 +31,10 @@ import {
     bindNavwarnOverlayContext,
     initNavwarnOverlay,
 } from '/static/js/navwarn_map_layer.js';
+import {
+    bindVesselDensityOverlayContext,
+    initVesselDensityOverlay,
+} from '/static/js/vessel_density_map_layer.js';
 
 /** All track polyline layers (Wave Glider + Slocum) for bbox / z-order helpers. */
 function getAllTrackLayers() {
@@ -272,6 +276,8 @@ function initializeMissionMap() {
     initVectorOverlay();
     bindNavwarnOverlayContext(missionMap);
     initNavwarnOverlay();
+    bindVesselDensityOverlayContext(missionMap);
+    initVesselDensityOverlay();
 }
 
 /**

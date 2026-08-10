@@ -314,7 +314,7 @@ Some settings use JSON strings:
 - `REMOTE_MISSION_FOLDER_MAP_JSON` - Must be valid JSON
 - `ACTIVE_REALTIME_MISSIONS` - Must be valid JSON array
 - `FEATURE_TOGGLES_FILE` - Path to a JSON file (recommended; one toggle per line). Example: `config/feature_toggles.example.json`
-- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL, DFO fishery areas, NOAA shipping lanes) on home maps. Include `"navwarn_map_layer": true` to enable CCG NAVWARN overlays on home maps.
+- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL, DFO fishery areas, NOAA shipping lanes) on home maps. Include `"vessel_density_map_layer": true` to enable DFO AIS vessel-density monthly rasters on home maps. Include `"navwarn_map_layer": true` to enable CCG NAVWARN overlays on home maps.
 
 ### Public login map
 - Kill switch: `public_login_map` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON`
@@ -328,6 +328,13 @@ Some settings use JSON strings:
 - Layer files: git-tracked under `config/map_layers/` (`map_layers_dir` in `app/config.py`) — GOSL zones, DFO LFAs/FMAs, NOAA shipping lanes
 - Convert/fetch locally: `scripts/convert_map_layer_kml.py` (KML), `scripts/fetch_map_layer_arcgis.py` (ArcGIS REST); commit `published/` + `manifest.json` (+ optional `sources/`) — do not require prod to re-ingest
 - Ops detail: [Static vector map layers how-to](./how-tos/map_vector_layers.md)
+
+### AIS vessel density map layer (home overlays)
+- Kill switch: `vessel_density_map_layer` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**)
+- Upstream: DFO egisp MapServer (monthly All-types layers 7–18); live `export` proxy — not git GeoJSON
+- Cache: `vessel_density_cache_dir` (default `data_store/vessel_density_cache`), TTL `vessel_density_cache_ttl_seconds` (default 3600), timeout `vessel_density_http_timeout_seconds`
+- Optional override: `VESSEL_DENSITY_MAPSERVER_URL`
+- Ops detail: [AIS vessel density how-to](./how-tos/vessel_density_map_layer.md)
 
 ### NAVWARN map layer (home overlays)
 - Kill switch: `navwarn_map_layer` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**)

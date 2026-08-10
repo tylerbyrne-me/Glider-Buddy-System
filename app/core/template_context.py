@@ -24,13 +24,19 @@ from ..config import settings
 
 
 def _get_static_version_token() -> str:
-    """Build a cache-busting token from key Wave Glider JS file mtimes."""
+    """Build a cache-busting token from key static asset mtimes."""
     try:
         repo_root = Path(__file__).resolve().parents[2]
+        static = repo_root / "web" / "static"
         tracked_files = [
-            repo_root / "web" / "static" / "js" / "dashboard.js",
-            repo_root / "web" / "static" / "js" / "datetime_utils.js",
-            repo_root / "web" / "static" / "js" / "wg_vm4.js",
+            static / "js" / "dashboard.js",
+            static / "js" / "datetime_utils.js",
+            static / "js" / "wg_vm4.js",
+            static / "js" / "auth.js",
+            static / "js" / "ui_preferences.js",
+            static / "js" / "user_settings.js",
+            static / "css" / "themes.css",
+            static / "css" / "custom.css",
         ]
         mtimes = [str(int(path.stat().st_mtime)) for path in tracked_files if path.exists()]
         if mtimes:

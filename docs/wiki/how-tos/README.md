@@ -17,5 +17,6 @@ Operational procedures, sensor guides, and admin quick starts.
 - [Slocum integration (dashboard, ERDDAP, mirrors)](./slocum.md)
 - [Public login map](./public_login_map.md)
 - [Static vector map layers (GOSL / DFO FMA / NOAA overlays)](./map_vector_layers.md)
+- [AIS vessel density map layer (DFO 2025 monthly rasters)](./vessel_density_map_layer.md)
 - [NAVWARN map layer (CCG navigational warnings)](./navwarn_map_layer.md)
 - [RAG document template](./DOCUMENT_TEMPLATE.md)

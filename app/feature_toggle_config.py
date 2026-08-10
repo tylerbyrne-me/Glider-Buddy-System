@@ -33,6 +33,7 @@ DEFAULT_FEATURE_TOGGLES: dict[str, bool] = {
     "iridium_map_layer": False,
     "navwarn_map_layer": False,
     "map_vector_layers": False,
+    "vessel_density_map_layer": False,
     "slocum_auto_checklist_submit": False,
     "public_login_map": False,
     # Legacy / template toggles (often omitted from .env; default on)

@@ -10,6 +10,7 @@ Start here. This folder is the source of truth for "how does this work."
 - [Environment variables](./ENV_VARIABLES.md) — config reference
 - [Public login map](./how-tos/public_login_map.md) — unauthenticated login-page tracks / KML / labels
 - [Static vector map layers](./how-tos/map_vector_layers.md) — GOSL / DFO FMA & LFA / NOAA shipping GeoJSON overlays on home maps (KML + ArcGIS ingest)
+- [AIS vessel density map layer](./how-tos/vessel_density_map_layer.md) — DFO NW Atlantic AIS density rasters (2025 monthly) on home maps
 - [NAVWARN map layer](./how-tos/navwarn_map_layer.md) — CCG navigational warnings on home maps (HTML scrape + cache)
 - [Glossary template](./GLOSSARY_TEMPLATE.md) — RAG/glossary authoring
 - [Module templates](./MODULE_TEMPLATES_README.md) — module scaffolding notes

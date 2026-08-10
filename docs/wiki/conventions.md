@@ -67,20 +67,40 @@ Light/dark themes are CSS custom properties on `<html data-theme="...">` (also `
 |------|----------|------|
 | Semantic `--app-*` | `--app-text`, `--app-bg`, `--app-card-border` | Preferred for custom CSS |
 | Legacy aliases | `--text`, `--card-border` | Kept for existing `custom.css` |
-| Bootstrap bridges | `--bs-card-bg`, `--bs-body-bg-rgb`, `--bs-border-color` | Keep Bootstrap components themed |
+| Bootstrap bridges | `--bs-card-bg`, `--bs-body-bg-rgb`, `--bs-border-color`, `--bs-primary` / `--bs-primary-rgb` | Keep Bootstrap components themed (buttons need RGB) |
 | Comfort tokens | `--app-radius-md`, `--app-shadow-elevated`, `--app-alert-info-*`, `--app-map-frame-bg` | Shared components / maps |
 
-Additional DOM hooks (User Settings → Appearance):
+### DOM hooks (User Settings → Appearance)
 
 | Attribute | Values | Purpose |
 |-----------|--------|---------|
-| `data-accent` | `default`, `teal`, `high-contrast` | Remap `--app-primary` / `--app-accent` |
-| `data-density` | `comfortable`, `compact` | Placeholder: today only slightly tighter radius/shadow + `.gbs-card` / `.gbs-hint` padding — expand once desired app-wide density is defined |
+| `data-accent` | `default`, `teal`, `high-contrast`, `slate`, `ocean`, `seafoam`, `amber` | Remap `--app-primary` / `--app-accent`, navbar/footer, active-card, Bootstrap primary |
+| `data-platform` | `wave_glider`, `slocum` (omit when not a platform page) | Accent resolution + anti-FOUC |
+| `data-density` | `comfortable`, `compact` | Placeholder: slight radius/shadow + `.gbs-card` / `.gbs-hint` padding only — expand once desired density is defined |
 | `data-map-style` | `match-theme`, `light`, `dark` | Leaflet basemap override |
 
-Shared UI classes live in [`web/static/css/custom.css`](../../web/static/css/custom.css): `.gbs-card`, `.gbs-hint`, `.gbs-empty-state`, `.platform-choice-card`. Page-specific stylesheets: [`web/static/css/pages/login.css`](../../web/static/css/pages/login.css), [`web/static/css/pages/admin.css`](../../web/static/css/pages/admin.css). Leaflet tiles: [`web/static/js/map_tiles.js`](../../web/static/js/map_tiles.js) (OSM light / CARTO Dark Matter; respects `map_style`).
+### Preference JSON (`users.ui_preferences`)
 
-Per-user prefs live in `users.ui_preferences` JSON and sync with `localStorage` via [`ui_preferences.js`](../../web/static/js/ui_preferences.js) / [`auth.js`](../../web/static/js/auth.js). Shape: `theme_mode` (`light` \| `dark` \| `system`), `accent`, `density`, `map_style`. Banner `#themeSwitch` forces light/dark (exits system). Unauthenticated pages stay localStorage-only.
+Synced with `localStorage` via [`ui_preferences.js`](../../web/static/js/ui_preferences.js) / [`auth.js`](../../web/static/js/auth.js); edited in User Settings Appearance (`GET`/`PUT /api/users/me`).
+
+```json
+{
+  "theme_mode": "light | dark | system",
+  "accent": "default",
+  "platform_accents": {
+    "wave_glider": "inherit",
+    "slocum": "amber"
+  },
+  "density": "comfortable",
+  "map_style": "match-theme"
+}
+```
+
+**Accent resolution:** if the page has `data-platform` and `platform_accents[platform]` is a concrete accent (not `inherit`), use that; otherwise use general `accent`. Non-platform pages (login, settings, platform chooser) always use general. Banner `#themeSwitch` forces light/dark (exits `system`). Unauthenticated pages stay localStorage-only.
+
+Shared UI classes: [`custom.css`](../../web/static/css/custom.css) (`.gbs-card`, `.gbs-hint`, `.gbs-empty-state`, `.platform-choice-card`). Page CSS: [`pages/login.css`](../../web/static/css/pages/login.css), [`pages/admin.css`](../../web/static/css/pages/admin.css). Maps: [`map_tiles.js`](../../web/static/js/map_tiles.js).
+
+**Cache busting:** load `themes.css`, `custom.css`, `auth.js`, and `user_settings.js` with `?v={{ app_version }}`. `app_version` is derived from mtimes of those theme assets (plus key dashboard JS) in [`template_context.py`](../../app/core/template_context.py). When adding theme/appearance assets, include them in that token list or browsers may keep stale CSS/JS.
 
 ## Patterns to follow
 

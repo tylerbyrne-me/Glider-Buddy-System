@@ -33,8 +33,10 @@ from .styling import (
     MARGIN_SIDE,
     NoteCard,
     GoalCard,
+    OUTLIER_SUPPRESS_FOOTNOTE,
     PORTRAIT_CONTENT_HEIGHT_PT,
     _escape_xml_text,
+    append_outlier_suppress_footnote,
     build_paragraph_styles,
     build_toc_flowable,
     cover_page_flowables,
@@ -42,6 +44,7 @@ from .styling import (
     severity_pill_cell,
     styled_data_table,
 )
+from ..data.processors import prepare_report_numeric_frame
 
 
 def _pw() -> float:
@@ -270,13 +273,14 @@ def build_slocum_summary(
     def _stat_block(title: str, d: Optional[dict], unit: str) -> List[KPI]:
         if not d:
             return []
+        flagged = bool(d.get("outliers_suppressed"))
         items: List[KPI] = []
         if "avg" in d:
-            items.append(KPI(f"{title} avg", f"{d['avg']:.2f}", unit))
+            items.append(KPI(f"{title} avg", f"{d['avg']:.2f}", unit, flagged=flagged))
         if "min" in d:
-            items.append(KPI(f"{title} min", f"{d['min']:.2f}", unit))
+            items.append(KPI(f"{title} min", f"{d['min']:.2f}", unit, flagged=flagged))
         if "max" in d:
-            items.append(KPI(f"{title} max", f"{d['max']:.2f}", unit))
+            items.append(KPI(f"{title} max", f"{d['max']:.2f}", unit, flagged=flagged))
         return items
 
     out.append(Paragraph("Navigation and vehicle", styles["Heading2"]))
@@ -293,9 +297,15 @@ def build_slocum_summary(
         if source:
             unit = f"m · {source}"
         kpis.append(
-            KPI("Average water depth", f"{float(water_depth_summary['avg']):.1f}", unit)
+            KPI(
+                "Average water depth",
+                f"{float(water_depth_summary['avg']):.1f}",
+                unit,
+                flagged=bool(water_depth_summary.get("outliers_suppressed")),
+            )
         )
     out.append(kpi_row_table(kpis[:12], styles))
+    append_outlier_suppress_footnote(out, kpis[:12], styles)
     out.append(Spacer(1, 12))
 
     batt_kpis: List[KPI] = []
@@ -305,6 +315,7 @@ def build_slocum_summary(
     if batt_kpis:
         out.append(Paragraph("Battery power", styles["Heading2"]))
         out.append(kpi_row_table(batt_kpis[:12], styles))
+        append_outlier_suppress_footnote(out, batt_kpis[:12], styles)
         out.append(Spacer(1, 12))
 
     ocean: List[KPI] = []
@@ -321,6 +332,7 @@ def build_slocum_summary(
     if ocean:
         out.append(Paragraph("Oceanographic (CTD)", styles["Heading2"]))
         out.append(kpi_row_table(ocean, styles))
+        append_outlier_suppress_footnote(out, ocean, styles)
         out.append(Spacer(1, 8))
 
     if dmon_detection_counts:
@@ -405,40 +417,51 @@ def build_summary(
     power_out = float(report_period_power_summary.get("avg_total_output_W", 0.0))
     avg_daily_solar_wh = float(report_period_power_summary.get("avg_daily_solar_wh", 0.0))
     avg_daily_draw_wh = float(report_period_power_summary.get("avg_daily_draw_wh", 0.0))
+    power_flagged = bool(report_period_power_summary.get("outliers_suppressed"))
+    sog_flagged = bool(report_period_telemetry_summary.get("outliers_suppressed"))
     kpis: List[KPI] = [
         KPI("Distance (period)", f"{report_period_telemetry_summary.get('total_distance_km', 0.0):.2f}", "km"),
-        KPI("Avg SOG (period)", f"{report_period_telemetry_summary.get('avg_speed_knots', 0.0):.2f}", "kt"),
+        KPI(
+            "Avg SOG (period)",
+            f"{report_period_telemetry_summary.get('avg_speed_knots', 0.0):.2f}",
+            "kt",
+            flagged=sog_flagged,
+        ),
         KPI("Distance (mission)", f"{mission_telemetry_summary.get('total_distance_km', 0.0):.2f}", "km"),
         KPI(
             "Power in (avg)",
             f"{power_in:.2f}",
             "W",
             trend=_power_trend(power_in, prior_power_summary, "avg_total_input_W"),
+            flagged=power_flagged,
         ),
         KPI(
             "Power out (avg)",
             f"{power_out:.2f}",
             "W",
             trend=_power_trend(power_out, prior_power_summary, "avg_total_output_W"),
+            flagged=power_flagged,
         ),
-        KPI("Avg daily solar", f"{avg_daily_solar_wh:.1f}", "Wh/day"),
-        KPI("Avg daily draw", f"{avg_daily_draw_wh:.1f}", "Wh/day"),
+        KPI("Avg daily solar", f"{avg_daily_solar_wh:.1f}", "Wh/day", flagged=power_flagged),
+        KPI("Avg daily draw", f"{avg_daily_draw_wh:.1f}", "Wh/day", flagged=power_flagged),
     ]
     solar = report_period_power_summary.get("avg_solar_panel_W") or {}
     if solar:
         for name, w in list(solar.items())[:3]:
-            kpis.append(KPI(name, f"{w:.2f}", "W"))
+            kpis.append(KPI(name, f"{w:.2f}", "W", flagged=power_flagged))
     out.append(kpi_row_table(kpis[:12], styles))
+    append_outlier_suppress_footnote(out, kpis[:12], styles)
     out.append(Spacer(1, 12))
 
     def _stat_block(title: str, d: dict, unit: str) -> List[KPI]:
+        flagged = bool(d.get("outliers_suppressed"))
         items: List[KPI] = []
         if "avg" in d:
-            items.append(KPI(f"{title} avg", f"{d['avg']:.2f}", unit))
+            items.append(KPI(f"{title} avg", f"{d['avg']:.2f}", unit, flagged=flagged))
         if "min" in d:
-            items.append(KPI(f"{title} min", f"{d['min']:.2f}", unit))
+            items.append(KPI(f"{title} min", f"{d['min']:.2f}", unit, flagged=flagged))
         if "max" in d:
-            items.append(KPI(f"{title} max", f"{d['max']:.2f}", unit))
+            items.append(KPI(f"{title} max", f"{d['max']:.2f}", unit, flagged=flagged))
         return items
 
     ocean: List[KPI] = []
@@ -451,6 +474,7 @@ def build_summary(
     if ocean:
         out.append(Paragraph("Oceanographic (CTD)", styles["Heading2"]))
         out.append(kpi_row_table(ocean, styles))
+        append_outlier_suppress_footnote(out, ocean, styles)
         out.append(Spacer(1, 8))
 
     wx: List[KPI] = []
@@ -462,13 +486,21 @@ def build_summary(
         wx.extend(_stat_block("Wind", ws, "kt"))
     wg = report_period_weather_summary.get("WindGust")
     if wg and "max" in wg:
-        wx.append(KPI("Wind gust max", f"{wg['max']:.2f}", "kt"))
+        wx.append(
+            KPI(
+                "Wind gust max",
+                f"{wg['max']:.2f}",
+                "kt",
+                flagged=bool(wg.get("outliers_suppressed")),
+            )
+        )
     bp = report_period_weather_summary.get("BarometricPressure")
     if bp:
         wx.extend(_stat_block("Pressure", bp, "mbar"))
     if wx:
         out.append(Paragraph("Meteorological", styles["Heading2"]))
         out.append(kpi_row_table(wx, styles))
+        append_outlier_suppress_footnote(out, wx, styles)
         out.append(Spacer(1, 8))
 
     sea: List[KPI] = []
@@ -481,6 +513,7 @@ def build_summary(
     if sea:
         out.append(Paragraph("Sea state", styles["Heading2"]))
         out.append(kpi_row_table(sea, styles))
+        append_outlier_suppress_footnote(out, sea, styles)
 
     sev = report_period_error_summary.get("by_severity") or {}
     if sev:
@@ -531,25 +564,44 @@ def build_executive_summary(
     out.append(DataPeriodBanner(f"Full mission · {mission_date_range_str}", styles))
     out.append(Spacer(1, 8))
     out.append(Paragraph("Navigation and power", styles["Heading2"]))
+    sog_flagged = bool(mission_telemetry_summary.get("outliers_suppressed"))
+    power_flagged = bool(report_period_power_summary.get("outliers_suppressed"))
     kpis: List[KPI] = [
         KPI("Distance (mission)", f"{mission_telemetry_summary.get('total_distance_km', 0.0):.2f}", "km"),
-        KPI("Avg SOG (mission)", f"{mission_telemetry_summary.get('avg_speed_knots', 0.0):.2f}", "kt"),
-        KPI("Power in (avg)", f"{report_period_power_summary.get('avg_total_input_W', 0.0):.2f}", "W"),
-        KPI("Power out (avg)", f"{report_period_power_summary.get('avg_total_output_W', 0.0):.2f}", "W"),
+        KPI(
+            "Avg SOG (mission)",
+            f"{mission_telemetry_summary.get('avg_speed_knots', 0.0):.2f}",
+            "kt",
+            flagged=sog_flagged,
+        ),
+        KPI(
+            "Power in (avg)",
+            f"{report_period_power_summary.get('avg_total_input_W', 0.0):.2f}",
+            "W",
+            flagged=power_flagged,
+        ),
+        KPI(
+            "Power out (avg)",
+            f"{report_period_power_summary.get('avg_total_output_W', 0.0):.2f}",
+            "W",
+            flagged=power_flagged,
+        ),
         KPI("Errors (total)", str(report_period_error_summary.get("total_errors", 0)), ""),
         KPI("AIS vessels", str(ais_total_vessels), ""),
     ]
     out.append(kpi_row_table(kpis, styles))
+    append_outlier_suppress_footnote(out, kpis, styles)
     out.append(Spacer(1, 10))
 
     def _stat_block(title: str, d: dict, unit: str) -> List[KPI]:
+        flagged = bool(d.get("outliers_suppressed"))
         items: List[KPI] = []
         if "avg" in d:
-            items.append(KPI(f"{title} avg", f"{d['avg']:.2f}", unit))
+            items.append(KPI(f"{title} avg", f"{d['avg']:.2f}", unit, flagged=flagged))
         if "min" in d:
-            items.append(KPI(f"{title} min", f"{d['min']:.2f}", unit))
+            items.append(KPI(f"{title} min", f"{d['min']:.2f}", unit, flagged=flagged))
         if "max" in d:
-            items.append(KPI(f"{title} max", f"{d['max']:.2f}", unit))
+            items.append(KPI(f"{title} max", f"{d['max']:.2f}", unit, flagged=flagged))
         return items
 
     ocean: List[KPI] = []
@@ -562,6 +614,7 @@ def build_executive_summary(
     if ocean:
         out.append(Paragraph("Oceanographic (CTD)", styles["Heading2"]))
         out.append(kpi_row_table(ocean, styles))
+        append_outlier_suppress_footnote(out, ocean, styles)
         out.append(Spacer(1, 8))
 
     wx: List[KPI] = []
@@ -574,6 +627,7 @@ def build_executive_summary(
     if wx:
         out.append(Paragraph("Sea state and weather", styles["Heading2"]))
         out.append(kpi_row_table(wx, styles))
+        append_outlier_suppress_footnote(out, wx, styles)
 
     if mission_goals:
         out.append(Spacer(1, 8))
@@ -848,18 +902,26 @@ def build_power_section(
     if power_df.empty:
         return []
     styles = build_paragraph_styles()
+    power_clean, power_suppressed = prepare_report_numeric_frame(power_df)
+    solar_clean = solar_df
+    solar_suppressed = False
+    if solar_df is not None and not solar_df.empty:
+        solar_clean, solar_suppressed = prepare_report_numeric_frame(solar_df)
     out: List[Any] = [
         Paragraph("Power", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
         Spacer(1, 6),
         charts.chart_power_image(
-            power_df,
-            solar_df,
+            power_clean,
+            solar_clean,
             battery_max_wh=battery_max_wh,
             max_width_pt=LANDSCAPE_CONTENT_WIDTH_PT,
             max_height_pt=_landscape_chart_max_height_pt(),
         ),
     ]
+    if power_suppressed or solar_suppressed:
+        out.append(Spacer(1, 4))
+        out.append(Paragraph(OUTLIER_SUPPRESS_FOOTNOTE, styles["Caption"]))
     return out
 
 
@@ -867,48 +929,63 @@ def build_ctd_section(ctd_df: pd.DataFrame, period_label: str) -> List[Any]:
     if ctd_df.empty:
         return []
     styles = build_paragraph_styles()
-    return [
+    cleaned, suppressed = prepare_report_numeric_frame(ctd_df)
+    out: List[Any] = [
         Paragraph("CTD", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
         Spacer(1, 6),
         charts.chart_ctd_image(
-            ctd_df,
+            cleaned,
             max_width_pt=LANDSCAPE_CONTENT_WIDTH_PT,
             max_height_pt=_landscape_chart_max_height_pt(),
         ),
     ]
+    if suppressed:
+        out.append(Spacer(1, 4))
+        out.append(Paragraph(OUTLIER_SUPPRESS_FOOTNOTE, styles["Caption"]))
+    return out
 
 
 def build_weather_section(weather_df: pd.DataFrame, period_label: str) -> List[Any]:
     if weather_df.empty:
         return []
     styles = build_paragraph_styles()
-    return [
+    cleaned, suppressed = prepare_report_numeric_frame(weather_df)
+    out: List[Any] = [
         Paragraph("Weather", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
         Spacer(1, 6),
         charts.chart_weather_image(
-            weather_df,
+            cleaned,
             max_width_pt=LANDSCAPE_CONTENT_WIDTH_PT,
             max_height_pt=_landscape_chart_max_height_pt(),
         ),
     ]
+    if suppressed:
+        out.append(Spacer(1, 4))
+        out.append(Paragraph(OUTLIER_SUPPRESS_FOOTNOTE, styles["Caption"]))
+    return out
 
 
 def build_waves_section(wave_df: pd.DataFrame, period_label: str) -> List[Any]:
     if wave_df.empty:
         return []
     styles = build_paragraph_styles()
-    return [
+    cleaned, suppressed = prepare_report_numeric_frame(wave_df)
+    out: List[Any] = [
         Paragraph("Waves", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
         Spacer(1, 6),
         charts.chart_wave_image(
-            wave_df,
+            cleaned,
             max_width_pt=LANDSCAPE_CONTENT_WIDTH_PT,
             max_height_pt=_landscape_chart_max_height_pt(),
         ),
     ]
+    if suppressed:
+        out.append(Spacer(1, 4))
+        out.append(Paragraph(OUTLIER_SUPPRESS_FOOTNOTE, styles["Caption"]))
+    return out
 
 
 def build_c3_section(
@@ -920,17 +997,22 @@ def build_c3_section(
     if fluorometer_df.empty:
         return []
     styles = build_paragraph_styles()
-    return [
+    cleaned, suppressed = prepare_report_numeric_frame(fluorometer_df)
+    out: List[Any] = [
         Paragraph("C3 fluorometer", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
         Spacer(1, 6),
         charts.chart_c3_image(
-            fluorometer_df,
+            cleaned,
             channel_map=channel_map,
             max_width_pt=LANDSCAPE_CONTENT_WIDTH_PT,
             max_height_pt=_landscape_chart_max_height_pt(),
         ),
     ]
+    if suppressed:
+        out.append(Spacer(1, 4))
+        out.append(Paragraph(OUTLIER_SUPPRESS_FOOTNOTE, styles["Caption"]))
+    return out
 
 
 def _offload_display_time_utc(log: models.OffloadLog) -> str:

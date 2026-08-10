@@ -77,6 +77,7 @@
                         </h4>
                         <p class="text-muted small mb-3">Theme and display preferences sync across browsers when you are signed in. The banner Dark Mode switch sets Light or Dark and exits System.</p>
                         <form id="appearanceForm">
+                            <h5 class="h6 text-uppercase text-muted mb-3">General</h5>
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="themeMode" class="form-label">Theme</label>
@@ -88,12 +89,17 @@
                                     <div class="form-text">System follows your OS light/dark setting.</div>
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label for="accentPreset" class="form-label">Accent</label>
+                                    <label for="accentPreset" class="form-label">Accent (general)</label>
                                     <select class="form-select" id="accentPreset">
                                         <option value="default">Default</option>
                                         <option value="teal">Teal</option>
                                         <option value="high-contrast">High contrast</option>
+                                        <option value="slate">Slate</option>
+                                        <option value="ocean">Ocean</option>
+                                        <option value="seafoam">Seafoam</option>
+                                        <option value="amber">Amber</option>
                                     </select>
+                                    <div class="form-text">Used on non-platform pages and when a platform override is “Same as general”.</div>
                                 </div>
                             </div>
                             <div class="row">
@@ -114,6 +120,40 @@
                                     <div class="form-text">Independent of UI theme when not Match theme.</div>
                                 </div>
                             </div>
+
+                            <hr class="my-4">
+
+                            <h5 class="h6 text-uppercase text-muted mb-2">Platform accents</h5>
+                            <p class="text-muted small mb-3">Optional. Overrides apply on that platform’s pages; otherwise the general accent is used. This settings page always previews the general accent.</p>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="accentWaveGlider" class="form-label">Wave Glider</label>
+                                    <select class="form-select" id="accentWaveGlider">
+                                        <option value="inherit">Same as general</option>
+                                        <option value="default">Default</option>
+                                        <option value="teal">Teal</option>
+                                        <option value="high-contrast">High contrast</option>
+                                        <option value="slate">Slate</option>
+                                        <option value="ocean">Ocean</option>
+                                        <option value="seafoam">Seafoam</option>
+                                        <option value="amber">Amber</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="accentSlocum" class="form-label">Slocum</label>
+                                    <select class="form-select" id="accentSlocum">
+                                        <option value="inherit">Same as general</option>
+                                        <option value="default">Default</option>
+                                        <option value="teal">Teal</option>
+                                        <option value="high-contrast">High contrast</option>
+                                        <option value="slate">Slate</option>
+                                        <option value="ocean">Ocean</option>
+                                        <option value="seafoam">Seafoam</option>
+                                        <option value="amber">Amber</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div class="d-flex justify-content-end">
                                 <button type="submit" class="btn btn-primary" id="saveAppearanceBtn">
                                     <i class="fas fa-save me-2"></i>Save Appearance
@@ -236,5 +276,5 @@
 {% endblock %}
 
 {% block body_extra_js %}
-<script src="/static/js/user_settings.js" type="module"></script>
+<script src="/static/js/user_settings.js?v={{ app_version }}" type="module"></script>
 {% endblock %}

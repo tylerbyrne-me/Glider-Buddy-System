@@ -1,7 +1,7 @@
 /**
  * @file ui_preferences.js
- * @description Per-user appearance prefs: theme_mode, accent, density, map_style.
- * localStorage for fast paint; server sync via PUT /api/users/me when authenticated.
+ * @description Per-user appearance prefs: theme_mode, accent, platform_accents,
+ * density, map_style. localStorage for fast paint; server sync via PUT /api/users/me.
  */
 
 import { apiRequest } from '/static/js/api.js';
@@ -9,17 +9,34 @@ import { apiRequest } from '/static/js/api.js';
 export const UI_PREFS_STORAGE_KEY = 'ui_preferences';
 export const RESOLVED_THEME_KEY = 'theme';
 
+export const ACCENT_OPTIONS = Object.freeze([
+    'default',
+    'teal',
+    'high-contrast',
+    'slate',
+    'ocean',
+    'seafoam',
+    'amber',
+]);
+
+export const PLATFORM_IDS = Object.freeze(['wave_glider', 'slocum']);
+
 export const DEFAULT_UI_PREFERENCES = Object.freeze({
     theme_mode: 'system',
     accent: 'default',
+    platform_accents: Object.freeze({
+        wave_glider: 'inherit',
+        slocum: 'inherit',
+    }),
     density: 'comfortable',
     map_style: 'match-theme',
 });
 
 const THEME_MODES = new Set(['light', 'dark', 'system']);
-const ACCENTS = new Set(['default', 'teal', 'high-contrast']);
+const ACCENTS = new Set(ACCENT_OPTIONS);
 const DENSITIES = new Set(['comfortable', 'compact']);
 const MAP_STYLES = new Set(['match-theme', 'light', 'dark']);
+const PLATFORM_SET = new Set(PLATFORM_IDS);
 
 let systemMediaQuery = null;
 let systemListener = null;
@@ -35,14 +52,52 @@ function safeParseJson(raw) {
     }
 }
 
+function normalizePlatformAccents(raw) {
+    const out = {
+        wave_glider: 'inherit',
+        slocum: 'inherit',
+    };
+    if (!raw || typeof raw !== 'object') return out;
+    PLATFORM_IDS.forEach((id) => {
+        const value = raw[id];
+        if (value === 'inherit' || ACCENTS.has(value)) {
+            out[id] = value;
+        }
+    });
+    return out;
+}
+
 export function normalizePrefs(raw) {
     const src = raw && typeof raw === 'object' ? raw : {};
     return {
         theme_mode: THEME_MODES.has(src.theme_mode) ? src.theme_mode : DEFAULT_UI_PREFERENCES.theme_mode,
         accent: ACCENTS.has(src.accent) ? src.accent : DEFAULT_UI_PREFERENCES.accent,
+        platform_accents: normalizePlatformAccents(src.platform_accents),
         density: DENSITIES.has(src.density) ? src.density : DEFAULT_UI_PREFERENCES.density,
         map_style: MAP_STYLES.has(src.map_style) ? src.map_style : DEFAULT_UI_PREFERENCES.map_style,
     };
+}
+
+/**
+ * Platform for accent resolution. Only trust explicit data-platform on <html>
+ * (APP_PLATFORM defaults to wave_glider even on non-platform pages).
+ */
+export function currentPlatform() {
+    const fromDom = document.documentElement.getAttribute('data-platform');
+    if (fromDom && PLATFORM_SET.has(fromDom)) return fromDom;
+    return null;
+}
+
+/**
+ * Resolve effective accent for a page platform (null = general only).
+ */
+export function resolveAccent(prefs, platformId = null) {
+    const normalized = normalizePrefs(prefs);
+    const general = normalized.accent;
+    if (!platformId || !PLATFORM_SET.has(platformId)) return general;
+    const override = normalized.platform_accents[platformId];
+    if (!override || override === 'inherit') return general;
+    return ACCENTS.has(override) ? override : general;
 }
 
 export function loadPrefs() {
@@ -53,7 +108,6 @@ export function loadPrefs() {
         stored = null;
     }
 
-    // Migrate legacy localStorage.theme (explicit light/dark) when prefs missing.
     if (!stored) {
         let legacyTheme = null;
         try {
@@ -95,10 +149,11 @@ export function applyPrefsToDom(prefs, options = {}) {
     const normalized = normalizePrefs(prefs);
     const root = document.documentElement;
     const resolved = resolveTheme(normalized.theme_mode);
+    const accent = resolveAccent(normalized, currentPlatform());
 
     root.setAttribute('data-theme', resolved);
     root.setAttribute('data-bs-theme', resolved);
-    root.setAttribute('data-accent', normalized.accent);
+    root.setAttribute('data-accent', accent);
     root.setAttribute('data-density', normalized.density);
     root.setAttribute('data-map-style', normalized.map_style);
 
@@ -114,7 +169,7 @@ export function applyPrefsToDom(prefs, options = {}) {
     }
 
     syncSystemListener(normalized.theme_mode);
-    return { prefs: normalized, resolvedTheme: resolved };
+    return { prefs: normalized, resolvedTheme: resolved, resolvedAccent: accent };
 }
 
 function syncSystemListener(themeMode) {
@@ -176,9 +231,6 @@ function schedulePersist(prefs) {
     }, 400);
 }
 
-/**
- * Apply prefs, write localStorage, optionally debounce-save to server.
- */
 export function commitPrefs(prefs, options = {}) {
     const { persistLocal = true, persistServer = true, themeSwitch } = options;
     const normalized = persistLocal ? savePrefsLocal(prefs) : normalizePrefs(prefs);
@@ -187,15 +239,11 @@ export function commitPrefs(prefs, options = {}) {
     return normalized;
 }
 
-/** Banner/login toggle: forces explicit light/dark (exits system). */
 export function setThemeModeFromToggle(isDark, options = {}) {
     const prefs = { ...loadPrefs(), theme_mode: isDark ? 'dark' : 'light' };
     return commitPrefs(prefs, options);
 }
 
-/**
- * After GET /api/users/me: server prefs win, then apply + local cache.
- */
 export function applyServerPreferences(serverPrefs, options = {}) {
     if (!serverPrefs) return loadPrefs();
     const normalized = normalizePrefs(serverPrefs);
@@ -206,9 +254,6 @@ export function applyServerPreferences(serverPrefs, options = {}) {
     });
 }
 
-/**
- * Wire #themeSwitch and apply local prefs on page load (before server merge).
- */
 export function initThemeControls(themeSwitch) {
     themeSwitchEl = themeSwitch || document.getElementById('themeSwitch');
     const prefs = loadPrefs();

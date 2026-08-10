@@ -1,6 +1,6 @@
 # Architecture
 
-_Last updated: 2026-08-08_
+_Last updated: 2026-08-09_
 
 ## One-paragraph summary
 
@@ -24,9 +24,10 @@ See [conventions](./conventions.md#product--platform-naming) and [ADR 0003](../d
 - **Routers** — HTTP endpoints only; depend on core/platforms/services, never the reverse (`app/routers/`)
 - **Services** — higher-level orchestration (knowledge base, reporting, sensor tracker, etc.) (`app/services/`)
 - **Sensor Tracker instruments** — sync stores `MissionInstrument` + nested `MissionSensor` in SQLite. Mission/deployment info APIs and home briefing load them via `app/core/mission_instruments.py` (`selectinload`). UI lists (dashboards, admin overviews, home) show nested sensors under each instrument when present; weekly reports use the same DB rows.
-- **UI preferences** — `users.ui_preferences` JSON (`theme_mode`, `accent`, `density`, `map_style`) on `GET`/`PUT /api/users/me`; client apply via `web/static/js/ui_preferences.js` + User Settings Appearance. Org-wide defaults not implemented yet.
-- **Mission reports** — PDF builders in `app/core/reporting/` (Wave Glider) and `app/platforms/slocum/reports.py` (Slocum). Automated weekly jobs use default options (goals + `include_in_report` comments only). User-generated reports may pass ephemeral `expanded_notes` that render as **Additional notes** after the Mission details “Publication, attribution, and data” table (not stored in-app).
-- **Web assets** — Jinja templates in `web/templates/` and static files in `web/static/` (wired in `app/core/templates.py` / `app/app.py`); Python form helpers in `app/forms/`
+- **UI preferences** — `users.ui_preferences` JSON (`theme_mode`, `accent`, `platform_accents`, `density`, `map_style`) on `GET`/`PUT /api/users/me`. Client: `web/static/js/ui_preferences.js` + User Settings Appearance (General vs Platform accents). Platform pages set `data-platform` on `<html>`; accent resolves override → general. Theme CSS/JS load with `?v={{ app_version }}` (mtime token includes `themes.css` / `ui_preferences.js`). Org-wide defaults not implemented yet.
+- **Mission reports** — PDF builders in `app/core/reporting/` (Wave Glider) and `app/platforms/slocum/reports.py` (Slocum). Automated weekly jobs use default options (goals + `include_in_report` comments only). User-generated reports may pass ephemeral `expanded_notes` that render as **Additional notes** after the Mission details “Publication, attribution, and data” table (not stored in-app). Dashboard Mission Overview shows only the latest PDF per type via persisted URLs (`MissionOverview.weekly_report_url` / `end_of_mission_report_url` for WG; `SlocumDeployment` equivalents for Slocum) — not a full on-disk listing. Slocum EOM generation is still open (column ready; weekly generation already writes `weekly_report_url`).
+- **Outlier suppress (|z| > 2.5)** — display/report only; never mutates mirror/ERDDAP. Shared helpers: `suppress_zscore_outliers` / `prepare_report_numeric_frame` in `app/core/data/processors.py`, and `maskOutlierPointsByZScore` in `chart_time_series_utils.js`. Dashboard: optional “Hide outliers” toggle beside Resample (off by default; re-renders from cache). Reports: automated on applicable KPI means and time-series plot frames; flagged KPI values get a subtle `*` plus Caption footnote `* Outliers suppressed (|z| > 2.5)`. Skips circular/geo fields and Slocum CTD profile scatters.
+- **Web assets** — Jinja templates in `web/templates/` and static files in `web/static/` (wired in `app/core/templates.py` / `app/app.py`); Python form helpers in `app/forms/`. Prefer `?v={{ app_version }}` on mutable CSS/JS (see [conventions — Theme tokens](./conventions.md#theme-tokens)).
 - **CLI** — admin/ops scripts such as station CSV import (`app/cli/`)
 - **Data on disk** — mission CSVs under `data/`; weather/bathy/iridium/slocum/public-map caches under `data_store/`; static vector map GeoJSON under `config/map_layers/`
 - **Scheduler** — APScheduler jobs for cache refresh, weekly reports, weather/bathy/iridium/slocum/public-map warm + cleanup (leader only; see [ADR 0001](../decisions/0001-gunicorn-leader-lock.md))
@@ -40,7 +41,7 @@ Remote/local sources → sync (leader) → data/ + data_store caches
 Client → FastAPI routers → core/services → cached telemetry / SQLite → HTML/JSON
 ```
 
-Typical dashboard path: select mission → load/summarize telemetry from cache (warm on demand if needed) → charts and status widgets. Map overlays (weather, Iridium, NAVWARN, static vector zones) use feature toggles; weather/Iridium/NAVWARN use `data_store/` caches with TTL/cleanup jobs, while reference GeoJSON lives under git-tracked `config/map_layers/`.
+Typical dashboard path: select mission → load/summarize telemetry from cache (warm on demand if needed) → charts and status widgets. Map overlays (weather, Iridium, NAVWARN, AIS vessel density, static vector zones) use feature toggles; weather/Iridium/NAVWARN/vessel-density use `data_store/` caches with TTL, while reference GeoJSON lives under git-tracked `config/map_layers/`.
 
 ### Static vector map layers
 
@@ -52,6 +53,16 @@ Toggleable Leaflet polygons (GOSL zones, DFO LFAs/FMAs, NOAA shipping lanes) for
 - **Client** — [`web/static/js/vector_map_layer.js`](../../web/static/js/vector_map_layer.js) on WG/Slocum home maps via `map_generator.js` (catalog-driven toggles; pane under tracks)
 - **Shipped overlays** — GOSL DSZ/safe zones; DFO lobster LFAs; DFO Atlantic FMAs (crab, snow crab, scallop, capelin, mackerel, herring, squid, salmon, northern shrimp); NOAA NW Atlantic shipping lanes
 - **Not yet** — public login map overlays; PDF report maps (`plot_telemetry_page_with_notes`); per-mission `default_on` / “always show”; fishery notices/openings linked to FMA polygons (see [backlog](../tasks/backlog.md))
+
+### AIS vessel density map layer
+
+Toggleable DFO NW Atlantic AIS vessel-density rasters (2025 monthly, all vessel types) for home maps (`vessel_density_map_layer` feature toggle). Ops how-to: [vessel_density_map_layer.md](./how-tos/vessel_density_map_layer.md).
+
+- **Upstream** — egisp MapServer raster layers 7–18 (live `export`, not GeoJSON snapshots)
+- **Cache** — short-TTL PNG tile cache under `data_store/vessel_density_cache/`
+- **API** — `GET /api/map/vessel-density/meta|export`; gated by `vessel_density_map_layer`
+- **Client** — [`web/static/js/vessel_density_map_layer.js`](../../web/static/js/vessel_density_map_layer.js) (parent toggle + exclusive month radios; pane z-index 340)
+- **Not yet** — yearly vessel-class rasters (layers 1–6); opacity slider; public login map
 
 ### NAVWARN map layer
 
@@ -95,6 +106,7 @@ Slocum mirror and overage fetches store **full ERDDAP resolution** by default (a
 | `app/core/data/` | Data service / telemetry loading |
 | `app/core/public_map_service.py` | Public login-map allowlist, shared popup labels, bundle cache, static KML |
 | `app/core/geo/map_layers.py` | Static vector layer catalog + GeoJSON reads (`config/map_layers/`) |
+| `app/core/geo/vessel_density.py` | DFO AIS vessel-density MapServer export proxy + tile cache |
 | `app/core/mission_aliases.py` | Env-backed mission/dataset alias resolution (Slocum + future platforms) |
 | `app/routers/public_map.py` | Unauthenticated `/api/public/map/*` + report gate |
 | `web/templates/login.html` / `web/static/js/public_map.js` | Public login map UI (centered map, bottom toolbar) |

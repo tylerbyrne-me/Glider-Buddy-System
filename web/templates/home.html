@@ -435,6 +435,31 @@
                         <small class="text-muted d-block">GOSL zones, DFO lobster LFAs / fisheries management areas, and NOAA ENC shipping lanes. DFO FMA layers are cartographic reference only.</small>
                     </div>
                     {% endif %}
+                    {% if feature_enabled('vessel_density_map_layer') %}
+                    <!-- DFO AIS vessel density (2025 monthly rasters) -->
+                    <div id="vesselDensitySection" class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label small mb-0">AIS vessel density</label>
+                            <a id="vesselDensityOpenDataLink" href="https://open.canada.ca/data/en/dataset/eac8e835-e7c8-450d-96b0-ff42d416c815" target="_blank" rel="noopener" class="text-decoration-none small">
+                                <i class="fas fa-external-link-alt"></i> Open Data
+                            </a>
+                        </div>
+                        <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Vessel density parent toggle">
+                            <input type="checkbox" class="btn-check" id="vesselDensityToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="vesselDensityToggle">
+                                <i class="fas fa-ship"></i> Density 2025
+                            </label>
+                        </div>
+                        <div id="vesselDensityMonthGroup" class="btn-group btn-group-sm mb-2 flex-wrap d-none" role="group" aria-label="Vessel density month">
+                            {% for m, label in [(1,'Jan'),(2,'Feb'),(3,'Mar'),(4,'Apr'),(5,'May'),(6,'Jun'),(7,'Jul'),(8,'Aug'),(9,'Sep'),(10,'Oct'),(11,'Nov'),(12,'Dec')] %}
+                            <input type="radio" class="btn-check" name="vesselDensityMonth" id="vesselDensityMonth{{ m }}" value="{{ m }}" autocomplete="off" disabled>
+                            <label class="btn btn-outline-secondary" for="vesselDensityMonth{{ m }}">{{ label }}</label>
+                            {% endfor %}
+                        </div>
+                        <small class="text-muted d-block">DFO AIS daily-average vessel density (all types), 2025 — cartographic reference only.</small>
+                        <small id="vesselDensityStatusLine" class="text-muted d-block"></small>
+                    </div>
+                    {% endif %}
                     {% if feature_enabled('navwarn_map_layer') %}
                     <!-- CCG NAVWARN overlays (active warnings + area reference polygons) -->
                     <div id="navwarnOverlaySection" class="mb-3">

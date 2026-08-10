@@ -31,6 +31,7 @@ from ..data.processors import (
     preprocess_fluorometer_df,
     preprocess_wave_df,
     preprocess_weather_df,
+    suppress_zscore_outliers,
     telemetry_speed_over_ground_series,
 )
 from .constants import REPORTS_ROOT
@@ -122,7 +123,12 @@ def _calculate_telemetry_summary(df: pd.DataFrame) -> dict:
     summary["total_distance_km"] = distances.sum()
     sog = telemetry_speed_over_ground_series(df_clean)
     if sog is not None and sog.notna().any():
-        summary["avg_speed_knots"] = float(sog.mean())
+        sog_clean, n_suppressed = suppress_zscore_outliers(sog)
+        finite = sog_clean.dropna()
+        if not finite.empty:
+            summary["avg_speed_knots"] = float(finite.mean())
+            if n_suppressed > 0:
+                summary["outliers_suppressed"] = True
     return summary
 
 
@@ -247,6 +253,7 @@ def _calculate_power_summary(
 ) -> dict:
     summary = {"avg_total_input_W": 0.0, "avg_total_output_W": 0.0, "avg_solar_panel_W": {}}
     summary.update(_empty_power_analytics())
+    any_suppressed = False
     if not power_df.empty and "gliderTimeStamp" in power_df.columns and len(power_df) > 1:
         power_df_working = power_df.copy()
         power_df_working["gliderTimeStamp"] = utils.parse_timestamp_column(
@@ -260,10 +267,16 @@ def _calculate_power_summary(
             ).total_seconds() / 3600
         if duration_hours > 0:
             if "solarPowerGenerated" in power_df_working.columns:
-                total_input_wh = power_df_working["solarPowerGenerated"].sum() / 1000
+                solar_series, n = suppress_zscore_outliers(power_df_working["solarPowerGenerated"])
+                if n > 0:
+                    any_suppressed = True
+                total_input_wh = float(solar_series.dropna().sum()) / 1000
                 summary["avg_total_input_W"] = total_input_wh / duration_hours
             if "outputPortPower" in power_df_working.columns:
-                total_output_wh = power_df_working["outputPortPower"].sum() / 1000
+                out_series, n = suppress_zscore_outliers(power_df_working["outputPortPower"])
+                if n > 0:
+                    any_suppressed = True
+                total_output_wh = float(out_series.dropna().sum()) / 1000
                 summary["avg_total_output_W"] = total_output_wh / duration_hours
     if not solar_df.empty and "gliderTimeStamp" in solar_df.columns and len(solar_df) > 1:
         solar_df_working = solar_df.copy()
@@ -279,13 +292,33 @@ def _calculate_power_summary(
         if duration_hours_solar > 0:
             for col_name, panel_label in _SOLAR_PANEL_RAW_COLUMNS:
                 if col_name in solar_df_working.columns:
-                    total_panel_wh = solar_df_working[col_name].sum() / 1000
+                    panel_series, n = suppress_zscore_outliers(solar_df_working[col_name])
+                    if n > 0:
+                        any_suppressed = True
+                    total_panel_wh = float(panel_series.dropna().sum()) / 1000
                     summary["avg_solar_panel_W"][panel_label] = total_panel_wh / duration_hours_solar
     if battery_max_wh is not None:
         summary.update(
             _calculate_power_analytics(power_df, solar_df, battery_max_wh)
         )
+    if any_suppressed:
+        summary["outliers_suppressed"] = True
     return summary
+
+
+def _stat_summary_with_zscore(series: pd.Series) -> Optional[dict]:
+    cleaned, n = suppress_zscore_outliers(series)
+    values = cleaned.dropna()
+    if values.empty:
+        return None
+    out = {
+        "avg": float(values.mean()),
+        "min": float(values.min()),
+        "max": float(values.max()),
+    }
+    if n > 0:
+        out["outliers_suppressed"] = True
+    return out
 
 
 def _calculate_ctd_summary(df: pd.DataFrame) -> dict:
@@ -294,9 +327,9 @@ def _calculate_ctd_summary(df: pd.DataFrame) -> dict:
         return summary
     for col in ["WaterTemperature", "Salinity", "Conductivity"]:
         if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
-            series = df[col].dropna()
-            if not series.empty:
-                summary[col] = {"avg": series.mean(), "min": series.min(), "max": series.max()}
+            stats = _stat_summary_with_zscore(df[col])
+            if stats:
+                summary[col] = stats
     return summary
 
 
@@ -306,13 +339,16 @@ def _calculate_weather_summary(df: pd.DataFrame) -> dict:
         return summary
     for col in ["AirTemperature", "WindSpeed", "BarometricPressure"]:
         if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
-            series = df[col].dropna()
-            if not series.empty:
-                summary[col] = {"avg": series.mean(), "min": series.min(), "max": series.max()}
+            stats = _stat_summary_with_zscore(df[col])
+            if stats:
+                summary[col] = stats
     if "WindGust" in df.columns and pd.api.types.is_numeric_dtype(df["WindGust"]):
-        series = df["WindGust"].dropna()
+        cleaned, n = suppress_zscore_outliers(df["WindGust"])
+        series = cleaned.dropna()
         if not series.empty:
-            summary["WindGust"] = {"max": series.max()}
+            summary["WindGust"] = {"max": float(series.max())}
+            if n > 0:
+                summary["WindGust"]["outliers_suppressed"] = True
     return summary
 
 
@@ -322,9 +358,9 @@ def _calculate_wave_summary(df: pd.DataFrame) -> dict:
         return summary
     for col in ["SignificantWaveHeight", "WavePeriod"]:
         if col in df.columns and pd.api.types.is_numeric_dtype(df[col]):
-            series = df[col].dropna()
-            if not series.empty:
-                summary[col] = {"avg": series.mean(), "min": series.min(), "max": series.max()}
+            stats = _stat_summary_with_zscore(df[col])
+            if stats:
+                summary[col] = stats
     return summary
 
 

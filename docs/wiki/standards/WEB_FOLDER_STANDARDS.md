@@ -378,19 +378,24 @@ import { checkAuth } from '/static/js/auth.js';
 **Location:** `web/static/css/`
 
 **Files:**
-- `custom.css` - Custom application styles
-- `themes.css` - Theme-specific styles (light/dark mode)
+- `custom.css` - Custom application styles (shared components, layout)
+- `themes.css` - Theme tokens: light/dark + accent presets (`data-accent`) + density hooks
+- `pages/*.css` - Page-specific sheets (e.g. login, admin)
 
 ### CSS Variables
 
-**Standard: Use CSS custom properties**
+**Standard: Use CSS custom properties from `themes.css`**
 
-**Defined in `base.html` or `themes.css`:**
+Prefer semantic `--app-*` tokens (and Bootstrap bridges such as `--bs-primary` / `--bs-primary-rgb`). See [conventions — Theme tokens](../conventions.md#theme-tokens).
+
+**Cache busting:** In templates, load mutable CSS/JS with `?v={{ app_version }}`. The version token is built from mtimes of key static files in `app/core/template_context.py` (includes `themes.css`, `custom.css`, `auth.js`, `ui_preferences.js`). When you add a frequently edited theme asset, add it to that list.
+
+**Defined in `themes.css` (and layout vars in `base.html`):**
 ```css
-:root {
-    --banner-height: 110px;
-    --text-color: #333;
-    --bg-color: #fff;
+:root[data-theme="light"] {
+    --app-text: #212529;
+    --app-bg: #f0f0f4;
+    --app-primary: rgb(18, 52, 102);
 }
 ```
 
@@ -398,7 +403,8 @@ import { checkAuth } from '/static/js/auth.js';
 ```css
 .my-element {
     height: var(--banner-height);
-    color: var(--text-color);
+    color: var(--app-text);
+    background: var(--app-bg);
 }
 ```
 

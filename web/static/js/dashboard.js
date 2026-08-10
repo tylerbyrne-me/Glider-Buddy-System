@@ -37,6 +37,8 @@ import {
     resolveColor,
     buildLinearScale,
     buildTimeScaleX,
+    maskOutlierPointsByZScore,
+    shouldSkipOutlierSuppress,
 } from '/static/js/chart_time_series_utils.js';
 import {
     CHART_COLORS,
@@ -1004,6 +1006,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         return rows;
     }
 
+    function reportTypeForWgCategory(category) {
+        return category === 'navigation' ? 'telemetry' : category;
+    }
+
+    function isOutlierSuppressEnabledForCategory(category) {
+        const reportType = reportTypeForWgCategory(category);
+        const el = document.querySelector(`.outlier-suppress-toggle[data-report-type="${reportType}"]`);
+        return Boolean(el?.checked);
+    }
+
     function reRenderWgCategoryFromCache(category) {
         const cfg = WG_TIME_SERIES_CARD_CONFIGS[category];
         const cached = wgSeriesCache[category];
@@ -1019,12 +1031,19 @@ document.addEventListener('DOMContentLoaded', async function() {
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
 
+        const suppressOutliers = isOutlierSuppressEnabledForCategory(category);
         const datasets = [];
         for (const spec of chartCfg.series || []) {
             const seriesSource = spec.source || chartCfg.source;
             const records = cacheEntry?.bySource?.[seriesSource]?.[spec.field];
             if (!seriesHasPlottableData(records)) continue;
-            const points = recordsToPoints(records, { keepGaps: true });
+            let points = recordsToPoints(records, { keepGaps: true });
+            const skipSuppress = shouldSkipOutlierSuppress(spec.field)
+                || shouldSkipOutlierSuppress(spec.label)
+                || shouldSkipOutlierSuppress(resolveSeriesLabel(spec));
+            if (suppressOutliers && !skipSuppress) {
+                points = maskOutlierPointsByZScore(points).points;
+            }
             const borderColor = resolveColor(CHART_COLORS, spec.color, spec.alpha);
             datasets.push({
                 type: 'line',
@@ -2522,6 +2541,15 @@ document.addEventListener('DOMContentLoaded', async function() {
                         fetchAndRenderWaveSpectrum(missionId);
                     }
                 });
+            });
+        });
+        document.querySelectorAll('.outlier-suppress-toggle').forEach((input) => {
+            input.addEventListener('change', () => {
+                const reportType = input.dataset.reportType || '';
+                const category = reportType === 'telemetry' ? 'navigation' : reportType;
+                if (WG_TIME_SERIES_CARD_CONFIGS[category]) {
+                    reRenderWgCategoryFromCache(category);
+                }
             });
         });
     }
