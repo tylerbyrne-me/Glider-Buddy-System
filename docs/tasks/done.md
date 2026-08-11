@@ -3,6 +3,7 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-10 — One-off SFMC log-note importer: `app/cli/sfmc_lognote_import.py` posts pasted SFMC JSON pages as backdated Slocum deployment notes (`YYYY-MM-DD HH:MM : [author] text`) via `--alias` (resolves through `GET /api/slocum/datasets/{alias}/info`); suppresses notes outside mission start/end (Sensor Tracker / deployment_date, overridable with `--after`/`--before`); batch/server dedup + `--dry-run`
 - [x] 2026-08-09 — Outlier suppress (|z| > 2.5): dashboard Hide outliers toggle (WG per-card + Slocum toolbar); automated report KPI/plot suppression with `*` + footnote; shared `processors.suppress_zscore_outliers` + JS `maskOutlierPointsByZScore` — display/report only
 - [x] 2026-08-09 — Slocum dashboard overview Mission Reports: latest weekly + EOM only via `weekly_report_url` / `end_of_mission_report_url` (WG parity); removed `overviewWeeklyReportList` disk listing; added `SlocumDeployment.end_of_mission_report_url` (null until EOM generation ships)
 
