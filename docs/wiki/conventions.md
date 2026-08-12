@@ -16,7 +16,7 @@ Detailed standards live under [standards/](./standards/). Prefer this page for o
 |-------|------------|----------|
 | Product full | Glider Buddy System | login, `/platform`, footer |
 | Product short | GBS | non-platform page titles where short brand fits |
-| In-platform title | `{DisplayName} Glider Buddy System` | Wave Glider Buddy System, Slocum Glider Buddy System |
+| In-platform title | `{DisplayName} Glider Buddy System` | Wave Glider Buddy System, Slocum Glider Buddy System, Team Glider Buddy System |
 | `platform_id` | snake_case | `wave_glider`, `slocum` |
 | URL prefix | `/{kebab(id)}` | `/wave-glider`, `/slocum` |
 | HTML pages | `{url_prefix}/{page}` | `/wave-glider/chatbot.html` |

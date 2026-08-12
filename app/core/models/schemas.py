@@ -958,6 +958,93 @@ class ScheduledJob(BaseModel):
     )
 
 
+class OpsScriptInfo(BaseModel):
+    """Catalog entry for a Team hub ops tool (runnable script or tool page)."""
+    id: str
+    label: str
+    description: str
+    kind: str = Field(default="run", description="run | page")
+    href: Optional[str] = Field(
+        default=None,
+        description="For kind=page, the Team tool HTML path.",
+    )
+
+
+class OpsScriptRunResult(BaseModel):
+    """Outcome of a one-shot Team hub ops script run."""
+    script_id: str
+    success: bool
+    output: str = ""
+    error: Optional[str] = None
+    duration_ms: int = 0
+    ran_at: datetime
+
+
+class SfmcLognoteImportRequest(BaseModel):
+    """Team SFMC log-note import form payload."""
+    alias: str = Field(..., min_length=1, description="Slocum alias or ERDDAP dataset id")
+    json_text: str = Field(..., min_length=1, description="SFMC JSON array of log notes")
+    after: Optional[date] = Field(None, description="Inclusive UTC start override (YYYY-MM-DD)")
+    before: Optional[date] = Field(None, description="Inclusive UTC end override (YYYY-MM-DD)")
+    no_date_filter: bool = False
+    include_in_report: bool = True
+
+
+class SfmcLognotePreviewItem(BaseModel):
+    sfmc_id: int
+    content: str
+    action: str = Field(description="would_post | skip_server_dup | skip_out_of_range | skip_batch_dup")
+    reason: Optional[str] = None
+
+
+class SfmcLognoteImportResult(BaseModel):
+    alias: str
+    deployment_id: Optional[int] = None
+    dry_run: bool
+    success: bool
+    window_start: Optional[date] = None
+    window_end: Optional[date] = None
+    window_source: str = ""
+    would_post: int = 0
+    posted: int = 0
+    batch_dup: int = 0
+    out_of_range: int = 0
+    server_dup: int = 0
+    items: List[SfmcLognotePreviewItem] = []
+    error: Optional[str] = None
+    summary: str = ""
+
+
+class TelemetryHexbinRequest(BaseModel):
+    """Team Wave Glider telemetry hexbin form payload."""
+    center_lat: Optional[float] = None
+    center_lon: Optional[float] = None
+    size_km: float = Field(default=150.0, gt=0)
+    lon_min: Optional[float] = None
+    lon_max: Optional[float] = None
+    lat_min: Optional[float] = None
+    lat_max: Optional[float] = None
+    gridsize: int = Field(default=60, ge=5, le=200)
+    missions: Optional[str] = Field(
+        default=None,
+        description="Optional comma-separated remote folder names",
+    )
+    refresh: bool = False
+    include_bathymetry: bool = True
+    max_missions: int = Field(default=40, ge=1, le=200)
+
+
+class TelemetryHexbinResult(BaseModel):
+    success: bool
+    output_url: Optional[str] = None
+    filename: Optional[str] = None
+    point_count: int = 0
+    mission_count: int = 0
+    duration_ms: int = 0
+    summary: str = ""
+    error: Optional[str] = None
+
+
 # ============================================================================
 # Knowledge Base Models
 # ============================================================================

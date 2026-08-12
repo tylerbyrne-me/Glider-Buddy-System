@@ -4,9 +4,9 @@
       <!-- Top Row: brand, clock, toggler (mobile) -->
       <div class="navbar-top-row d-flex align-items-center w-100 position-relative" style="height: var(--banner-top-row-height);">
         <div class="d-flex align-items-center navbar-brand-wrap" style="padding-left: 0;">
-          <a class="navbar-brand d-flex align-items-center" href="{% if platform is none %}/platform{% else %}{{ platform_home_url | default('/wave-glider/home') }}{% endif %}" style="padding-top: 0; padding-bottom: 0; margin-right: 0;">
+          <a class="navbar-brand d-flex align-items-center" href="{% if platform or is_team_area | default(false) %}{{ platform_home_url | default('/wave-glider/home') }}{% else %}/platform{% endif %}" style="padding-top: 0; padding-bottom: 0; margin-right: 0;">
             <img src="/static/images/gbs_logo.svg" alt="{{ app_name }} Logo" class="navbar-logo me-2">
-            <h3 class="navbar-title mb-0">{% if platform %}{{ platform_buddy_title }}{% else %}{{ app_name }}{% endif %}</h3>
+            <h3 class="navbar-title mb-0">{% if platform or is_team_area | default(false) %}{{ platform_buddy_title }}{% else %}{{ app_name }}{% endif %}</h3>
           </a>
         </div>
         <div class="position-absolute top-50 start-50 translate-middle d-none d-md-block">
@@ -189,6 +189,14 @@
             </ul>
           </li>
           {% endif %}
+          {% endif %}
+          {% if is_team_area | default(false) %}
+          <li class="nav-item me-lg-3">
+            <a class="nav-link" href="/team">Team</a>
+          </li>
+          <li class="nav-item me-lg-3">
+            <a class="nav-link" href="/platform">Platform</a>
+          </li>
           {% endif %}
           {% if is_current_mission_realtime %}
           <li class="nav-item ms-lg-auto me-lg-3">

@@ -96,7 +96,7 @@ export const getPlatformApiPrefix = () => {
 
 /**
  * Prefer platform-prefixed APIs for Wave Glider first-party calls.
- * Leaves /api/slocum, /api/wave_glider, /api/admin, /api/auth, /api/token unchanged.
+ * Leaves /api/slocum, /api/wave_glider, /api/admin, /api/team, /api/auth, /api/token unchanged.
  * @param {string} url
  * @returns {string}
  */
@@ -106,6 +106,7 @@ export const withPlatformApiPrefix = (url) => {
         url.startsWith('/api/slocum') ||
         url.startsWith('/api/wave_glider') ||
         url.startsWith('/api/admin') ||
+        url.startsWith('/api/team') ||
         url.startsWith('/api/auth') ||
         url.startsWith('/api/token') ||
         url.startsWith('/api/users')

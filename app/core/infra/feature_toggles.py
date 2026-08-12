@@ -32,6 +32,7 @@ def _get_cached_feature_context() -> Dict[str, Any]:
         "is_forms_enabled": features.get("forms", True),
         "is_reporting_enabled": features.get("reporting", True),
         "is_authentication_enabled": features.get("authentication", True),
+        "is_team_hub_enabled": features.get("team_hub", True),
     }
     
     # Add computed properties for template convenience

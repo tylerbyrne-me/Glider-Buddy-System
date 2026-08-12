@@ -1,5 +1,11 @@
 # Agent and automation notes
 
+## Cursor / agent models
+
+Do **not** use Grok models (e.g. `cursor-grok-*`, “Grok” in the model picker) for this project. Prefer the user’s selected default or another non-Grok model (e.g. Composer, Claude, GPT). If a subagent or task explicitly requests Grok, skip Grok and use an allowed alternative instead.
+
+Always-apply rule: [`.cursor/rules/no-grok-model.mdc`](.cursor/rules/no-grok-model.mdc).
+
 ## Project tracking & docs
 
 This project uses `docs/` for persistent tracking. For **non-trivial** work (multi-file, behavior, or architecture), read the relevant files before changing code, and update them when you finish. Tiny one-line fixes need not re-read the whole wiki.
@@ -20,7 +26,7 @@ This project uses `docs/` for persistent tracking. For **non-trivial** work (mul
 
 ### Conventions
 
-Don't guess at style — [`docs/wiki/conventions.md`](docs/wiki/conventions.md) is the short source of truth (it links to `docs/wiki/standards/` for depth). Always-apply Cursor rules live under [`.cursor/rules/`](.cursor/rules/) as `.mdc` files (including [no inferred git commits](.cursor/rules/no-inferred-git-commits.mdc)).
+Don't guess at style — [`docs/wiki/conventions.md`](docs/wiki/conventions.md) is the short source of truth (it links to `docs/wiki/standards/` for depth). Always-apply Cursor rules live under [`.cursor/rules/`](.cursor/rules/) as `.mdc` files (including [no Grok models](.cursor/rules/no-grok-model.mdc) and [no inferred git commits](.cursor/rules/no-inferred-git-commits.mdc)).
 
 ## Python environment
 

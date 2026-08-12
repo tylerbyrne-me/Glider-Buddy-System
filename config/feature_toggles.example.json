@@ -16,6 +16,7 @@
   "vessel_density_map_layer": false,
   "slocum_auto_checklist_submit": false,
   "public_login_map": false,
+  "team_hub": true,
   "mission_dashboard": true,
   "forms": true,
   "reporting": true,

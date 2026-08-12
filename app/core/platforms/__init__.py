@@ -6,6 +6,7 @@ kebab-case. Import helpers from here rather than scattering string literals.
 """
 
 from .registry import (
+    AREA_TEAM,
     PLATFORM_PLACEHOLDER_LOGO,
     PLATFORM_SLOCUM,
     PLATFORM_WAVE_GLIDER,
@@ -15,6 +16,9 @@ from .registry import (
     PRODUCT_LOGO_PATH,
     PRODUCT_NAME_FULL,
     PRODUCT_NAME_SHORT,
+    TEAM_DISPLAY_NAME,
+    TEAM_HOME_URL,
+    TEAM_URL_PREFIX,
     PlatformSpec,
     buddy_title_for,
     display_name_for,
@@ -22,14 +26,17 @@ from .registry import (
     home_url_for,
     html_path_for,
     is_known_platform,
+    is_team_path,
     known_platform_ids,
     platform_labels_map,
     platform_page_context,
     resolve_platform_from_path,
+    team_buddy_title,
     url_prefix_for,
 )
 
 __all__ = [
+    "AREA_TEAM",
     "PLATFORM_PLACEHOLDER_LOGO",
     "PLATFORM_SLOCUM",
     "PLATFORM_WAVE_GLIDER",
@@ -39,6 +46,9 @@ __all__ = [
     "PRODUCT_LOGO_PATH",
     "PRODUCT_NAME_FULL",
     "PRODUCT_NAME_SHORT",
+    "TEAM_DISPLAY_NAME",
+    "TEAM_HOME_URL",
+    "TEAM_URL_PREFIX",
     "PlatformSpec",
     "buddy_title_for",
     "display_name_for",
@@ -46,9 +56,11 @@ __all__ = [
     "home_url_for",
     "html_path_for",
     "is_known_platform",
+    "is_team_path",
     "known_platform_ids",
     "platform_labels_map",
     "platform_page_context",
     "resolve_platform_from_path",
+    "team_buddy_title",
     "url_prefix_for",
 ]

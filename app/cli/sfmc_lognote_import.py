@@ -14,12 +14,17 @@ Notes outside the mission window are skipped (SFMC archival noise):
   end   = Sensor Tracker end_time (if present)
 Override with ``--after`` / ``--before`` (YYYY-MM-DD, inclusive UTC dates).
 
-Auth (same as station_cli):
+Prefer the Team UI (``/team/sfmc-lognotes``) for interactive dry-run + post.
+For local DB without HTTP, use ``--local`` (in-process; uses ``CLI_ADMIN_USERNAME``
+as the note author, default ``cli``).
+
+Remote HTTP auth (default path, same as station_cli):
     CLI_ADMIN_API_URL   default http://localhost:8000/api
     CLI_ADMIN_USERNAME
     CLI_ADMIN_PASSWORD
 
 Usage:
+    python -m app.cli.sfmc_lognote_import --alias fundy page1.json --dry-run --local
     python -m app.cli.sfmc_lognote_import --alias fundy page1.json --dry-run
     python -m app.cli.sfmc_lognote_import --alias fundy page1.json page2.json
     python -m app.cli.sfmc_lognote_import --alias fundy page1.json --after 2026-06-21 --before 2026-08-01
@@ -378,7 +383,52 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=BASE_API_URL,
         help=f"API base URL ending in /api (default: {BASE_API_URL})",
     )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help=(
+            "Use in-process DB (same path as Team UI) instead of HTTP self-call. "
+            "Author username from CLI_ADMIN_USERNAME or 'cli'."
+        ),
+    )
     return parser
+
+
+def _json_text_from_loaded(loaded: List[Tuple[Dict[str, Any], str]]) -> str:
+    return json.dumps([entry for entry, _source in loaded])
+
+
+def _run_local(args: argparse.Namespace, loaded: List[Tuple[Dict[str, Any], str]]) -> int:
+    """Thin wrapper around Team in-process import."""
+    from sqlmodel import Session as SQLModelSession
+
+    from app.core.infra.db import sqlite_engine
+    from app.services.team_sfmc_lognote import prepare_and_optionally_commit
+
+    username = (ADMIN_USERNAME or "cli").strip() or "cli"
+    include_in_report = not args.no_report
+    alias = str(args.alias).strip()
+    with SQLModelSession(sqlite_engine) as session:
+        result = prepare_and_optionally_commit(
+            session=session,
+            username=username,
+            alias=alias,
+            json_text=_json_text_from_loaded(loaded),
+            after=args.after,
+            before=args.before,
+            no_date_filter=args.no_date_filter,
+            include_in_report=include_in_report,
+            dry_run=args.dry_run,
+        )
+    print(result.summary)
+    for item in result.items:
+        preview = (item.content or "").replace("\n", "\\n")
+        if len(preview) > 120:
+            preview = preview[:117] + "..."
+        print(f"  {item.action}  id={item.sfmc_id}  {preview}")
+        if item.reason:
+            print(f"    reason: {item.reason}")
+    return 0 if result.success else 1
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -413,6 +463,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not loaded:
         print("No log notes found in input.")
         return 0
+
+    if args.local:
+        return _run_local(args, loaded)
 
     loaded.sort(key=lambda item: sort_key_creation(item[0]))
     unique_items, batch_dup_count = dedupe_batch(loaded)

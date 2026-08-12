@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}{{ platform_buddy_title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-2">Team</h1>
+    <p class="text-muted">
+        Admin-only ops sandbox, separate from Wave Glider and Slocum mission dashboards.
+        Run curated scripts here; other team tools (plots, checklists, component tracking) will land in this area later.
+    </p>
+
+    <div class="card gbs-card mt-4">
+        <div class="card-header">
+            <h2 class="h5 mb-0">Ops scripts</h2>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Script</th>
+                            <th>Description</th>
+                            <th style="width: 8rem;">Action</th>
+                            <th style="width: 10rem;">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="opsScriptsTableBody">
+                        <tr>
+                            <td colspan="4" class="text-center">
+                                <div class="spinner-border" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="opsScriptOutputPanel" class="mt-3" style="display: none;">
+                <h3 class="h6">Last run output</h3>
+                <pre id="opsScriptOutput" class="bg-body-secondary p-3 rounded small mb-0" style="white-space: pre-wrap; max-height: 24rem; overflow: auto;"></pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block body_extra_js %}
+<script src="/static/js/team/home.js" type="module"></script>
+{% endblock %}

@@ -134,6 +134,7 @@ from .routers import slocum_deployments as slocum_deployments_router
 from .routers import slocum_reporting as slocum_reporting_router
 from .routers import slocum_checklists as slocum_checklists_router
 from .routers import wave_glider as wave_glider_router
+from .routers import team as team_router
 
 # Admin imports
 from .core.auth.admin_sqladmin import setup_sqladmin
@@ -300,6 +301,7 @@ app.include_router(slocum_deployments_router.router)
 app.include_router(slocum_reporting_router.router)
 app.include_router(slocum_checklists_router.router)
 app.include_router(wave_glider_router.router)
+app.include_router(team_router.router)
 
 # SQLAdmin will be initialized in startup_event with the app instance
 # No need to mount separately - it's integrated into the app during setup

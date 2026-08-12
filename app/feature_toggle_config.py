@@ -36,6 +36,7 @@ DEFAULT_FEATURE_TOGGLES: dict[str, bool] = {
     "vessel_density_map_layer": False,
     "slocum_auto_checklist_submit": False,
     "public_login_map": False,
+    "team_hub": True,
     # Legacy / template toggles (often omitted from .env; default on)
     "mission_dashboard": True,
     "forms": True,

@@ -26,6 +26,12 @@ PLATFORM_PLACEHOLDER_LOGO = "/static/images/platforms/placeholder.svg"
 PLATFORM_WAVE_GLIDER = "wave_glider"
 PLATFORM_SLOCUM = "slocum"
 
+# Parallel product area (not a vehicle PlatformSpec / not in PLATFORMS).
+AREA_TEAM = "team"
+TEAM_DISPLAY_NAME = "Team"
+TEAM_HOME_URL = "/team"
+TEAM_URL_PREFIX = "/team"
+
 
 @dataclass(frozen=True)
 class PlatformSpec:
@@ -109,7 +115,19 @@ def home_url_for(platform_id: str) -> str:
     return get_platform(platform_id).home_url
 
 
+def team_buddy_title() -> str:
+    """In-area brand: 'Team Glider Buddy System' (same modifier rule as Slocum)."""
+    return _buddy_title(TEAM_DISPLAY_NAME)
+
+
+def is_team_path(path: str) -> bool:
+    path = path or ""
+    return path == TEAM_URL_PREFIX or path.startswith(TEAM_URL_PREFIX + "/")
+
+
 def buddy_title_for(platform_id: Optional[str]) -> str:
+    if platform_id == AREA_TEAM:
+        return team_buddy_title()
     if not platform_id or platform_id not in PLATFORMS:
         return PRODUCT_NAME_FULL
     return PLATFORMS[platform_id].buddy_title

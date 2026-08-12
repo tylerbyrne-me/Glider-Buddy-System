@@ -314,7 +314,7 @@ Some settings use JSON strings:
 - `REMOTE_MISSION_FOLDER_MAP_JSON` - Must be valid JSON
 - `ACTIVE_REALTIME_MISSIONS` - Must be valid JSON array
 - `FEATURE_TOGGLES_FILE` - Path to a JSON file (recommended; one toggle per line). Example: `config/feature_toggles.example.json`
-- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL, DFO fishery areas, NOAA shipping lanes) on home maps. Include `"vessel_density_map_layer": true` to enable DFO AIS vessel-density monthly rasters on home maps. Include `"navwarn_map_layer": true` to enable CCG NAVWARN overlays on home maps.
+- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL, DFO fishery areas, NOAA shipping lanes) on home maps. Include `"vessel_density_map_layer": true` to enable DFO AIS vessel-density monthly rasters on home maps. Include `"navwarn_map_layer": true` to enable CCG NAVWARN overlays on home maps. `"team_hub"` gates the admin-only Team hub (`/team`); default **on**.
 
 ### Public login map
 - Kill switch: `public_login_map` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON`

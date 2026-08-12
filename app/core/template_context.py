@@ -13,12 +13,16 @@ from .platforms import (
     PRODUCT_FAVICON_SVG_PATH,
     PRODUCT_NAME_FULL,
     PRODUCT_NAME_SHORT,
+    TEAM_DISPLAY_NAME,
+    TEAM_HOME_URL,
     buddy_title_for,
     display_name_for,
     home_url_for,
     is_known_platform,
+    is_team_path,
     platform_labels_map,
     resolve_platform_from_path,
+    team_buddy_title,
 )
 from ..config import settings
 
@@ -60,6 +64,23 @@ def _brand_context(platform: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+def _team_brand_context() -> Dict[str, Any]:
+    """Banner/brand strings for the Team area (not a vehicle PlatformSpec)."""
+    return {
+        "app_name": PRODUCT_NAME_FULL,
+        "app_name_short": PRODUCT_NAME_SHORT,
+        "app_favicon": PRODUCT_FAVICON_PATH,
+        "app_favicon_svg": PRODUCT_FAVICON_SVG_PATH,
+        "platform": None,
+        "is_team_area": True,
+        "platform_home_url": TEAM_HOME_URL,
+        "platform_buddy_title": team_buddy_title(),
+        "platform_display_name": TEAM_DISPLAY_NAME,
+        "platform_labels_json": json.dumps(platform_labels_map()),
+        "show_banner_nav": True,
+    }
+
+
 def get_platform_context_from_request(request: Any) -> Dict[str, Any]:
     """
     Derive platform and platform_home_url from request path for platform-aware nav.
@@ -67,10 +88,13 @@ def get_platform_context_from_request(request: Any) -> Dict[str, Any]:
     """
     url = getattr(request, "url", None)
     path = (url.path if url is not None else "") or getattr(request, "path", "") or ""
+    if is_team_path(path):
+        return _team_brand_context()
     platform = resolve_platform_from_path(path)
     home = home_url_for(platform) if platform else home_url_for(PLATFORM_WAVE_GLIDER)
     ctx = {
         "platform": platform,
+        "is_team_area": False,
         "platform_home_url": home,
     }
     ctx.update(_brand_context(platform))
@@ -100,6 +124,7 @@ def get_global_template_context() -> Dict[str, Any]:
     
     context.update({
         **_brand_context(None),
+        "is_team_area": False,
         "app_version": _get_static_version_token(),
         "current_year": datetime.now().year,
         "current_utc": datetime.now(timezone.utc),
@@ -139,8 +164,11 @@ def get_template_context(**kwargs) -> Dict[str, Any]:
         context["request"] = request
         context.update(get_platform_context_from_request(request))
     context.update(kwargs)
-    # Recompute buddy title if caller set platform explicitly after request merge
-    if "platform" in context:
+    if context.get("is_team_area"):
+        context.update(_team_brand_context())
+        if "show_banner_nav" in kwargs:
+            context["show_banner_nav"] = kwargs["show_banner_nav"]
+    elif "platform" in context:
         context.update(_brand_context(context.get("platform")))
     return context
 

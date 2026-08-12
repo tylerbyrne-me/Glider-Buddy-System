@@ -16,6 +16,7 @@ from ..core.templates import templates
 from app.config import settings
 from ..core.template_context import get_template_context
 from ..core.infra.feature_toggles import is_feature_enabled
+from ..core.models.enums import UserRoleEnum
 from ..core.platforms import (
     PLATFORM_SLOCUM,
     PLATFORM_WAVE_GLIDER,
@@ -112,11 +113,15 @@ async def get_platform_choice(
     request: Request,
     current_user: Optional[models.User] = Depends(get_optional_current_user),
 ):
-    """Platform choice (splash) after login: Wave Glider or Slocum Glider."""
+    """Platform choice (splash) after login: Wave Glider, Slocum, or Team Hub."""
     if not current_user:
         return RedirectResponse(url="/login.html")
     allowed_platforms = get_allowed_platforms_for_user(current_user)
-    if len(allowed_platforms) == 1:
+    show_team_hub = bool(
+        is_feature_enabled("team_hub") and current_user.role == UserRoleEnum.admin
+    )
+    # Skip the chooser only when there is a single destination (one platform, no Team).
+    if len(allowed_platforms) == 1 and not show_team_hub:
         if allowed_platforms[0] == PLATFORM_SLOCUM:
             return RedirectResponse(url=home_url_for(PLATFORM_SLOCUM))
         return RedirectResponse(url=home_url_for(PLATFORM_WAVE_GLIDER))
@@ -124,6 +129,7 @@ async def get_platform_choice(
     template_context["show_banner_nav"] = False  # No nav tabs on splash to avoid cross-platform confusion
     template_context["allowed_platforms"] = allowed_platforms
     template_context["platform_labels"] = platform_labels_map()
+    template_context["show_team_hub"] = show_team_hub
     return templates.TemplateResponse("platform_choice.html", template_context)
 
 

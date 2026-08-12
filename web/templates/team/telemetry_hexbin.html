@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Telemetry hexbin - {{ platform_buddy_title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <p class="mb-2"><a href="/team">&larr; Team</a></p>
+    <h1 class="mb-2">Wave Glider telemetry hexbin</h1>
+    <p class="text-muted">
+        Build a Cartopy hexbin coverage map from past Wave Glider telemetry.
+        Large runs can hit gunicorn timeouts (~200s); narrow the box or set an explicit mission list first.
+        Default mission cap is 40 when discovering all past folders.
+    </p>
+
+    <div class="card gbs-card mt-3">
+        <div class="card-body">
+            <form id="hexbinForm">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label for="centerLat" class="form-label">Center lat</label>
+                        <input type="number" step="any" class="form-control" id="centerLat" value="44.04">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="centerLon" class="form-label">Center lon</label>
+                        <input type="number" step="any" class="form-control" id="centerLon" value="-60.32">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="sizeKm" class="form-label">Size (km)</label>
+                        <input type="number" step="any" min="1" class="form-control" id="sizeKm" value="150">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="gridsize" class="form-label">Grid size</label>
+                        <input type="number" min="5" max="200" class="form-control" id="gridsize" value="60">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="bboxInput" class="form-label">Or explicit bbox (lon_min,lon_max,lat_min,lat_max)</label>
+                    <input type="text" class="form-control" id="bboxInput" placeholder="Optional — overrides center/size">
+                </div>
+                <div class="mb-3">
+                    <label for="missionsInput" class="form-label">Missions (optional comma-separated folders)</label>
+                    <input type="text" class="form-control" id="missionsInput" placeholder="e.g. m169-C34166NS,m170-C34164NS">
+                </div>
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3">
+                        <label for="maxMissions" class="form-label">Max missions (discover)</label>
+                        <input type="number" min="1" max="200" class="form-control" id="maxMissions" value="40">
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="refreshCache">
+                            <label class="form-check-label" for="refreshCache">Refresh CSV cache</label>
+                        </div>
+                    </div>
+                    <div class="col-md-3 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="includeBathy" checked>
+                            <label class="form-check-label" for="includeBathy">Bathymetry contours</label>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-primary" id="generateBtn">Generate</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="card gbs-card mt-4" id="resultCard" style="display: none;">
+        <div class="card-header"><h2 class="h5 mb-0">Result</h2></div>
+        <div class="card-body">
+            <p id="hexbinSummary" class="mb-3"></p>
+            <div id="hexbinImageWrap" style="display: none;">
+                <img id="hexbinImage" alt="Telemetry hexbin map" class="img-fluid border rounded mb-2">
+                <div><a id="hexbinDownload" class="btn btn-sm btn-outline-primary" href="#" download>Download PNG</a></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block body_extra_js %}
+<script src="/static/js/team/telemetry_hexbin.js" type="module"></script>
+{% endblock %}

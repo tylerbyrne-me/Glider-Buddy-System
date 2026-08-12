@@ -1,0 +1,9 @@
+---
+description: Do not use Grok models for this project
+alwaysApply: true
+---
+# Cursor models — no Grok
+
+Do **not** use Grok models (e.g. `cursor-grok-*`, “Grok” in the model picker) for this project.
+
+Prefer the user’s selected default or another non-Grok model (e.g. Composer, Claude, GPT). Do not launch subagents with Grok; use an allowed alternative instead.
