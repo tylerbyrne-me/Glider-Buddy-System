@@ -43,6 +43,9 @@ RELATIONSHIP_FETCH_CAP = 500
 # works, and attached sensors live on the much smaller sensor_on_instrument list.
 IDENTIFIER_LOOKUP_MAX_COUNT = 100
 SENSOR_ATTACH_SCAN_CAP = 2500
+# Tracker /api/deployment/ ignores search=/title= (~1k rows). After platform_name=,
+# Buddy may walk that catalog (never the 235k sensor list).
+DEPLOYMENT_SCAN_CAP = 2500
 REQUEST_TIMEOUT_S = 30.0
 PROBE_TTL_S = 300.0
 
@@ -1616,6 +1619,66 @@ async def _attached_sensors_matching(
     return unique, tracker_count, more_upstream
 
 
+def _tracker_filter_looks_honored(
+    count: Optional[int], ignored_count: Optional[int]
+) -> bool:
+    """True when Tracker ``count`` is a real filter hit, not the unfiltered catalog.
+
+    Prod ``search=`` on ``/api/deployment/`` returns the same ~923 ``count`` as a
+    bare list. ``platform_name=`` is honored (9 rows, or 0 for a title string).
+    """
+    if count is None or count <= 0:
+        return False
+    if ignored_count is None:
+        return True
+    return count != ignored_count
+
+
+async def _deployments_matching_fallback(
+    query: str,
+    *,
+    ignored_count: Optional[int],
+    client: Optional[httpx.AsyncClient] = None,
+) -> List[Dict[str, Any]]:
+    """Find deployments when Tracker ignores ``search=`` / ``title=``.
+
+    ``platform_name=`` is honored (list rows often store ``platform`` as an int
+    FK, so a local haystack match on the hull name would miss). A zero-count
+    ``platform_name=`` is a real miss — then walk the modest catalog and match
+    title/number locally (unnumbered / dateless rows included).
+    """
+    q = (query or "").strip()
+    if not q:
+        return []
+    plat_rows, plat_count, plat_more = await _walk_tracker_pages(
+        "deployment",
+        {"platform_name": q},
+        min_rows=DEPLOYMENT_SCAN_CAP,
+        max_rows=DEPLOYMENT_SCAN_CAP,
+        client=client,
+    )
+    if _tracker_filter_looks_honored(plat_count, ignored_count):
+        return plat_rows
+
+    scan_rows = plat_rows
+    reuse_ignored_walk = (
+        plat_count is not None
+        and ignored_count is not None
+        and plat_count == ignored_count
+        and not plat_more
+        and len(plat_rows) >= plat_count
+    )
+    if plat_count == 0 or not reuse_ignored_walk:
+        scan_rows, _count, _more = await _walk_tracker_pages(
+            "deployment",
+            {},
+            min_rows=DEPLOYMENT_SCAN_CAP,
+            max_rows=DEPLOYMENT_SCAN_CAP,
+            client=client,
+        )
+    return [row for row in scan_rows if row_matches_search("deployment", row, q)]
+
+
 async def list_entities(
     entity: str,
     *,
@@ -1670,7 +1733,7 @@ async def list_entities(
         matched = [row for row in rows if row_matches_search(entity, row, query)]
         narrowed = set(params) - set(base_params)
         skip_unfiltered_scan = (
-            entity == "sensor"
+            entity in ("sensor", "deployment")
             and more_upstream
             and tracker_count is not None
             and tracker_count > RELATIONSHIP_FETCH_CAP
@@ -1684,6 +1747,10 @@ async def list_entities(
                 client=client,
             )
             matched = [row for row in rows if row_matches_search(entity, row, query)]
+        if not matched and entity == "deployment":
+            matched = await _deployments_matching_fallback(
+                query, ignored_count=tracker_count, client=client
+            )
         if not matched and entity == "sensor":
             ident_rows = await _sensors_by_exact_identifier(query, client=client)
             matched = [

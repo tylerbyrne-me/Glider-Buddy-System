@@ -3,6 +3,7 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-24 — Team Sensor Tracker **Deployments** tab: Tracker `/api/deployment/` ignores `search=`/`title=` (~1k rows, 500-row scan missed unnumbered/dateless titles such as TEST HOLD). Fallback is honored `platform_name=` then a full list scan (not 235k sensors). How-to: [sensor_tracker_team_browser.md](../wiki/how-tos/sensor_tracker_team_browser.md)
 - [x] 2026-08-24 — CIOPS-East ice forecast home overlay: GeoMet WMS proxy (`/api/map/ciops-ice/meta|export|legend`), hourly time slider, WG+Slocum home maps (`ciops_ice_map_layer`, default off). August blank tiles with 200s treated as expected near-zero concentration; winter soak + empty-vs-broken UX left on backlog — [ciops_ice_map_layer.md](../wiki/how-tos/ciops_ice_map_layer.md)
 - [x] 2026-08-20 — Team Sensor Tracker **sensor → Instruments** related list (`sensor_on_instrument`, else `current_instrument`) so nested DO/pumps show the parent GPCTD/CTD. How-to: [sensor_tracker_team_browser.md](../wiki/how-tos/sensor_tracker_team_browser.md)
 - [x] 2026-08-20 — Team Sensor Tracker **Sensors** tab: Tracker `/api/sensor/` ignores `search=` (~235k rows, 500-row local scan missed nested SBE43F). Fallback is exact `identifier=` (strip duplicated serial from related titles) then a `sensor_on_instrument` token scan. How-to: [sensor_tracker_team_browser.md](../wiki/how-tos/sensor_tracker_team_browser.md)
