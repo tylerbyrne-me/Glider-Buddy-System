@@ -1027,11 +1027,15 @@ class TelemetryHexbinRequest(BaseModel):
     gridsize: int = Field(default=60, ge=5, le=200)
     missions: Optional[str] = Field(
         default=None,
-        description="Optional comma-separated remote folder names",
+        description="Optional comma-separated remote folder names or ERDDAP dataset ids",
     )
     refresh: bool = False
     include_bathymetry: bool = True
     max_missions: int = Field(default=40, ge=1, le=200)
+    source_filter: str = Field(
+        default="wgms",
+        description="wgms | erddap | all — data source(s) to include",
+    )
 
 
 class TelemetryHexbinResult(BaseModel):
@@ -1043,6 +1047,142 @@ class TelemetryHexbinResult(BaseModel):
     duration_ms: int = 0
     summary: str = ""
     error: Optional[str] = None
+    source_counts: Optional[dict] = None
+
+
+class TeamVizChartInfo(BaseModel):
+    """One named chart in the Team Visualizations gallery."""
+    slug: str
+    title: str
+    caption: str
+    generated_at: Optional[str] = None
+    as_of: Optional[str] = None
+    has_image: bool = False
+    image_url: Optional[str] = None
+    notes: List[str] = []
+    row_counts: Dict[str, Any] = {}
+    truncated: bool = False
+    error: Optional[str] = None
+
+
+class TeamVizGalleryResponse(BaseModel):
+    charts: List[TeamVizChartInfo] = []
+    snapshot_as_of: Optional[str] = None
+    snapshot_fetched_at: Optional[str] = None
+    tracker_host: Optional[str] = None
+
+
+class TeamVizGenerateRequest(BaseModel):
+    reuse_snapshot: bool = False
+
+
+class TeamVizChartGenerateResult(BaseModel):
+    slug: str
+    title: str
+    caption: str = ""
+    generated_at: Optional[str] = None
+    as_of: Optional[str] = None
+    success: bool = False
+    duration_ms: int = 0
+    truncated: bool = False
+    notes: List[str] = []
+    row_counts: Dict[str, Any] = {}
+    error: Optional[str] = None
+    image_url: Optional[str] = None
+
+
+class TeamVizGenerateAllResult(BaseModel):
+    success: bool
+    snapshot_as_of: Optional[str] = None
+    snapshot_fetched_at: Optional[str] = None
+    charts: List[TeamVizChartGenerateResult] = []
+
+
+class SensorTrackerEntityInfo(BaseModel):
+    """One Tracker resource type available in the Team browser."""
+    key: str
+    label: str
+    available: bool = True
+    search_hint: str = ""
+    columns: List[str] = []
+    relations: List[str] = []
+
+
+class SensorTrackerMetaResponse(BaseModel):
+    host: str
+    connected: bool
+    error: Optional[str] = None
+    entities: List[SensorTrackerEntityInfo] = []
+
+
+class SensorTrackerSummaryRow(BaseModel):
+    id: Optional[int] = None
+    entity: str
+    title: str
+    cells: Dict[str, Optional[str]] = {}
+
+
+class SensorTrackerListResponse(BaseModel):
+    entity: str
+    count: int = 0
+    page: int = 1
+    page_size: int = 25
+    has_next: bool = False
+    has_prev: bool = False
+    results: List[SensorTrackerSummaryRow] = []
+
+
+class SensorTrackerBuddyOverlay(BaseModel):
+    mission_id: str
+    last_synced_at: Optional[datetime] = None
+    sync_status: Optional[str] = None
+
+
+class SensorTrackerDetailResponse(BaseModel):
+    entity: str
+    id: Optional[int] = None
+    title: str
+    summary: Dict[str, Optional[str]] = {}
+    relations: List[str] = []
+    st_api_url: Optional[str] = None
+    st_web_url: Optional[str] = None
+    buddy: Optional[SensorTrackerBuddyOverlay] = None
+    raw: Dict[str, Any] = {}
+
+
+class SensorTrackerRelatedItem(BaseModel):
+    entity: str
+    id: Optional[int] = None
+    title: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    cells: Dict[str, Optional[str]] = {}
+
+
+class SensorTrackerRelatedResponse(BaseModel):
+    entity: str
+    id: int
+    relation: str
+    target_entity: str
+    count: int = 0
+    page: int = 1
+    page_size: int = 25
+    has_next: bool = False
+    has_prev: bool = False
+    results: List[SensorTrackerRelatedItem] = []
+
+
+class SensorTrackerAnalyticsMetric(BaseModel):
+    key: str
+    label: str
+    value: str = "—"
+
+
+class SensorTrackerAnalyticsResponse(BaseModel):
+    as_of: Optional[str] = None
+    metrics: List[SensorTrackerAnalyticsMetric] = []
+    notes: List[str] = []
+    truncated: bool = False
 
 
 # ============================================================================

@@ -11,7 +11,11 @@ Start here. This folder is the source of truth for "how does this work."
 - [Public login map](./how-tos/public_login_map.md) — unauthenticated login-page tracks / KML / labels
 - [Static vector map layers](./how-tos/map_vector_layers.md) — GOSL / DFO FMA & LFA / NOAA shipping GeoJSON overlays on home maps (KML + ArcGIS ingest)
 - [AIS vessel density map layer](./how-tos/vessel_density_map_layer.md) — DFO NW Atlantic AIS density rasters (2025 monthly) on home maps
+- [CIOPS-East ice forecast map layer](./how-tos/ciops_ice_map_layer.md) — MSC GeoMet sea ice concentration WMS on home maps
 - [NAVWARN map layer](./how-tos/navwarn_map_layer.md) — CCG navigational warnings on home maps (HTML scrape + cache)
+- [Mission catalog cutover](./how-tos/mission_catalog_cutover.md) — local soak done; production replay (ADR 0005)
+- [Sensor Tracker Team browser](./how-tos/sensor_tracker_team_browser.md) — admin Team hub live inventory search
+- [Team Visualizations gallery](./how-tos/team_visualizations.md) — static fleet charts from Sensor Tracker
 - [Glossary template](./GLOSSARY_TEMPLATE.md) — RAG/glossary authoring
 - [Module templates](./MODULE_TEMPLATES_README.md) — module scaffolding notes
 
@@ -29,7 +33,7 @@ Detailed coding and folder standards: [standards/README.md](./standards/README.m
 
 - [Backlog](../tasks/backlog.md) / [In progress](../tasks/in-progress.md) / [Done](../tasks/done.md)
 - [Bugs](../bugs/README.md)
-- [Decisions (ADRs)](../decisions/0000-template.md) — [0001 leader lock](../decisions/0001-gunicorn-leader-lock.md), [0002 no preload](../decisions/0002-no-gunicorn-preload.md), [0003 platform/brand naming](../decisions/0003-platform-brand-naming.md), [0004 DMON Robots4Whales cache](../decisions/0004-dmon-robots4whales-review-cache.md)
+- [Decisions (ADRs)](../decisions/0000-template.md) — [0001 leader lock](../decisions/0001-gunicorn-leader-lock.md), [0002 no preload](../decisions/0002-no-gunicorn-preload.md), [0003 platform/brand naming](../decisions/0003-platform-brand-naming.md), [0004 DMON Robots4Whales cache](../decisions/0004-dmon-robots4whales-review-cache.md), [0005 mission catalog live keys](../decisions/0005-mission-catalog-live-keys.md)
 
 ## Archive
 

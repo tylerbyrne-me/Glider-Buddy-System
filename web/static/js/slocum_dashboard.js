@@ -145,7 +145,7 @@ const TIME_SERIES_CARD_CONFIGS = {
     },
     flight: {
         variables: [
-            'm_pitch', 'c_pitch', 'm_roll', 'c_roll', 'm_fin', 'c_fin',
+            'm_pitch', 'c_pitch', 'm_roll', 'm_fin', 'c_fin',
             'm_thruster_power', 'c_thruster_on', 'm_depth',
         ],
         footerId: 'slocumFlightLastDataFooter',
@@ -163,9 +163,9 @@ const TIME_SERIES_CARD_CONFIGS = {
                 canvasId: 'slocumFlightRollChart',
                 spinnerId: 'slocumFlightRollSpinner',
                 yLabel: 'Roll (°)',
+                // No commanded roll (c_roll) on Slocum — measured only.
                 series: [
                     { key: 'm_roll', label: 'Measured' },
-                    { key: 'c_roll', label: 'Commanded', dashed: true },
                 ],
             },
             {
@@ -788,14 +788,17 @@ function setSlocumDataSourceBadge(cacheMetadata) {
     const badge = document.getElementById('slocumDataSourceBadge');
     if (!badge) return;
     const source = cacheMetadata?.data_source || '';
-    const isStale = Boolean(cacheMetadata?.stale || cacheMetadata?.fallback_error);
+    // `stale` means the rolling mirror ends before wall-clock "now" — normal for
+    // realtime after a successful ERDDAP pull (last glider sample ≠ now).
+    // Only `fallback_error` means we tried live ERDDAP and failed.
+    const isErddapUnreachable = Boolean(cacheMetadata?.fallback_error);
     const labels = {
         mirror: { text: 'Source: 72h mirror', cls: 'text-bg-success' },
         overage_cache: { text: 'Source: temporary cache', cls: 'text-bg-info' },
         erddap_overage: { text: 'Source: ERDDAP (on demand)', cls: 'text-bg-warning' },
     };
     let mapped = labels[source] || { text: 'Source: —', cls: 'text-bg-secondary' };
-    if (isStale) {
+    if (isErddapUnreachable) {
         mapped = {
             text: 'Cached data — ERDDAP unreachable',
             cls: 'text-bg-warning',
@@ -806,6 +809,8 @@ function setSlocumDataSourceBadge(cacheMetadata) {
     const tipParts = [];
     if (cacheMetadata?.fallback_error) {
         tipParts.push(`Fallback: ${cacheMetadata.fallback_error}`);
+    } else if (cacheMetadata?.stale) {
+        tipParts.push('Mirror tail is behind the requested window (normal for realtime).');
     }
     if (cacheMetadata?.mirror_max) {
         tipParts.push(`Mirror max: ${cacheMetadata.mirror_max}`);
@@ -815,7 +820,7 @@ function setSlocumDataSourceBadge(cacheMetadata) {
     }
     if (cacheMetadata?.cache_expires_at) {
         tipParts.push(`Expires: ${cacheMetadata.cache_expires_at}`);
-    } else if (!isStale && source === 'mirror') {
+    } else if (!isErddapUnreachable && source === 'mirror') {
         tipParts.push('Loaded from the rolling local mirror.');
     } else if (!tipParts.length) {
         tipParts.push('Where the displayed data was loaded from.');

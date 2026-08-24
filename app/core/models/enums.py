@@ -68,3 +68,59 @@ class JobPlatformEnum(str, Enum):
     SLOCUM = "slocum"
     SYSTEM = "system"
 
+
+class CatalogOperationalState(str, Enum):
+    """Mission operational lifecycle (not ERDDAP realtime/delayed variant)."""
+
+    PLANNED = "planned"
+    ACTIVE = "active"
+    COMPLETED = "completed"
+    ARCHIVED = "archived"
+
+
+class CatalogSyncPolicy(str, Enum):
+    """How aggressively the app fetches telemetry for a catalog mission."""
+
+    CATALOG_ONLY = "catalog_only"
+    ON_DEMAND = "on_demand"
+    WARM = "warm"
+    CONTINUOUS = "continuous"
+
+
+class CatalogSourceKind(str, Enum):
+    """Concrete telemetry/data location kinds."""
+
+    ERDDAP = "erddap"
+    WGMS_REMOTE = "wgms_remote"
+    MANUAL = "manual"
+
+
+class CatalogSourceVariant(str, Enum):
+    """ERDDAP (or similar) dataset revision variant."""
+
+    REALTIME = "realtime"
+    DELAYED = "delayed"
+    UNKNOWN = "unknown"
+
+
+class CatalogMatchStatus(str, Enum):
+    """How a discovered source relates to a catalog mission."""
+
+    LINKED = "linked"
+    UNMATCHED = "unmatched"
+    CONFLICT = "conflict"
+    STALE = "stale"
+
+
+class CatalogIdentityKind(str, Enum):
+    """External identity kinds stored on CatalogExternalIdentity."""
+
+    SENSOR_TRACKER_DEPLOYMENT_ID = "sensor_tracker_deployment_id"
+    SENSOR_TRACKER_DEPLOYMENT_NUMBER = "sensor_tracker_deployment_number"
+    DEPLOYMENT_CODE = "deployment_code"
+    ERDDAP_DATASET_ID = "erddap_dataset_id"
+    ERDDAP_MISSION_KEY = "erddap_mission_key"
+    WGMS_FOLDER = "wgms_folder"
+    LEGACY_ENV_KEY = "legacy_env_key"
+    MANUAL = "manual"
+

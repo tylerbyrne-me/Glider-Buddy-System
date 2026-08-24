@@ -352,19 +352,79 @@ async def get_cached_or_fetch_ctd_df(
     )
 
 
-async def warm_active_slocum_datasets(hours_back: int | None = None) -> int:
+def list_slocum_warm_source_keys() -> list[str]:
+    """Active Slocum keys for mirror warm.
+
+    Default: exact ``ACTIVE_SLOCUM_DATASETS`` strings (aliases preserved).
+    When ``MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG`` is true, read the same
+    strings via catalog enablement; fall back to env on error.
+    """
+    env_keys = [
+        str(k).strip()
+        for k in (settings.active_slocum_datasets or [])
+        if k and str(k).strip()
+    ]
+    if not getattr(settings, "mission_catalog_slocum_warm_from_catalog", False):
+        return env_keys
+    try:
+        from sqlmodel import Session as SQLModelSession
+
+        from app.core.infra.db import sqlite_engine
+        from app.core.mission_catalog.enablement import (
+            list_catalog_sync_targets,
+            log_enablement_parity,
+        )
+
+        with SQLModelSession(sqlite_engine) as session:
+            log_enablement_parity(session)
+            keys = list_catalog_sync_targets("slocum", session)
+        logger.info("SLOCUM WARM: Catalog enablement keys=%s", keys)
+        return list(keys)
+    except Exception as exc:
+        logger.warning(
+            "SLOCUM WARM: Catalog enablement failed (%s); falling back to ACTIVE_SLOCUM_DATASETS",
+            exc,
+        )
+        return env_keys
+
+
+async def warm_active_slocum_datasets(
+    hours_back: int | None = None,
+    *,
+    poke_first: bool = False,
+) -> int:
     """
     Sync parquet mirrors for configured active Slocum datasets.
-    Called on leader startup and by the background refresh job.
+
+    Startup uses a full incremental sync (``poke_first=False``). The scheduled
+    job uses ``poke_first=True`` so only datasets whose ERDDAP maxTime advanced
+    are pulled.
     """
     if not is_feature_enabled("slocum_platform"):
         return 0
 
     warm_hours = hours_back if hours_back is not None else getattr(settings, "slocum_warm_hours", 24)
-    dataset_ids = resolve_slocum_dataset_ids(settings.active_slocum_datasets)
+    dataset_ids = resolve_slocum_dataset_ids(list_slocum_warm_source_keys())
     if not dataset_ids:
         logger.info("SLOCUM WARM: No active Slocum datasets configured.")
         return 0
+
+    if poke_first:
+        from app.platforms.slocum.erddap_poke import poke_active_slocum_datasets
+
+        summary = await poke_active_slocum_datasets(
+            hours_back=warm_hours,
+            sync_if_new=True,
+            dataset_ids=dataset_ids,
+        )
+        logger.info(
+            "SLOCUM WARM: Poke-first finished (synced=%s skipped=%s errors=%s, window=%sh)",
+            summary.get("synced"),
+            summary.get("skipped"),
+            summary.get("errors"),
+            warm_hours,
+        )
+        return int(summary.get("synced") or 0)
 
     warmed = 0
     for dataset_id in dataset_ids:

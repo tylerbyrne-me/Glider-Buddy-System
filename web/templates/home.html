@@ -10,15 +10,15 @@
     <div class="row justify-content-center">
         <!-- Main Content Area -->
         <div class="col-12">
-            <div class="home-intro mx-auto">
+            <div class="home-intro mb-3">
                 <h1 class="home-welcome-heading">Welcome, {{ current_user.full_name or current_user.username }}!</h1>
                 <p class="text-muted mb-0">{{ platform_display_name }} – missions and map</p>
+            </div>
 
-                <!-- Announcements Panel -->
-                <div id="announcementsPanel" class="mb-3">
-                    <!-- Active announcements will be loaded here by home.js -->
-                    <div class="d-flex justify-content-center"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading announcements...</span></div></div>
-                </div>
+            <!-- Announcements Panel (full width with map; shared with Slocum home) -->
+            <div id="announcementsPanel" class="mb-3">
+                <!-- Active announcements will be loaded here by home.js -->
+                <div class="d-flex justify-content-center"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Loading announcements...</span></div></div>
             </div>
 
             <!-- Tabbed Interface for Mission Briefings -->
@@ -460,6 +460,30 @@
                         <small id="vesselDensityStatusLine" class="text-muted d-block"></small>
                     </div>
                     {% endif %}
+                    {% if feature_enabled('ciops_ice_map_layer') %}
+                    <!-- MSC CIOPS-East sea ice concentration forecast -->
+                    <div id="ciopsIceSection" class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label small mb-0">Sea ice forecast</label>
+                            <a id="ciopsIceOpenDataLink" href="https://open.canada.ca/data/en/dataset/bfe44cce-a9c4-467f-9172-c8800b32e4ec" target="_blank" rel="noopener" class="text-decoration-none small">
+                                <i class="fas fa-external-link-alt"></i> Open Data
+                            </a>
+                        </div>
+                        <div class="btn-group btn-group-sm mb-2" role="group" aria-label="CIOPS ice parent toggle">
+                            <input type="checkbox" class="btn-check" id="ciopsIceToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="ciopsIceToggle">
+                                <i class="fas fa-snowflake"></i> Ice forecast
+                            </label>
+                        </div>
+                        <div id="ciopsIceControls" class="d-none mb-2">
+                            <label class="form-label small mb-1" for="ciopsIceTimeSlider">Forecast hour</label>
+                            <input type="range" class="form-range form-range-sm" id="ciopsIceTimeSlider" min="0" max="0" step="1" value="0" disabled>
+                            <img id="ciopsIceLegendImg" class="d-none mt-2" alt="Sea ice concentration legend" style="max-height: 140px;">
+                        </div>
+                        <small class="text-muted d-block">CIOPS-East 48 h model sea ice area fraction (~2 km). Forecast concentration, not CIS ice charts. East coast / GSL / NW Atlantic only — often near 0 in summer.</small>
+                        <small id="ciopsIceStatusLine" class="text-muted d-block"></small>
+                    </div>
+                    {% endif %}
                     {% if feature_enabled('navwarn_map_layer') %}
                     <!-- CCG NAVWARN overlays (active warnings + area reference polygons) -->
                     <div id="navwarnOverlaySection" class="mb-3">
@@ -481,6 +505,7 @@
                         </div>
                         <small class="text-muted d-block mb-1">
                             Canadian Coast Guard navigational warnings (published) and series-level area boundaries.
+                            Hide a warning from its popup to click items underneath.
                         </small>
                         <small id="navwarnStatusLine" class="text-muted d-block"></small>
                     </div>

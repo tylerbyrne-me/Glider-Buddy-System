@@ -4,7 +4,7 @@ Toggleable Leaflet overlays for Canadian Coast Guard navigational warnings on au
 
 Two layers:
 
-1. **Active NAVWARNs** — published warning geometries (`POINT` / `POLYLINE` / `POLYGON`) with popups linking to the official message page
+1. **Active NAVWARNs** — published warning geometries (`POINT` / `POLYLINE` / `POLYGON`) with popups linking to the official message page. Hide an individual warning from its popup (or restore it from the **Hidden warnings** list) so overlapping polygons do not block clicks on items underneath. `POLYLINE` / `LineString` features use a wide hit target and open the same popup as polygons.
 2. **NAVWARN areas** — series-level (`l2`) area reference polygons (Pacific Coast, Maritimes, …); root Canada rectangle excluded
 
 Public login map is out of scope (same as weather/Iridium overlays).
@@ -18,6 +18,12 @@ Upstream: [CCG NIS search](https://nis.ccg-gcc.gc.ca/public/rest/messages/en/sea
 3. Open `/wave-glider/` or `/slocum/` home → **NAVWARN Overlay** → toggle **Active NAVWARNs** and/or **NAVWARN areas**.
 
 Layers use Leaflet pane z-index **360** (above static reference zones, below tracks/Iridium).
+
+## Map UX
+
+- **Hide** — an active-warning popup has **Hide this warning**. That `messageId` (all of its geometries) is removed from the map so you can click items underneath. Restore from the **Hidden warnings** list or **Show all**. IDs persist in browser `localStorage` (`gbs.navwarn.hiddenMessageIds`) and are dropped when they leave the cache.
+- **Overlap** — if other visible warnings sit under the click, the popup lists them as **Also here** (brings that warning to front).
+- **Polylines** — NIS `POLYLINE` is stored as GeoJSON `LineString`. They use the same popup as polygons, plus a transparent wide hit stroke so thin dashed lines are selectable.
 
 ## Data flow
 
@@ -74,7 +80,7 @@ Config knobs in [`app/config.py`](../../../app/config.py): `navwarn_cache_dir`, 
 1. Enable toggle, restart `gliderbuddy.service`.
 2. Leader logs: `NAVWARN search page=…` then `NAVWARN published ID list complete` (or prefetch summary with a large `active_warning_count`).
 3. `GET /api/map/navwarn/cache/status` — expect `"truncated": false` and message count well above 50.
-4. Home map → enable Active NAVWARNs → geometries + official popup links.
+4. Home map → enable Active NAVWARNs → geometries + official popup links. Click a polygon: **Hide this warning** removes it (browser `localStorage`, pruned when the ID leaves the cache). Overlapping IDs appear as **Also here** links. Click a dashed polyline: same popup as a polygon.
 5. Enable NAVWARN areas → series-level polygons (not the Canada-wide box).
 
 ```bash

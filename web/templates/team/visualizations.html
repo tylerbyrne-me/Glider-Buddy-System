@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Visualizations - {{ platform_buddy_title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <p class="mb-2"><a href="/team">&larr; Team</a></p>
+    <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+        <div>
+            <h1 class="mb-2">Visualizations</h1>
+            <p class="text-muted mb-0">
+                Named static fleet charts from Sensor Tracker. Images stay on disk until you rebuild.
+                A full Tracker walk can approach gunicorn’s ~200s timeout — prefer the CLI for the first rebuild if the UI times out.
+            </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            <div class="form-check align-self-center me-2">
+                <input class="form-check-input" type="checkbox" id="reuseSnapshot">
+                <label class="form-check-label" for="reuseSnapshot">Reuse snapshot</label>
+            </div>
+            <button type="button" class="btn btn-primary" id="rebuildAllBtn">Rebuild all</button>
+        </div>
+    </div>
+
+    <p id="galleryMeta" class="small text-muted mb-3"></p>
+    <div id="galleryStatus" class="mb-3" style="display: none;"></div>
+
+    <div id="galleryGrid" class="row g-3">
+        <div class="col-12 text-center py-5">
+            <div class="spinner-border" role="status">
+                <span class="visually-hidden">Loading…</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="chartDetail" class="card gbs-card mt-4" style="display: none;">
+        <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <h2 class="h5 mb-0" id="detailTitle">Chart</h2>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" id="detailRebuildBtn">Rebuild</button>
+                <a class="btn btn-sm btn-outline-secondary" id="detailDownload" href="#" download>Download PNG</a>
+            </div>
+        </div>
+        <div class="card-body">
+            <p id="detailCaption" class="text-muted"></p>
+            <p id="detailMeta" class="small text-muted"></p>
+            <img id="detailImage" alt="Chart" class="img-fluid border rounded" style="display: none; max-width: 100%;">
+            <p id="detailEmpty" class="text-muted mb-0">Not generated yet.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block body_extra_js %}
+<script src="/static/js/team/visualizations.js?v={{ app_version }}" type="module"></script>
+{% endblock %}

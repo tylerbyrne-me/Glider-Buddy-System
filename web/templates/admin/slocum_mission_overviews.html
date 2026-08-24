@@ -450,6 +450,8 @@
                     Inspect the local ERDDAP parquet mirror (dashboard + CTD) and the CTD profile-ready point count.
                     Sparse CTD science rows usually mean the mirror was built with server-side time decimation — use
                     <strong>Rebuild CTD Mirror</strong> to re-fetch undecimated dive/climb profiles.
+                    <strong>Check ERDDAP now</strong> is a cheap allDatasets maxTime poke and only pulls
+                    when Ocean Track’s tail advanced.
                 </div>
                 <div class="row g-2 align-items-end mb-3">
                     <div class="col-md-2">
@@ -459,6 +461,9 @@
                     <div class="col-md-10 d-flex flex-wrap gap-2">
                         <button type="button" class="btn btn-sm btn-outline-primary" id="runCacheInspectorBtn">
                             <i class="fas fa-magnifying-glass"></i> Inspect Dataset Cache
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="erddapPokeBtn">
+                            <i class="fas fa-satellite-dish"></i> Check ERDDAP now
                         </button>
                         <button type="button" class="btn btn-sm btn-outline-warning" id="rebuildCtdMirrorBtn">
                             <i class="fas fa-sync"></i> Rebuild CTD Mirror

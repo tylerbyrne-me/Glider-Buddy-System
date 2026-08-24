@@ -66,6 +66,37 @@ OPS_SCRIPTS: Dict[str, OpsScriptSpec] = {
         kind="page",
         href="/team/telemetry-hexbin",
     ),
+    "mission_catalog_sync": OpsScriptSpec(
+        id="mission_catalog_sync",
+        label="Mission catalog sync (dry-run)",
+        description=(
+            "Reconcile Sensor Tracker, ERDDAP, WGMS, and legacy .env mission "
+            "lists into the source-neutral catalog (dry-run only from Team UI)."
+        ),
+        kind="run",
+        module_path="app.cli.mission_catalog_sync",
+        func_name="run_dry_run_checks",
+    ),
+    "sensor_tracker": OpsScriptSpec(
+        id="sensor_tracker",
+        label="Sensor Tracker browser",
+        description=(
+            "Live read-only search of Sensor Tracker platforms, deployments, "
+            "loggers, instruments, sensors, and components."
+        ),
+        kind="page",
+        href="/team/sensor-tracker",
+    ),
+    "visualizations": OpsScriptSpec(
+        id="visualizations",
+        label="Visualizations gallery",
+        description=(
+            "Named static fleet charts from Sensor Tracker (platform share, "
+            "sensor days, use over time). Rebuild on demand; served from disk."
+        ),
+        kind="page",
+        href="/team/visualizations",
+    ),
 }
 
 

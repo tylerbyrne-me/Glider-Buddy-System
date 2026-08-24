@@ -1,6 +1,7 @@
 import { getUserProfile, checkAuth } from "/static/js/auth.js";
 import { fetchWithAuth, showToast, apiRequest } from "/static/js/api.js";
 import { formatUtcDate, formatUtcDateTime } from '/static/js/datetime_utils.js';
+import { announcementShowdownOptions } from '/static/js/markdown_toolbar.js';
 
 document.addEventListener('DOMContentLoaded', function() {
     const FEAT = (window.APP_FEATURES || {});
@@ -109,7 +110,9 @@ document.addEventListener('DOMContentLoaded', function() {
             const platform = window.APP_PLATFORM || '';
             const query = platform ? `?platform=${encodeURIComponent(platform)}` : '';
             const announcements = await apiRequest(`/api/announcements/active${query}`, 'GET');
-            const converter = (typeof showdown !== 'undefined') ? new showdown.Converter() : null;
+            const converter = (typeof showdown !== 'undefined')
+                ? new showdown.Converter(announcementShowdownOptions())
+                : null;
             
             // Filter out already acknowledged announcements
             const unacknowledgedAnnouncements = announcements.filter(a => !a.is_acknowledged_by_user);

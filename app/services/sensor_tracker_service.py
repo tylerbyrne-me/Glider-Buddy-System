@@ -507,6 +507,68 @@ class SensorTrackerService:
         except Exception as e:
             logger.error(f"Error listing deployments: {e}")
             raise
+
+    def _normalize_list_payload(self, response: Any) -> List[Dict[str, Any]]:
+        if not response or not hasattr(response, "dict"):
+            return []
+        payload = response.dict
+        if isinstance(payload, dict):
+            if "results" in payload and isinstance(payload["results"], list):
+                return [r for r in payload["results"] if isinstance(r, dict)]
+            return [payload]
+        if isinstance(payload, list):
+            return [r for r in payload if isinstance(r, dict)]
+        return []
+
+    async def list_platforms(self) -> List[Dict[str, Any]]:
+        """List all platforms (vehicles) from Sensor Tracker."""
+        try:
+            logger.info("Fetching all platforms from Sensor Tracker")
+            response = stc.platform.get()
+            platforms = self._normalize_list_payload(response)
+            logger.info("Sensor Tracker platforms: %d", len(platforms))
+            return platforms
+        except Exception as e:
+            logger.warning("Error listing platforms: %s", e)
+            return []
+
+    async def list_platform_types(self) -> List[Dict[str, Any]]:
+        """List platform type / model definitions from Sensor Tracker.
+
+        Tries ``platform_type`` then ``platformtype`` client attributes; falls
+        back to an empty list when the endpoint is unavailable.
+        """
+        for attr in ("platform_type", "platformtype", "PlatformType"):
+            if not hasattr(stc, attr):
+                continue
+            try:
+                endpoint = getattr(stc, attr)
+                response = endpoint.get()
+                types = self._normalize_list_payload(response)
+                if types:
+                    logger.info("Sensor Tracker platform types via %s: %d", attr, len(types))
+                    return types
+            except Exception as e:
+                logger.debug("platform type fetch via %s failed: %s", attr, e)
+        # HTTP fallback used by other ST endpoints when client helpers are incomplete
+        try:
+            base_url = stc.HOST.rstrip("/")
+            import httpx
+
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                for path in ("/api/platform_type/", "/api/platformtype/"):
+                    url = f"{base_url}{path}"
+                    response = await client.get(url)
+                    if response.status_code != 200:
+                        continue
+                    data = response.json()
+                    if isinstance(data, dict) and isinstance(data.get("results"), list):
+                        return [r for r in data["results"] if isinstance(r, dict)]
+                    if isinstance(data, list):
+                        return [r for r in data if isinstance(r, dict)]
+        except Exception as e:
+            logger.warning("Error listing platform types via HTTP: %s", e)
+        return []
     
     async def parse_deployment(self, deployment_data: Any) -> Dict[str, Any]:
         """

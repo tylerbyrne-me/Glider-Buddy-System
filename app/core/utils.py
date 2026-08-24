@@ -433,8 +433,9 @@ def find_mission_overview_for_mission(session: Any, mission_id: str) -> Optional
     """
     Resolve MissionOverview for a dashboard or sync mission id.
 
-    Tries exact id, deployment code (e.g. m219), and folder-style ids that embed the code
-    (e.g. m219-SV3-1121 when syncing deployment m219).
+    Tries exact non-bare id first (folder-style or a historical ``1071-m169`` URL).
+    Bare ``m219`` prefers a sibling folder-style ``m219-SV3-1121`` over the bare row;
+    legacy ``####-m###`` PKs are last-resort only.
     """
     from sqlmodel import select
 
@@ -446,12 +447,11 @@ def find_mission_overview_for_mission(session: Any, mission_id: str) -> Optional
     trimmed = mission_id.strip()
     mission_base = deployment_mission_code_from_mission_id(trimmed)
 
-    for key in (trimmed, mission_base):
-        if not key:
-            continue
-        overview = session.get(MissionOverview, key)
-        if overview:
-            return overview
+    # Exact non-bare PK wins (folder-style or a historical ``1071-m169`` URL).
+    # Bare ``m227`` continues so a sibling ``m227-SV3-1071`` can win.
+    exact = session.get(MissionOverview, trimmed)
+    if exact and not re.match(r"^m\d+$", trimmed, re.IGNORECASE):
+        return exact
 
     if not mission_base:
         return None
@@ -464,18 +464,18 @@ def find_mission_overview_for_mission(session: Any, mission_id: str) -> Optional
         )
     ).all()
 
-    exact_base = [o for o in pattern_candidates if o.mission_id == mission_base]
-    if len(exact_base) == 1:
-        return exact_base[0]
-
     code_matches = [
         o
         for o in pattern_candidates
         if deployment_mission_code_from_mission_id(o.mission_id) == mission_base
     ]
+    from app.core.mission_catalog.live_link import prefer_wave_glider_overview
+
+    preferred = prefer_wave_glider_overview(code_matches)
+    if preferred is not None:
+        return preferred
     if len(code_matches) == 1:
         return code_matches[0]
-
     return None
 
 

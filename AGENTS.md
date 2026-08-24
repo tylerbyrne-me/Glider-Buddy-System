@@ -1,10 +1,6 @@
 # Agent and automation notes
 
-## Cursor / agent models
 
-Do **not** use Grok models (e.g. `cursor-grok-*`, “Grok” in the model picker) for this project. Prefer the user’s selected default or another non-Grok model (e.g. Composer, Claude, GPT). If a subagent or task explicitly requests Grok, skip Grok and use an allowed alternative instead.
-
-Always-apply rule: [`.cursor/rules/no-grok-model.mdc`](.cursor/rules/no-grok-model.mdc).
 
 ## Project tracking & docs
 
@@ -60,7 +56,7 @@ Root logging is configured in `app/core/infra/logging_config.py` (called from `a
 At `INFO`, third-party `httpx` / `httpcore` / `apscheduler` are quieted to WARNING. Each HTTP request gets an `X-Request-ID` (propagated from the client when valid, otherwise generated); it appears in log lines as `[request_id]` and is echoed on the response. Background/startup lines use `[-]`. Grep operational milestones with:
 
 ```bash
-sudo journalctl -u gliderbuddy --since "5 min ago" | grep -E 'STARTUP:|AUTOMATED:|BACKGROUND TASK:|SYNC:|SLOCUM WARM:|SLOWREQ|APP5XX|WORKER TIMEOUT|startup leader'
+sudo journalctl -u gliderbuddy --since "5 min ago" | grep -E 'STARTUP:|AUTOMATED:|BACKGROUND TASK:|SYNC:|SLOCUM WARM:|SLOCUM POKE:|SLOWREQ|APP5XX|WORKER TIMEOUT|startup leader'
 ```
 
 Expect clear lifecycle summaries without per-request HTTP URLs. Re-enable detail with `LOG_LEVEL=DEBUG` and restart. To follow one request: `grep '<id>'` using the `X-Request-ID` response header.
@@ -176,6 +172,7 @@ With gunicorn `-w 2`, only the **leader** worker (fcntl lock on `data_store/.app
  - `system_navwarn_prefetch_job` (every 30m when `navwarn_map_layer` is on; incremental page-1)
  - `system_navwarn_cleanup_job` (daily :30 UTC; stranded temps + catalog reconcile when feature on)
   - `system_dmon_review_prefetch_job` (every 12h; Robots4Whales DMON analyst-review cache for deployments with `dmon` card + `robots4whales_url`)
+  - `slocum_erddap_poke_job` (every 90m default; allDatasets maxTime poke, incremental mirror sync only when the tail advanced)
 
 The other worker serves HTTP; cache warms on demand. Admin **scheduler status** API returns an empty job list on non-leader workers (scheduler lives on the leader only).
 
@@ -213,6 +210,14 @@ ls /home/cove/Glider-Buddy-System/data_store/dmon_review_cache 2>/dev/null | wc 
 du -sh /home/cove/Glider-Buddy-System/data_store/slocum_cache 2>/dev/null
 find /home/cove/Glider-Buddy-System/data_store/slocum_cache -name '*.tmp' 2>/dev/null | wc -l
 
+# Team Visualizations (static fleet charts; rebuild via UI/CLI, no scheduled job)
+du -sh /home/cove/Glider-Buddy-System/data_store/team_viz_cache /home/cove/Glider-Buddy-System/data_store/team_viz_outputs 2>/dev/null
+ls /home/cove/Glider-Buddy-System/data_store/team_viz_outputs 2>/dev/null
+
+# CIOPS-East ice WMS tiles (on-demand; no scheduled job)
+du -sh /home/cove/Glider-Buddy-System/data_store/ciops_ice_cache 2>/dev/null
+ls /home/cove/Glider-Buddy-System/data_store/ciops_ice_cache 2>/dev/null | wc -l
+
 # Confirm feature toggle / cleanup jobs on leader
 # FEATURE_TOGGLES_JSON weather_map_layers / iridium_map_layer / navwarn_map_layer; admin scheduler UI or:
 sudo journalctl -u gliderbuddy --since "1 day ago" | grep -E 'Weather map cleanup|Bathymetry cache cleanup|Iridium TLE prefetch|Iridium TLE cleanup|NAVWARN prefetch|NAVWARN cleanup|Slocum overage cleanup|orphan mirror|CelesTrak|upstream_ttl_gate'
@@ -223,6 +228,8 @@ One-time reclaim (safe; rebuilds on next use):
 - Bathy: `rm -rf data_store/bathy_cache/*.npz` — admin `GET/POST /api/reporting/bathy-cache/status|purge`
 - Iridium: `rm -rf data_store/iridium_cache` — admin `GET/POST /api/map/iridium/cache/status|purge` (`force_all=true` wipes TLEs + rate-limit gate). Ensure the directory is owned by the service user (`cove`) and writable; atomic renames use a copy fallback on NFS/SELinux, but leftover `*.tmp` files usually mean a prior permission failure — remove them after fixing ownership (`chown -R cove:cove data_store/iridium_cache`).
 - NAVWARN: `rm -rf data_store/navwarn_cache` — admin `GET/POST /api/map/navwarn/cache/status|purge` (`force_all=true` wipes GeoJSON + rate-limit gate). Keep owned by `cove:cove`.
+- Team viz: `rm -rf data_store/team_viz_cache data_store/team_viz_outputs` — rebuild via `/team/visualizations` or `python -m app.cli.team_visualizations --chart all`. Keep owned by `cove:cove`.
+- CIOPS ice: `rm -rf data_store/ciops_ice_cache` — rebuilds on next home-map tile request when `ciops_ice_map_layer` is on. Keep owned by `cove:cove`.
 - Slocum mirror: ensure `data_store/slocum_cache` is owned by `cove:cove` (`chown -R cove:cove data_store/slocum_cache`). `os.replace` warnings with `errno=13` on `*.parquet.*.tmp` → `*.parquet` are expected on NFS/SELinux; the copy fallback still updates data. Stranded temps are reclaimed by `slocum_overage_cleanup_job` (or `find data_store/slocum_cache -name '*.tmp' -delete` after fixing ownership).
 - Mission CSV sync (`data/<mission_id>/`): same rename quirk — keep owned by `cove:cove` (`chown -R cove:cove data`). Sync uses copy fallback after `os.replace` refusal; clean stranded `*.tmp` with `find data -name '*.tmp' -delete`.
 

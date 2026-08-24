@@ -29,7 +29,7 @@ Left-nav summary cards soft-refresh via `GET /api/slocum/sensor-summaries/{datas
 |------|----------------|
 | CTD | Depth-vs-time profiles (temp / conductivity / density) with optional vehicle-depth overlay |
 | Power | Battery, coulomb AmpHr (daily + total), BMS currents |
-| Flight | Pitch / roll / fin; **thruster** power (W) + commanded on (%) on dual axes |
+| Flight | Pitch / fin (measured vs commanded); **roll measured only** (no commanded roll); **thruster** power (W) + commanded on (%) on dual axes |
 | Navigation | Heading, depth rate, depth/altimeter, speed, depth-averaged currents |
 | Vehicle Health | Vacuum; leak detect channels (main / forward / science) with **digifin** on a secondary Y axis; SFMC call length |
 | Dissolved Oxygen | Placeholder charts (data wiring TBD) |
@@ -37,7 +37,7 @@ Left-nav summary cards soft-refresh via `GET /api/slocum/sensor-summaries/{datas
 
 ### Data path
 
-Dashboard charts load from the rolling **dashboard** mirror under `data_store/slocum_cache/` (with overage cache for windows the mirror does not fully cover). Variables must be present in:
+Dashboard charts load from the rolling **dashboard** mirror under `data_store/slocum_cache/` (with overage cache for windows the mirror does not fully cover). After startup warm, a leader **ERDDAP poke** (`slocum_erddap_poke_job`, default every 90 min via `SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES`) reads `allDatasets` `maxTime` and only then incremental-syncs when Ocean Track’s tail advanced. Admin **Check ERDDAP now** on Manage Slocum Mission Overviews runs the same poke for the selected dataset. Wave Glider realtime is not on ERDDAP yet — future split is in [erddap_poke.md](./erddap_poke.md). Variables must be present in:
 
 1. `SLOCUM_DASHBOARD_VARIABLES` ([`app/platforms/slocum/erddap_client.py`](../../app/platforms/slocum/erddap_client.py))
 2. Dashboard rename/stems + `preprocess_slocum_dashboard_df` std columns ([`app/core/data/processors.py`](../../app/core/data/processors.py))
@@ -101,6 +101,7 @@ All Slocum endpoints require authentication (same as Wave Glider). When `slocum_
 | `PUT /api/slocum/deployments/{id}/robots4whales-url` | Admin: set/clear deployment page URL (`dcs.whoi.edu` `*.shtml`). |
 | `GET /api/slocum/checklists/{dataset_id}/series?item_id=...` | Checklist Plot-it time series (depth + value / multi-series). |
 | `GET /api/slocum/checklists/compare?reference_id=&other_id=` | Form-to-form checklist diff (`changed_item_ids`). |
+| `POST /api/slocum/erddap-poke` | Admin: cheap `allDatasets` maxTime poke (`dataset_id` optional; `sync_if_new` default true). |
 
 Dataset ID format: `{glider}_{YYYYMMDD}_{mission_id}_{realtime|delayed}` (e.g. `peggy_20250522_206_delayed`). The map endpoint returns points with `lat`, `lon`, `timestamp` for use with existing map/KML tools.
 
@@ -132,6 +133,7 @@ The exploration script `exploration/slocum_erddap/fetch_sample.py` also uses the
 - **`app/core/data/processors.py`**: `preprocess_slocum_dashboard_df` / CTD / track / checklist normalize ERDDAP columns for parquet and charts.
 - **`app/platforms/slocum/bundle_registry.py`**: Bundle specs + `BUNDLE_SCHEMA_VERSION`.
 - **`app/platforms/slocum/mirror_service.py`** / **`overage_cache.py`**: Rolling mirror and temporary overage windows.
+- **`app/platforms/slocum/erddap_poke.py`**: Cheap allDatasets maxTime poke; scheduled job + admin Check ERDDAP now.
 - **`app/routers/slocum.py`**: Mission dashboard chart/CSV/profile APIs; SFMC connection-durations + DMON ASC listing endpoints.
 - **`app/routers/slocum_checklists.py`**: Daily checklist template/submit/series/compare APIs and form page.
 - **`app/platforms/slocum/checklist_autofill.py`** / **`checklist_compare.py`** / **`checklist_definitions.py`**: Autofill, Plot-it payloads, DMON Science-item gating, form-to-form diff, static checklist schema.

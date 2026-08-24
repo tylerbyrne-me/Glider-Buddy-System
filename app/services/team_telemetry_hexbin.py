@@ -222,7 +222,105 @@ def preprocess_and_filter(
     )
     filtered = tele.loc[mask, ["Timestamp", "Latitude", "Longitude"]].copy()
     filtered["mission_folder"] = folder
+    filtered["source_kind"] = "wgms_remote"
     return filtered
+
+
+def _normalize_erddap_track(df: pd.DataFrame) -> pd.DataFrame:
+    rename: dict[str, str] = {}
+    for col in df.columns:
+        key = str(col).strip().lower().split(" ")[0]
+        if key in {"time", "latitude", "longitude"} and key not in rename.values():
+            rename[col] = key
+    out = df.rename(columns=rename)
+    keep = [c for c in ("time", "latitude", "longitude") if c in out.columns]
+    return out.loc[:, keep].copy()
+
+
+async def collect_points_erddap(
+    extent: Tuple[float, float, float, float],
+    *,
+    deadline: float,
+    max_missions: int,
+    dataset_ids: Optional[Sequence[str]] = None,
+) -> Tuple[pd.DataFrame, List[str], List[str], bool]:
+    """Fetch Wave Glider ERDDAP tracks from the catalog (or explicit dataset ids)."""
+    from app.core.data.erddap_tabledap import fetch_tabledap_track
+    from app.core.infra.db import sqlite_engine
+    from app.core.mission_catalog.schemas import MissionCatalogQuery
+    from app.core.mission_catalog.service import list_catalog_missions
+    from sqlmodel import Session
+
+    contributed: List[str] = []
+    skipped: List[str] = []
+    frames: List[pd.DataFrame] = []
+    timed_out = False
+    lon_min, lon_max, lat_min, lat_max = extent
+
+    refs: List[str] = []
+    if dataset_ids:
+        refs = [str(d).strip() for d in dataset_ids if d and str(d).strip()]
+    else:
+        with Session(sqlite_engine) as session:
+            missions = list_catalog_missions(
+                MissionCatalogQuery(
+                    platform_family="wave_glider",
+                    source_kind="erddap",
+                    capability="track",
+                    limit=max_missions,
+                ),
+                session,
+            )
+            for mission in missions:
+                for source in mission.sources:
+                    if source.source_kind == "erddap" and source.enabled:
+                        refs.append(source.external_ref)
+            refs = refs[:max_missions]
+
+    for dataset_id in refs:
+        if time.monotonic() > deadline:
+            timed_out = True
+            break
+        try:
+            raw = await asyncio.to_thread(fetch_tabledap_track, dataset_id)
+        except Exception as exc:
+            logger.warning("ERDDAP track failed for %s: %s", dataset_id, exc)
+            skipped.append(dataset_id)
+            continue
+        if raw is None or raw.empty:
+            skipped.append(dataset_id)
+            continue
+        track = _normalize_erddap_track(raw)
+        if track.empty or "latitude" not in track.columns or "longitude" not in track.columns:
+            skipped.append(dataset_id)
+            continue
+        track = track.dropna(subset=["latitude", "longitude"])
+        mask = (
+            track["longitude"].between(lon_min, lon_max)
+            & track["latitude"].between(lat_min, lat_max)
+        )
+        filtered = track.loc[mask].copy()
+        if filtered.empty:
+            continue
+        filtered = filtered.rename(
+            columns={
+                "time": "Timestamp",
+                "latitude": "Latitude",
+                "longitude": "Longitude",
+            }
+        )
+        filtered["mission_folder"] = dataset_id
+        filtered["source_kind"] = "erddap"
+        contributed.append(dataset_id)
+        frames.append(filtered[["Timestamp", "Latitude", "Longitude", "mission_folder", "source_kind"]])
+        logger.info("%s: %d ERDDAP points in box", dataset_id, len(filtered))
+
+    if not frames:
+        empty = pd.DataFrame(
+            columns=["Timestamp", "Latitude", "Longitude", "mission_folder", "source_kind"]
+        )
+        return empty, contributed, skipped, timed_out
+    return pd.concat(frames, ignore_index=True), contributed, skipped, timed_out
 
 
 async def collect_points(
@@ -274,7 +372,9 @@ async def collect_points(
             logger.info("%s: %d points in box", folder, len(filtered))
 
     if not frames:
-        empty = pd.DataFrame(columns=["Timestamp", "Latitude", "Longitude", "mission_folder"])
+        empty = pd.DataFrame(
+            columns=["Timestamp", "Latitude", "Longitude", "mission_folder", "source_kind"]
+        )
         return empty, contributed, skipped, timed_out
 
     combined = pd.concat(frames, ignore_index=True)
@@ -410,6 +510,7 @@ async def async_generate_hexbin(
     include_bathymetry: bool = True,
     max_missions: int = DEFAULT_MAX_MISSIONS,
     time_budget_s: float = DEFAULT_TIME_BUDGET_S,
+    source_filter: str = "wgms",
 ) -> TelemetryHexbinResult:
     started = time.perf_counter()
     deadline = time.monotonic() + max(30.0, float(time_budget_s))
@@ -431,39 +532,85 @@ async def async_generate_hexbin(
             duration_ms=int((time.perf_counter() - started) * 1000),
         )
 
-    timeout = httpx.Timeout(60.0, connect=15.0)
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        if missions:
-            folders = [m.strip() for m in missions.split(",") if m.strip()]
-        else:
-            folders = await discover_past_mission_folders(client)
-            if len(folders) > max_missions:
-                logger.info(
-                    "Capping discovered missions from %d to %d (pass missions= to override)",
-                    len(folders),
-                    max_missions,
-                )
-                folders = folders[-max_missions:]
-
-    if not folders:
+    source_mode = (source_filter or "wgms").strip().lower()
+    if source_mode not in {"wgms", "erddap", "all"}:
         return TelemetryHexbinResult(
             success=False,
-            error="No past mission folders to process",
-            summary="Error: no past mission folders",
+            error=f"Invalid source_filter={source_filter!r}; use wgms|erddap|all",
+            summary="Error: invalid source_filter",
             duration_ms=int((time.perf_counter() - started) * 1000),
         )
 
-    combined, contributed, skipped, timed_out = await collect_points(
-        folders, extent, refresh=refresh, deadline=deadline
-    )
-    if timed_out and combined.empty:
+    explicit = [m.strip() for m in missions.split(",")] if missions else []
+    explicit = [m for m in explicit if m]
+    frames: List[pd.DataFrame] = []
+    contributed: List[str] = []
+    skipped: List[str] = []
+    timed_out = False
+    source_counts = {"wgms_remote": 0, "erddap": 0}
+
+    want_wgms = source_mode in {"wgms", "all"}
+    want_erddap = source_mode in {"erddap", "all"}
+
+    if want_wgms:
+        timeout = httpx.Timeout(60.0, connect=15.0)
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            if explicit and source_mode == "wgms":
+                folders = explicit
+            elif explicit and source_mode == "all":
+                # Treat non-ERDDAP-looking ids as WGMS folders
+                folders = [m for m in explicit if "_" not in m or not m.endswith(("realtime", "delayed"))]
+            else:
+                folders = await discover_past_mission_folders(client)
+                if len(folders) > max_missions:
+                    logger.info(
+                        "Capping discovered missions from %d to %d (pass missions= to override)",
+                        len(folders),
+                        max_missions,
+                    )
+                    folders = folders[-max_missions:]
+
+        if folders:
+            wgms_df, wgms_ok, wgms_skip, wgms_to = await collect_points(
+                folders, extent, refresh=refresh, deadline=deadline
+            )
+            timed_out = timed_out or wgms_to
+            contributed.extend(wgms_ok)
+            skipped.extend(wgms_skip)
+            if not wgms_df.empty:
+                frames.append(wgms_df)
+                source_counts["wgms_remote"] = int(len(wgms_df))
+
+    if want_erddap and time.monotonic() <= deadline:
+        erddap_ids = None
+        if explicit and source_mode in {"erddap", "all"}:
+            erddap_ids = [
+                m for m in explicit
+                if m.endswith("_realtime") or m.endswith("_delayed") or "_" in m
+            ]
+            if source_mode == "erddap":
+                erddap_ids = explicit
+        erddap_df, erddap_ok, erddap_skip, erddap_to = await collect_points_erddap(
+            extent,
+            deadline=deadline,
+            max_missions=max_missions,
+            dataset_ids=erddap_ids,
+        )
+        timed_out = timed_out or erddap_to
+        contributed.extend(erddap_ok)
+        skipped.extend(erddap_skip)
+        if not erddap_df.empty:
+            frames.append(erddap_df)
+            source_counts["erddap"] = int(len(erddap_df))
+
+    if timed_out and not frames:
         return TelemetryHexbinResult(
             success=False,
             error="Time budget exceeded before any in-box points were collected",
             summary="Error: time budget exceeded (narrow bbox or set missions=)",
             duration_ms=int((time.perf_counter() - started) * 1000),
         )
-    if combined.empty:
+    if not frames:
         return TelemetryHexbinResult(
             success=False,
             error="No telemetry points inside the box",
@@ -471,12 +618,13 @@ async def async_generate_hexbin(
             duration_ms=int((time.perf_counter() - started) * 1000),
         )
 
+    combined = pd.concat(frames, ignore_index=True)
     filename = _make_output_filename(clat, clon, size)
     output_path = output_path_for(filename)
     date_range = _format_date_range(combined["Timestamp"])
     title = (
         f"Wave Glider Coverage: {date_range}\n"
-        f"Center {clat:.2f}°, {clon:.2f}° · ~{size:.0f} km box"
+        f"Center {clat:.2f}°, {clon:.2f}° · ~{size:.0f} km box · sources={source_mode}"
     )
     plot_hexbin(
         combined,
@@ -489,8 +637,10 @@ async def async_generate_hexbin(
     duration_ms = int((time.perf_counter() - started) * 1000)
     summary_parts = [
         f"Wrote {filename}",
-        f"{len(combined)} points from {len(contributed)} missions",
+        f"{len(combined)} points from {len(set(contributed))} missions",
         f"skipped={len(skipped)}",
+        f"wgms={source_counts['wgms_remote']}",
+        f"erddap={source_counts['erddap']}",
         f"duration_ms={duration_ms}",
     ]
     if timed_out:
@@ -500,9 +650,10 @@ async def async_generate_hexbin(
         output_url=f"/api/team/telemetry-hexbin/outputs/{filename}",
         filename=filename,
         point_count=len(combined),
-        mission_count=len(contributed),
+        mission_count=len(set(contributed)),
         duration_ms=duration_ms,
         summary="; ".join(summary_parts),
+        source_counts=source_counts,
     )
 
 

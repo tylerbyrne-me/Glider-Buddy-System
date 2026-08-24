@@ -80,9 +80,25 @@ class Settings(BaseSettings):
     # See config/feature_toggles.example.json. wave_glider_specific_nav: WG-only nav items.
     # iridium_map_layer: home Leaflet Iridium overlay. navwarn_map_layer: CCG NAVWARN overlay.
     # vessel_density_map_layer: DFO AIS vessel-density MapServer rasters (monthly).
+    # ciops_ice_map_layer: MSC GeoMet CIOPS-East sea-ice concentration WMS overlay.
     # public_login_map: unauthenticated /login map.
     feature_toggles_file: Optional[Path] = None
     feature_toggles_json: str = default_feature_toggles_json()
+
+    # Source-neutral mission catalog provider manifest (non-secret).
+    mission_data_providers_file: Path = Path("config/mission_data_providers.json")
+    mission_catalog_stale_miss_threshold: int = 3
+    mission_catalog_sync_cron_hour: int = 6
+    mission_catalog_startup_max_age_hours: int = 24
+    # When false (default), leader/startup catalog jobs stay dry-run-only.
+    # CLI ``--apply`` still writes; set true only after identity gate report is clean.
+    mission_catalog_auto_apply: bool = False
+    # When true, WG sync_all_realtime_missions reads keys via catalog enablement API
+    # (still env-equivalent strings). Default false until soak.
+    mission_catalog_wg_sync_from_catalog: bool = False
+    # When true, Slocum warm_active_slocum_datasets reads keys via catalog enablement
+    # (still exact ACTIVE_SLOCUM_DATASETS / alias strings). Default false until soak.
+    mission_catalog_slocum_warm_from_catalog: bool = False
 
     # --- Slocum ERDDAP Settings ---
     # Ocean Track Slocum glider ERDDAP server; override in .env if needed
@@ -105,6 +121,10 @@ class Settings(BaseSettings):
     slocum_mirror_retention_hours: int = 72
     # Default warm/sync window aligned with dashboard UI (DEFAULT_HOURS = 24).
     slocum_warm_hours: int = 24
+    # Cheap allDatasets maxTime poke interval. Ocean Track processes new files
+    # ~every 3h; 90 min notices a new tail within one processing cycle without
+    # a full dashboard/CTD/checklist pull on every tick.
+    slocum_erddap_poke_interval_minutes: int = 90
     # Overlap when merging incremental ERDDAP pulls into the mirror.
     slocum_sync_overlap_hours: int = 2
     # Ops escape hatch only: ERDDAP orderByClosest minutes for dashboard mirror pulls.
@@ -190,6 +210,15 @@ class Settings(BaseSettings):
     vessel_density_cache_dir: Path = Path("data_store/vessel_density_cache")
     vessel_density_cache_ttl_seconds: int = 3600  # 1 h tile export cache
     vessel_density_http_timeout_seconds: float = 45.0
+
+    # --- CIOPS-East sea ice (home-page GeoMet WMS proxy) ---
+    ciops_geomet_url: str = "https://geo.weather.gc.ca/geomet"
+    ciops_ice_layer: str = "CIOPS-East_2km_SeaIceAreaFraction"
+    ciops_ice_default_style: str = "SEA_ICECONC-CIS"
+    ciops_ice_cache_dir: Path = Path("data_store/ciops_ice_cache")
+    ciops_ice_cache_ttl_seconds: int = 3600  # 1 h GetMap tile cache
+    ciops_ice_capabilities_ttl_seconds: int = 600  # 10 min GetCapabilities
+    ciops_ice_http_timeout_seconds: float = 45.0
 
     # --- Public login-page map (unauthenticated) ---
     public_map_cache_dir: Path = Path("data_store/public_map_cache")

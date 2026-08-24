@@ -301,6 +301,12 @@ def _mirror_result_metadata(
     stale: bool = False,
     fallback_error: Optional[str] = None,
 ) -> dict[str, Any]:
+    """
+    Metadata for a mirror-served bundle.
+
+    ``stale``: mirror max is before ``requested_end`` (normal for realtime).
+    ``fallback_error``: a live ERDDAP fetch failed and this is degraded overlap.
+    """
     mirror_max = _mirror_max_utc(mirror_df)
     meta: dict[str, Any] = {
         "data_source": "mirror",
@@ -651,7 +657,9 @@ async def get_bundle_dataframe(
         )
 
     # Prefer partial mirror over a live ERDDAP round-trip when the mirror already
-    # overlaps the requested window (typical realtime case: mirror minutes behind "now").
+    # overlaps the requested window (typical realtime case: last sample minutes
+    # behind wall-clock "now"). ``stale=True`` here is expected, not an outage —
+    # set ``fallback_error`` only when a live ERDDAP fetch actually failed.
     if not overlap.empty:
         return OverageResult(
             df=overlap,

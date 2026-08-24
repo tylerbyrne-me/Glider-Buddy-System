@@ -25,6 +25,12 @@ from .enums import (
     JobStatusEnum,
     JobRunOutcomeEnum,
     JobPlatformEnum,
+    CatalogOperationalState,
+    CatalogSyncPolicy,
+    CatalogSourceKind,
+    CatalogSourceVariant,
+    CatalogMatchStatus,
+    CatalogIdentityKind,
 )
 
 # Import database models
@@ -64,6 +70,10 @@ from .database import (
     SlocumDeploymentNote,
     SlocumDeploymentMedia,
     SlocumSfmcSnapshot,
+    CatalogPlatform,
+    CatalogMission,
+    CatalogExternalIdentity,
+    CatalogMissionSource,
 )
 
 # Import Pydantic schemas
@@ -156,6 +166,21 @@ from .schemas import (
     SfmcLognoteImportResult,
     TelemetryHexbinRequest,
     TelemetryHexbinResult,
+    TeamVizChartInfo,
+    TeamVizGalleryResponse,
+    TeamVizGenerateRequest,
+    TeamVizChartGenerateResult,
+    TeamVizGenerateAllResult,
+    SensorTrackerEntityInfo,
+    SensorTrackerMetaResponse,
+    SensorTrackerSummaryRow,
+    SensorTrackerListResponse,
+    SensorTrackerBuddyOverlay,
+    SensorTrackerDetailResponse,
+    SensorTrackerRelatedItem,
+    SensorTrackerRelatedResponse,
+    SensorTrackerAnalyticsMetric,
+    SensorTrackerAnalyticsResponse,
     
     # Knowledge base models
     KnowledgeDocumentCreate,
@@ -203,6 +228,12 @@ __all__ = [
     "JobStatusEnum",
     "JobRunOutcomeEnum",
     "JobPlatformEnum",
+    "CatalogOperationalState",
+    "CatalogSyncPolicy",
+    "CatalogSourceKind",
+    "CatalogSourceVariant",
+    "CatalogMatchStatus",
+    "CatalogIdentityKind",
     
     # Database models
     "UserInDB",
@@ -240,6 +271,10 @@ __all__ = [
     "SlocumDeploymentNote",
     "SlocumDeploymentMedia",
     "SlocumSfmcSnapshot",
+    "CatalogPlatform",
+    "CatalogMission",
+    "CatalogExternalIdentity",
+    "CatalogMissionSource",
     
     # Pydantic schemas (add all schema names here)
     "ReportDataParams",
@@ -313,6 +348,21 @@ __all__ = [
     "SfmcLognoteImportResult",
     "TelemetryHexbinRequest",
     "TelemetryHexbinResult",
+    "TeamVizChartInfo",
+    "TeamVizGalleryResponse",
+    "TeamVizGenerateRequest",
+    "TeamVizChartGenerateResult",
+    "TeamVizGenerateAllResult",
+    "SensorTrackerEntityInfo",
+    "SensorTrackerMetaResponse",
+    "SensorTrackerSummaryRow",
+    "SensorTrackerListResponse",
+    "SensorTrackerBuddyOverlay",
+    "SensorTrackerDetailResponse",
+    "SensorTrackerRelatedItem",
+    "SensorTrackerRelatedResponse",
+    "SensorTrackerAnalyticsMetric",
+    "SensorTrackerAnalyticsResponse",
     "KnowledgeDocumentCreate",
     "KnowledgeDocumentUpdate",
     "KnowledgeDocumentRead",

@@ -42,6 +42,12 @@ async def sync_mission_file(
     base_remote_url = settings.remote_data_url.rstrip("/")
     remote_folder = "output_realtime_missions" if is_realtime else "output_past_missions"
     remote_base_url = f"{base_remote_url}/{remote_folder}"
+
+    from app.core.mission_catalog.wgms_resolve import resolve_wgms_folder
+
+    remote_mission_folder = (
+        resolve_wgms_folder(mission_id, prefer_collection=remote_folder) or mission_id
+    )
     
     # Determine local path
     mission_folder = settings.local_data_base_path / mission_id
@@ -72,7 +78,7 @@ async def sync_mission_file(
     
     filename = reports[report_type]
     local_file_path = mission_folder / filename
-    remote_url = f"{remote_base_url}/{mission_id}/{filename}"
+    remote_url = f"{remote_base_url}/{remote_mission_folder}/{filename}"
     
     # Check if local file exists and get its modification time
     local_mtime = None
@@ -92,7 +98,14 @@ async def sync_mission_file(
     
     try:
         # Download file from remote
-        logger.debug(f"Syncing {report_type} for {mission_id} from {remote_url} to {local_file_path}")
+        logger.debug(
+            "Syncing %s for %s (folder=%s) from %s to %s",
+            report_type,
+            mission_id,
+            remote_mission_folder,
+            remote_url,
+            local_file_path,
+        )
         response = await client.get(remote_url)
         response.raise_for_status()
         
@@ -233,9 +246,39 @@ async def sync_all_realtime_missions() -> dict:
         Dictionary mapping mission_id to (successful, failed) sync counts
     """
     results = {}
-    # Filter out empty strings and whitespace-only mission IDs
-    active_missions = [m for m in settings.active_realtime_missions if m and m.strip()]
-    
+    # Prefer catalog enablement API when configured; still returns exact env key strings.
+    active_missions: list[str]
+    if getattr(settings, "mission_catalog_wg_sync_from_catalog", False):
+        try:
+            from app.core.infra.db import sqlite_engine
+            from app.core.mission_catalog.enablement import (
+                list_catalog_sync_targets,
+                log_enablement_parity,
+            )
+            from sqlmodel import Session as SQLModelSession
+
+            with SQLModelSession(sqlite_engine) as session:
+                log_enablement_parity(session)
+                active_missions = list_catalog_sync_targets("wave_glider", session)
+        except Exception as exc:
+            logger.warning(
+                "SYNC: Catalog enablement failed (%s); falling back to ACTIVE_REALTIME_MISSIONS",
+                exc,
+            )
+            active_missions = [
+                m for m in settings.active_realtime_missions if m and m.strip()
+            ]
+    else:
+        active_missions = [
+            m for m in settings.active_realtime_missions if m and m.strip()
+        ]
+        try:
+            from app.core.mission_catalog.enablement import log_enablement_parity
+
+            log_enablement_parity(None)
+        except Exception:
+            pass
+
     if not active_missions:
         logger.warning("SYNC: No valid active real-time missions found. Skipping sync.")
         return results

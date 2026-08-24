@@ -34,9 +34,11 @@ DEFAULT_FEATURE_TOGGLES: dict[str, bool] = {
     "navwarn_map_layer": False,
     "map_vector_layers": False,
     "vessel_density_map_layer": False,
+    "ciops_ice_map_layer": False,
     "slocum_auto_checklist_submit": False,
     "public_login_map": False,
     "team_hub": True,
+    "mission_catalog": True,
     # Legacy / template toggles (often omitted from .env; default on)
     "mission_dashboard": True,
     "forms": True,

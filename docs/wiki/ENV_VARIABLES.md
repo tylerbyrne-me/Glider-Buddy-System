@@ -92,6 +92,7 @@ FEATURE_TOGGLES_FILE=config/feature_toggles.json
 
 # Background Tasks
 BACKGROUND_CACHE_REFRESH_INTERVAL_MINUTES=60
+# SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES=90
 
 # UI Preferences
 WEEK_STARTS_SUNDAY=True
@@ -221,6 +222,7 @@ FEATURE_TOGGLES_FILE=config/feature_toggles.json
 # BACKGROUND TASKS
 # ============================================================================
 BACKGROUND_CACHE_REFRESH_INTERVAL_MINUTES=60
+# SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES=90
 
 # ============================================================================
 # UI PREFERENCES
@@ -314,7 +316,13 @@ Some settings use JSON strings:
 - `REMOTE_MISSION_FOLDER_MAP_JSON` - Must be valid JSON
 - `ACTIVE_REALTIME_MISSIONS` - Must be valid JSON array
 - `FEATURE_TOGGLES_FILE` - Path to a JSON file (recommended; one toggle per line). Example: `config/feature_toggles.example.json`
-- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL, DFO fishery areas, NOAA shipping lanes) on home maps. Include `"vessel_density_map_layer": true` to enable DFO AIS vessel-density monthly rasters on home maps. Include `"navwarn_map_layer": true` to enable CCG NAVWARN overlays on home maps. `"team_hub"` gates the admin-only Team hub (`/team`); default **on**.
+- `FEATURE_TOGGLES_JSON` - Inline JSON object (used when no file, or as fallback if the file path is missing). Include `"public_login_map": true` to enable the unauthenticated login-page map; default off. Include `"map_vector_layers": true` to enable static GeoJSON reference-zone toggles (GOSL, DFO fishery areas, NOAA shipping lanes) on home maps. Include `"vessel_density_map_layer": true` to enable DFO AIS vessel-density monthly rasters on home maps. Include `"ciops_ice_map_layer": true` to enable MSC GeoMet CIOPS-East sea-ice forecast on home maps. Include `"navwarn_map_layer": true` to enable CCG NAVWARN overlays on home maps. `"team_hub"` gates the admin-only Team hub (`/team`); default **on**. `"mission_catalog"` gates source-neutral catalog sync; default **on**.
+- `MISSION_DATA_PROVIDERS_FILE` - Provider manifest path (default `config/mission_data_providers.json`); includes `allowed_platform_models` (ST Platforms model → family)
+- `MISSION_CATALOG_SYNC_CRON_HOUR` / `MISSION_CATALOG_STARTUP_MAX_AGE_HOURS` - Catalog reconciliation schedule (UTC hour, default 6) and startup freshness window (default 24h)
+- `MISSION_CATALOG_AUTO_APPLY` - When `true`, leader/startup catalog jobs write to SQLite; default **`false`** (dry-run only). CLI `--apply` still writes when identity gates are clean.
+- `MISSION_CATALOG_WG_SYNC_FROM_CATALOG` - When `true`, WG `sync_all_realtime_missions` reads keys via catalog enablement API (still exact `ACTIVE_REALTIME_MISSIONS` strings); default **`false`**
+- `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG` - When `true`, Slocum `warm_active_slocum_datasets` reads keys via catalog enablement API (still exact `ACTIVE_SLOCUM_DATASETS` / alias strings); default **`false`**. Code defaults stay false; local laptop may override. Prod deploy starts with all three catalog consumer flags **false**. Order: [mission catalog cutover](./how-tos/mission_catalog_cutover.md)
+- `SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES` - Leader job `slocum_erddap_poke_job` interval (default **90**). Cheap Ocean Track `allDatasets` maxTime check; incremental mirror sync only when a dataset tail advanced. Startup still does a full warm. Admin **Check ERDDAP now** on Manage Slocum Mission Overviews. Wave Glider realtime is not on ERDDAP yet. Ops: [ERDDAP poke](./how-tos/erddap_poke.md) / [Slocum how-to](./how-tos/slocum.md)
 
 ### Public login map
 - Kill switch: `public_login_map` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON`
@@ -335,6 +343,13 @@ Some settings use JSON strings:
 - Cache: `vessel_density_cache_dir` (default `data_store/vessel_density_cache`), TTL `vessel_density_cache_ttl_seconds` (default 3600), timeout `vessel_density_http_timeout_seconds`
 - Optional override: `VESSEL_DENSITY_MAPSERVER_URL`
 - Ops detail: [AIS vessel density how-to](./how-tos/vessel_density_map_layer.md)
+
+### CIOPS-East ice forecast map layer (home overlays)
+- Kill switch: `ciops_ice_map_layer` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**)
+- Upstream: MSC GeoMet WMS layer `CIOPS-East_2km_SeaIceAreaFraction` (hourly 48 h forecast); live GetMap/GetLegendGraphic proxy
+- Cache: `ciops_ice_cache_dir` (default `data_store/ciops_ice_cache`), tile TTL `ciops_ice_cache_ttl_seconds` (default 3600), capabilities TTL `ciops_ice_capabilities_ttl_seconds` (default 600), timeout `ciops_ice_http_timeout_seconds`
+- Optional overrides: `CIOPS_GEOMET_URL`, `CIOPS_ICE_LAYER`, `CIOPS_ICE_DEFAULT_STYLE` (default `SEA_ICECONC-CIS`)
+- Ops detail: [CIOPS ice how-to](./how-tos/ciops_ice_map_layer.md)
 
 ### NAVWARN map layer (home overlays)
 - Kill switch: `navwarn_map_layer` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**)

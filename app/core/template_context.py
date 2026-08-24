@@ -39,6 +39,7 @@ def _get_static_version_token() -> str:
             static / "js" / "auth.js",
             static / "js" / "ui_preferences.js",
             static / "js" / "user_settings.js",
+            static / "js" / "team" / "sensor_tracker.js",
             static / "css" / "themes.css",
             static / "css" / "custom.css",
         ]

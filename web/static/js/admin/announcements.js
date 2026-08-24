@@ -6,6 +6,7 @@
 import { checkAuth } from '/static/js/auth.js';
 import { apiRequest, showToast } from '/static/js/api.js';
 import { formatUtcDate, formatUtcDateTime } from '/static/js/datetime_utils.js';
+import { mountMarkdownToolbar, announcementShowdownOptions } from '/static/js/markdown_toolbar.js';
 
 document.addEventListener('DOMContentLoaded', async function() {
     if (!await checkAuth()) return;
@@ -29,7 +30,10 @@ document.addEventListener('DOMContentLoaded', async function() {
     const announcementTypeInput = document.getElementById('announcementType');
     const announcementPlatformInput = document.getElementById('announcementPlatform');
 
-    const markdownConverter = new showdown.Converter();
+    if (contentInput) mountMarkdownToolbar(contentInput);
+    if (editAnnouncementContentInput) mountMarkdownToolbar(editAnnouncementContentInput);
+
+    const markdownConverter = new showdown.Converter(announcementShowdownOptions());
 
     let announcementsMap = {}; // To store full announcement objects by ID
 

@@ -32,5 +32,7 @@ When fixed: set `status: fixed`, complete Resolution, and move the related line 
 | [BUG-001](./BUG-001-slocum-heading-coulomb-rename.md) | fixed | Slocum heading/coulomb charts empty until stem-aware ERDDAP rename |
 | [BUG-002](./BUG-002-dmon-asc-gap-hours-since-last.md) | fixed | Weekly report ASC “hours since last” inflated by `now=window_end` |
 | [BUG-003](./BUG-003-flip-water-depth-axis.md) | fixed | Checklist Plot-it / Nav depth: invert water-depth axis |
-| [BUG-004](./BUG-004-erddap-outage-mirror-fallback.md) | open | ERDDAP outage should still serve mirror / overage |
+| [BUG-004](./BUG-004-erddap-outage-mirror-fallback.md) | fixed | ERDDAP outage should still serve mirror / overage |
 | [BUG-005](./BUG-005-slocum-invalid-gps-status-track-points.md) | fixed | Slocum track outliers: invalid `m_gps_status` + implausible NaN-status DR |
+| [BUG-006](./BUG-006-slocum-stale-badge-false-outage.md) | fixed | Slocum source badge treated healthy `stale` mirror as ERDDAP down |
+| [BUG-007](./BUG-007-sensor-tracker-list-next-page.md) | fixed | Sensor Tracker browser Next repeated page 1 (did not follow Tracker `next`) |

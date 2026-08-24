@@ -11,6 +11,12 @@ from sqlmodel import Field as SQLModelField
 from sqlmodel import Relationship, SQLModel
 
 from .enums import (
+    CatalogIdentityKind,
+    CatalogMatchStatus,
+    CatalogOperationalState,
+    CatalogSourceKind,
+    CatalogSourceVariant,
+    CatalogSyncPolicy,
     UserRoleEnum,
 )
 
@@ -490,6 +496,12 @@ class MissionOverview(SQLModel, table=True):
         default=False,
         description="When true (and public_map_enabled), the latest weekly report PDF is linked on the public map.",
     )
+    catalog_mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        foreign_key="catalog_missions.id",
+        description="Optional FK to source-neutral CatalogMission.",
+    )
     created_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
     updated_at_utc: datetime = SQLModelField(
         default_factory=lambda: datetime.now(timezone.utc),
@@ -684,6 +696,12 @@ class SensorTrackerDeployment(SQLModel, table=True):
     last_synced_at: Optional[datetime] = None
     sync_status: str = SQLModelField(default="pending", description="pending, synced, error")
     sync_error: Optional[str] = None
+    catalog_mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        foreign_key="catalog_missions.id",
+        description="Optional FK to source-neutral CatalogMission.",
+    )
     
     created_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
     updated_at_utc: datetime = SQLModelField(
@@ -1095,6 +1113,12 @@ class SlocumDeployment(SQLModel, table=True):
             "expected_mission_file, expected_script, argos_id, u_alt_min_depth, ...)."
         ),
     )
+    catalog_mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        foreign_key="catalog_missions.id",
+        description="Optional FK to source-neutral CatalogMission.",
+    )
 
     goals: List["SlocumDeploymentGoal"] = Relationship(back_populates="deployment")
     deployment_notes: List["SlocumDeploymentNote"] = Relationship(back_populates="deployment")
@@ -1202,3 +1226,202 @@ class SlocumSfmcSnapshot(SQLModel, table=True):
     )
 
     deployment: "SlocumDeployment" = Relationship(back_populates="sfmc_snapshot")
+
+
+# --- Source-neutral mission catalog ---
+class CatalogPlatform(SQLModel, table=True):
+    """Physical platform asset (vehicle), independent of application PlatformSpec."""
+
+    __tablename__ = "catalog_platforms"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    canonical_name: str = SQLModelField(index=True, description="Canonical asset name, e.g. DL, fundy, SV3-1070")
+    platform_family: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="Optional supported family: wave_glider, slocum, or unknown/other",
+    )
+    owner_organization: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="Owning organization key, e.g. ceotr",
+    )
+    data_prefix: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="ERDDAP naming prefix stem, e.g. DL or fundy",
+    )
+    aliases_json: Optional[str] = SQLModelField(
+        default=None,
+        sa_column=Column(Text),
+        description="JSON array of alternate names for this asset",
+    )
+    is_active: bool = SQLModelField(default=True, index=True)
+    metadata_json: Optional[Dict] = SQLModelField(
+        default=None,
+        sa_column=Column(JSON),
+        description="Provider-specific platform metadata blob",
+    )
+    created_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+    )
+
+    missions: List["CatalogMission"] = Relationship(back_populates="platform")
+
+
+class CatalogMission(SQLModel, table=True):
+    """Source-neutral mission / deployment identity."""
+
+    __tablename__ = "catalog_missions"
+
+    id: str = SQLModelField(
+        primary_key=True,
+        max_length=36,
+        description="Stable UUID for this catalog mission",
+    )
+    platform_id: Optional[int] = SQLModelField(
+        default=None,
+        foreign_key="catalog_platforms.id",
+        index=True,
+    )
+    title: Optional[str] = SQLModelField(default=None, index=True)
+    deployment_number: Optional[int] = SQLModelField(default=None, index=True)
+    start_time: Optional[datetime] = SQLModelField(default=None, index=True)
+    end_time: Optional[datetime] = SQLModelField(default=None, index=True)
+    operational_state: str = SQLModelField(
+        default=CatalogOperationalState.ACTIVE.value,
+        index=True,
+        description="planned | active | completed | archived",
+    )
+    sync_policy: str = SQLModelField(
+        default=CatalogSyncPolicy.CATALOG_ONLY.value,
+        index=True,
+        description="catalog_only | on_demand | warm | continuous",
+    )
+    visibility: str = SQLModelField(
+        default="internal",
+        index=True,
+        description="internal | public_candidate | hidden",
+    )
+    has_manual_overrides: bool = SQLModelField(
+        default=False,
+        description="When true, reconciliation preserves manual links/overrides",
+    )
+    provenance: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="Origin of first create, e.g. sensor_tracker, erddap, legacy_env",
+    )
+    first_seen_at: Optional[datetime] = SQLModelField(default=None)
+    last_seen_at: Optional[datetime] = SQLModelField(default=None, index=True)
+    metadata_json: Optional[Dict] = SQLModelField(default=None, sa_column=Column(JSON))
+    created_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+    )
+
+    platform: Optional[CatalogPlatform] = Relationship(back_populates="missions")
+    identities: List["CatalogExternalIdentity"] = Relationship(back_populates="mission")
+    sources: List["CatalogMissionSource"] = Relationship(back_populates="mission")
+
+
+class CatalogExternalIdentity(SQLModel, table=True):
+    """Provider-scoped external identity for a catalog mission."""
+
+    __tablename__ = "catalog_external_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_key",
+            "identity_kind",
+            "external_id",
+            name="uq_catalog_external_identity",
+        ),
+    )
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    mission_id: str = SQLModelField(foreign_key="catalog_missions.id", index=True)
+    provider_key: str = SQLModelField(index=True, description="Provider key from mission_data_providers.json")
+    identity_kind: str = SQLModelField(
+        index=True,
+        description=f"One of {[k.value for k in CatalogIdentityKind]}",
+    )
+    external_id: str = SQLModelField(index=True)
+    is_canonical: bool = SQLModelField(default=False)
+    metadata_json: Optional[Dict] = SQLModelField(default=None, sa_column=Column(JSON))
+    created_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+    )
+
+    mission: CatalogMission = Relationship(back_populates="identities")
+
+
+class CatalogMissionSource(SQLModel, table=True):
+    """Concrete data location / version for a mission (or unmatched discovery)."""
+
+    __tablename__ = "catalog_mission_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider_key",
+            "collection",
+            "external_ref",
+            name="uq_catalog_mission_source",
+        ),
+    )
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    mission_id: Optional[str] = SQLModelField(
+        default=None,
+        foreign_key="catalog_missions.id",
+        index=True,
+        description="Null when unmatched / awaiting review",
+    )
+    provider_key: str = SQLModelField(index=True)
+    source_kind: str = SQLModelField(
+        index=True,
+        description=f"One of {[k.value for k in CatalogSourceKind]}",
+    )
+    collection: str = SQLModelField(
+        default="",
+        index=True,
+        description="Provider collection/path, e.g. output_past_missions or tabledap",
+    )
+    external_ref: str = SQLModelField(
+        index=True,
+        description="Folder name or ERDDAP dataset id",
+    )
+    source_variant: str = SQLModelField(
+        default=CatalogSourceVariant.UNKNOWN.value,
+        index=True,
+        description="realtime | delayed | unknown",
+    )
+    capabilities_json: Optional[str] = SQLModelField(
+        default=None,
+        sa_column=Column(Text),
+        description='JSON array of capabilities, e.g. ["track","telemetry"]',
+    )
+    priority: int = SQLModelField(default=100, description="Lower = preferred")
+    enabled: bool = SQLModelField(default=True, index=True)
+    match_status: str = SQLModelField(
+        default=CatalogMatchStatus.UNMATCHED.value,
+        index=True,
+        description="linked | unmatched | conflict | stale",
+    )
+    is_verified: bool = SQLModelField(default=False, index=True)
+    verified_at: Optional[datetime] = SQLModelField(default=None)
+    verification_error: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    consecutive_misses: int = SQLModelField(default=0)
+    first_seen_at: Optional[datetime] = SQLModelField(default=None)
+    last_seen_at: Optional[datetime] = SQLModelField(default=None, index=True)
+    metadata_json: Optional[Dict] = SQLModelField(default=None, sa_column=Column(JSON))
+    created_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+    )
+
+    mission: Optional[CatalogMission] = Relationship(back_populates="sources")

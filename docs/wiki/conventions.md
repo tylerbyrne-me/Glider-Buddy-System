@@ -100,7 +100,7 @@ Synced with `localStorage` via [`ui_preferences.js`](../../web/static/js/ui_pref
 
 Shared UI classes: [`custom.css`](../../web/static/css/custom.css) (`.gbs-card`, `.gbs-hint`, `.gbs-empty-state`, `.platform-choice-card`). Page CSS: [`pages/login.css`](../../web/static/css/pages/login.css), [`pages/admin.css`](../../web/static/css/pages/admin.css). Maps: [`map_tiles.js`](../../web/static/js/map_tiles.js).
 
-**Cache busting:** load `themes.css`, `custom.css`, `auth.js`, and `user_settings.js` with `?v={{ app_version }}`. `app_version` is derived from mtimes of those theme assets (plus key dashboard JS) in [`template_context.py`](../../app/core/template_context.py). When adding theme/appearance assets, include them in that token list or browsers may keep stale CSS/JS.
+**Cache busting:** load `themes.css`, `custom.css`, `auth.js`, and `user_settings.js` with `?v={{ app_version }}`. `app_version` is derived from mtimes of those theme assets (plus key dashboard JS and Team Sensor Tracker JS) in [`template_context.py`](../../app/core/template_context.py). When adding theme/appearance assets, include them in that token list or browsers may keep stale CSS/JS.
 
 ## Patterns to follow
 

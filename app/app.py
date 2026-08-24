@@ -1537,25 +1537,39 @@ async def run_weekly_reports_job():
         record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
-async def run_slocum_warm_cache_job():
-    """Scheduled job to warm Slocum ERDDAP caches for active datasets."""
-    job_id = "slocum_warm_cache_job"
+async def run_slocum_erddap_poke_job():
+    """Scheduled job: cheap ERDDAP poke, then incremental sync only if maxTime advanced."""
+    job_id = "slocum_erddap_poke_job"
     if not feature_toggles.is_feature_enabled("slocum_platform"):
         record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
         return
-    from app.platforms.slocum.cache_service import warm_active_slocum_datasets
+    from app.platforms.slocum.erddap_poke import poke_active_slocum_datasets
 
     try:
-        warmed = await warm_active_slocum_datasets()
-        logger.info("AUTOMATED: Slocum warm cache finished for %s datasets.", warmed)
+        summary = await poke_active_slocum_datasets(sync_if_new=True)
+        logger.info(
+            "AUTOMATED: Slocum ERDDAP poke finished (poked=%s synced=%s skipped=%s errors=%s).",
+            summary.get("poked"),
+            summary.get("synced"),
+            summary.get("skipped"),
+            summary.get("errors"),
+        )
         record_job_outcome(
             job_id,
             JobRunOutcomeEnum.SUCCESS,
-            f"Warmed {warmed} dataset(s)",
-            counts={"warmed": warmed},
+            (
+                f"Poked {summary.get('poked', 0)} dataset(s); "
+                f"synced {summary.get('synced', 0)}"
+            ),
+            counts={
+                "poked": int(summary.get("poked") or 0),
+                "synced": int(summary.get("synced") or 0),
+                "skipped": int(summary.get("skipped") or 0),
+                "errors": int(summary.get("errors") or 0),
+            },
         )
     except Exception as exc:
-        logger.error("AUTOMATED: Slocum warm cache failed: %s", exc, exc_info=True)
+        logger.error("AUTOMATED: Slocum ERDDAP poke failed: %s", exc, exc_info=True)
         record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
@@ -1651,6 +1665,43 @@ async def run_iridium_tle_prefetch_job():
         )
     except Exception as exc:
         logger.error("AUTOMATED: Iridium TLE prefetch failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
+
+
+async def run_mission_catalog_sync_job():
+    """Leader job: reconcile Sensor Tracker / ERDDAP / WGMS into mission catalog."""
+    job_id = "system_mission_catalog_sync_job"
+    if not feature_toggles.is_feature_enabled("mission_catalog"):
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "mission_catalog disabled")
+        return
+    from app.services.mission_catalog_sync import (
+        catalog_auto_apply_enabled,
+        sync_mission_catalog,
+    )
+
+    # Default: dry-run only until MISSION_CATALOG_AUTO_APPLY=true after identity gates pass.
+    apply_writes = catalog_auto_apply_enabled()
+    dry_run = not apply_writes
+    logger.info(
+        "AUTOMATED: Syncing source-neutral mission catalog (dry_run=%s)...",
+        dry_run,
+    )
+    try:
+        result = await sync_mission_catalog(dry_run=dry_run)
+        logger.info("AUTOMATED: Mission catalog sync finished: %s", result.summary)
+        outcome = (
+            JobRunOutcomeEnum.PARTIAL
+            if result.counts.failed or result.conflicts
+            else JobRunOutcomeEnum.SUCCESS
+        )
+        record_job_outcome(
+            job_id,
+            outcome,
+            result.summary,
+            counts=result.counts.model_dump() if hasattr(result.counts, "model_dump") else None,
+        )
+    except Exception as exc:
+        logger.error("AUTOMATED: Mission catalog sync failed: %s", exc, exc_info=True)
         record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
@@ -2039,11 +2090,18 @@ async def startup_event():
             timezone='UTC',
             id='wave_glider_weekly_report_job'
         )
+        slocum_poke_minutes = max(
+            15, int(getattr(settings, "slocum_erddap_poke_interval_minutes", 90) or 90)
+        )
         scheduler.add_job(
-            run_slocum_warm_cache_job,
+            run_slocum_erddap_poke_job,
             "interval",
-            minutes=settings.background_cache_refresh_interval_minutes,
-            id="slocum_warm_cache_job",
+            minutes=slocum_poke_minutes,
+            id="slocum_erddap_poke_job",
+        )
+        logger.info(
+            "Slocum ERDDAP poke scheduled every %s minutes (sync only when maxTime advances)",
+            slocum_poke_minutes,
         )
         scheduler.add_job(
             run_slocum_weekly_reports_job,
@@ -2197,6 +2255,21 @@ async def startup_event():
             "SFMC checklist cache refresh scheduled every %s minutes",
             sfmc_refresh_minutes,
         )
+        catalog_sync_hour = int(getattr(settings, "mission_catalog_sync_cron_hour", 6))
+        scheduler.add_job(
+            run_mission_catalog_sync_job,
+            "cron",
+            hour=catalog_sync_hour,
+            minute=10,
+            timezone="UTC",
+            id="system_mission_catalog_sync_job",
+            max_instances=1,
+            replace_existing=True,
+        )
+        logger.info(
+            "Mission catalog sync scheduled daily at %02d:10 UTC",
+            catalog_sync_hour,
+        )
         auto_checklist_hour = int(getattr(settings, "slocum_auto_checklist_cron_hour", 23))
         auto_checklist_minute = int(getattr(settings, "slocum_auto_checklist_cron_minute", 30))
         scheduler.add_job(
@@ -2215,6 +2288,28 @@ async def startup_event():
             auto_checklist_hour,
             auto_checklist_minute,
         )
+        if feature_toggles.is_feature_enabled("mission_catalog"):
+            try:
+                from app.services.mission_catalog_sync import (
+                    catalog_auto_apply_enabled,
+                    catalog_is_stale,
+                )
+
+                if catalog_is_stale():
+                    if catalog_auto_apply_enabled():
+                        logger.info(
+                            "STARTUP: Mission catalog stale; scheduling background sync (apply enabled)"
+                        )
+                    else:
+                        logger.info(
+                            "STARTUP: Mission catalog stale; scheduling dry-run-only sync "
+                            "(set MISSION_CATALOG_AUTO_APPLY=true after identity gates pass)"
+                        )
+                    asyncio.create_task(run_mission_catalog_sync_job())
+                else:
+                    logger.info("STARTUP: Mission catalog fresh; skipping startup sync")
+            except Exception as exc:
+                logger.warning("STARTUP: Mission catalog freshness check failed: %s", exc)
         try:
             await run_weather_map_cleanup_job()
         except Exception as exc:

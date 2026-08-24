@@ -22,6 +22,7 @@ from ..core.geo.map_utils import prepare_track_points, generate_kml_from_track_p
 from ..core.geo import weather_map_cache, iridium_tle_cache, navwarn_cache
 from ..core.geo import map_layers as map_layers_service
 from ..core.geo import vessel_density as vessel_density_service
+from ..core.geo import ciops_ice as ciops_ice_service
 from ..core.data.processors import preprocess_telemetry_df
 from ..core.data.data_service import get_data_service
 from app.platforms.slocum.cache_service import (
@@ -832,6 +833,14 @@ def _require_vessel_density_map_layer() -> None:
         )
 
 
+def _require_ciops_ice_map_layer() -> None:
+    if not is_feature_enabled("ciops_ice_map_layer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="CIOPS ice map layer is disabled (feature_toggles.ciops_ice_map_layer).",
+        )
+
+
 @router.get("/api/map/vessel-density/meta")
 async def get_vessel_density_meta(
     current_user: models.User = Depends(get_current_active_user),
@@ -874,6 +883,99 @@ async def export_vessel_density_tile(
         headers={
             "Cache-Control": "private, max-age=300",
             "X-Vessel-Density-Cache": cache_status,
+        },
+    )
+
+
+@router.get("/api/map/ciops-ice/meta")
+async def get_ciops_ice_meta(
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Forecast time axis + attribution for the CIOPS-East ice overlay."""
+    _require_ciops_ice_map_layer()
+    try:
+        meta = await ciops_ice_service.build_meta()
+    except Exception as exc:
+        logger.error("CIOPS ice meta failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to fetch CIOPS ice capabilities from upstream.",
+        ) from exc
+    return JSONResponse(content=meta)
+
+
+@router.get("/api/map/ciops-ice/export")
+async def export_ciops_ice_tile(
+    bbox: str = Query(..., description="west,south,east,north in EPSG:4326"),
+    size: str = Query("256,256", description="width,height pixels (max 512)"),
+    time: str = Query(..., description="Forecast valid time ISO8601 Z"),
+    style: Optional[str] = Query(
+        None,
+        description="WMS style (default SEA_ICECONC-CIS)",
+    ),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Proxy a transparent PNG GetMap tile from MSC GeoMet CIOPS-East."""
+    _require_ciops_ice_map_layer()
+    try:
+        body, cache_status = await ciops_ice_service.fetch_map_png(
+            bbox=bbox,
+            size=size,
+            time=time,
+            style=style,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.error("CIOPS ice export failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to fetch CIOPS ice image from upstream.",
+        ) from exc
+
+    return Response(
+        content=body,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "private, max-age=300",
+            "X-Ciops-Ice-Cache": cache_status,
+        },
+    )
+
+
+@router.get("/api/map/ciops-ice/legend")
+async def get_ciops_ice_legend(
+    style: Optional[str] = Query(
+        None,
+        description="WMS style (default SEA_ICECONC-CIS)",
+    ),
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Proxy GetLegendGraphic PNG for the CIOPS-East ice layer."""
+    _require_ciops_ice_map_layer()
+    try:
+        body, cache_status = await ciops_ice_service.fetch_legend_png(style=style)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        logger.error("CIOPS ice legend failed: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to fetch CIOPS ice legend from upstream.",
+        ) from exc
+
+    return Response(
+        content=body,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "private, max-age=3600",
+            "X-Ciops-Ice-Cache": cache_status,
         },
     )
 

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Sensor Tracker - {{ platform_buddy_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4 px-3 px-lg-4">
+    <p class="mb-2"><a href="/team">&larr; Team</a></p>
+    <h1 class="mb-2">Sensor Tracker</h1>
+    <p class="text-muted mb-3">
+        Live read-only browse of Sensor Tracker inventory. Click through platforms,
+        deployments, loggers, instruments, and sensors. Editing stays in Tracker;
+        Buddy mission sync stays on admin overviews.
+    </p>
+
+    <div id="stStatus" class="alert alert-secondary py-2" role="status">
+        Checking Sensor Tracker&hellip;
+    </div>
+
+    <ul class="nav nav-tabs" id="stEntityTabs" role="tablist"></ul>
+
+    <div class="card gbs-card border-top-0 rounded-top-0">
+        <div class="card-body">
+            <form id="stSearchForm" class="row g-2 align-items-end mb-3">
+                <div class="col-md-6">
+                    <label for="stSearchInput" class="form-label mb-1">Search</label>
+                    <input type="text" class="form-control" id="stSearchInput" placeholder="Partial name, serial, title, or id">
+                    <div class="form-text" id="stSearchHint"></div>
+                </div>
+                <div class="col-md-3" id="stAsOfWrap" style="display: none;">
+                    <label for="stAsOfInput" class="form-label mb-1">As of (attachments)</label>
+                    <input type="datetime-local" class="form-control" id="stAsOfInput">
+                    <div class="form-text">Related lists default to currently attached (no end date).</div>
+                </div>
+                <div class="col-md-3 d-flex gap-2">
+                    <button type="submit" class="btn btn-primary" id="stSearchBtn">Search</button>
+                    <button type="button" class="btn btn-outline-secondary" id="stClearBtn">Clear</button>
+                </div>
+            </form>
+
+            <div class="row g-3">
+                <div class="col-lg-7">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped table-hover align-middle mb-0">
+                            <thead>
+                                <tr id="stResultsHead"></tr>
+                            </thead>
+                            <tbody id="stResultsBody">
+                                <tr>
+                                    <td class="text-muted">Choose a tab and search, or browse the first page.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center mt-2">
+                        <div class="small text-muted" id="stPageInfo"></div>
+                        <div class="btn-group btn-group-sm">
+                            <button type="button" class="btn btn-outline-secondary" id="stPrevBtn" disabled>Previous</button>
+                            <button type="button" class="btn btn-outline-secondary" id="stNextBtn" disabled>Next</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-5">
+                    <div class="card gbs-card" id="stDetailCard">
+                        <div class="card-header">
+                            <h2 class="h6 mb-0">Detail</h2>
+                        </div>
+                        <div class="card-body" id="stDetailBody">
+                            <p class="text-muted mb-0">Select a row to inspect it.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block body_extra_js %}
+<script src="/static/js/team/sensor_tracker.js?v={{ app_version }}" type="module"></script>
+{% endblock %}

@@ -74,6 +74,15 @@ def _parquet_path(dataset_id: str, bundle: BundleName) -> Path:
     return _safe_dataset_dir(dataset_id) / f"{spec.name}.parquet"
 
 
+def dashboard_mirror_exists(dataset_id: str) -> bool:
+    """True when the dashboard parquet is on disk (does not create the dataset dir)."""
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
+    safe_id = dataset_id.replace("/", "_").replace("\\", "_")
+    path = get_mirror_root() / safe_id / "dashboard.parquet"
+    promote_orphan_tmp_file(path)
+    return path.is_file()
+
+
 def _meta_path(dataset_id: str) -> Path:
     return _safe_dataset_dir(dataset_id) / "meta.json"
 
@@ -121,6 +130,20 @@ def _write_meta(dataset_id: str, meta: dict[str, Any]) -> None:
         except OSError:
             pass
         raise
+
+
+def read_mirror_meta(dataset_id: str) -> dict[str, Any]:
+    """Public read of ``meta.json`` for a resolved dataset id."""
+    return _read_meta(resolve_slocum_dataset_id(dataset_id))
+
+
+def update_mirror_meta(dataset_id: str, updates: dict[str, Any]) -> dict[str, Any]:
+    """Merge ``updates`` into ``meta.json`` and return the written dict."""
+    dataset_id = resolve_slocum_dataset_id(dataset_id)
+    meta = _read_meta(dataset_id)
+    meta.update(updates)
+    _write_meta(dataset_id, meta)
+    return meta
 
 
 def invalidate_memory_cache(dataset_id: Optional[str] = None) -> None:

@@ -991,6 +991,11 @@ footer .text-muted {
     color: var(--text-color);
 }
 
+.navwarn-hidden-items {
+    max-height: 8rem;
+    overflow-y: auto;
+}
+
 /* Slocum checklist side-by-side compare */
 .slocum-checklist-compare-modal-content {
   display: flex;
@@ -1233,3 +1238,28 @@ footer .text-muted {
   color: var(--app-secondary, var(--secondary-color));
   opacity: 0.85;
 }
+
+/* Team Visualizations gallery */
+.team-viz-card {
+  cursor: pointer;
+}
+
+.team-viz-card:focus {
+  outline: 2px solid var(--app-primary, var(--bs-primary));
+  outline-offset: 2px;
+}
+
+.team-viz-thumb {
+  height: 11rem;
+  object-fit: contain;
+  background: var(--bs-body-bg, #fff);
+  border-bottom: 1px solid var(--bs-border-color, var(--app-card-border));
+  padding: 0.5rem;
+}
+
+.team-viz-placeholder {
+  height: 11rem;
+  background: var(--app-alert-info-bg, var(--bs-secondary-bg));
+  border-bottom: 1px solid var(--bs-border-color, var(--app-card-border));
+}
+

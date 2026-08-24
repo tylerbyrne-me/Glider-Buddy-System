@@ -36,7 +36,8 @@ _scheduler: Optional[AsyncIOScheduler] = None
 JOB_PLATFORM_BY_ID: dict[str, JobPlatformEnum] = {
     "wave_glider_active_mission_refresh_job": JobPlatformEnum.WAVE_GLIDER,
     "wave_glider_weekly_report_job": JobPlatformEnum.WAVE_GLIDER,
-    "slocum_warm_cache_job": JobPlatformEnum.SLOCUM,
+    "slocum_erddap_poke_job": JobPlatformEnum.SLOCUM,
+    "slocum_warm_cache_job": JobPlatformEnum.SLOCUM,  # retired id; kept for leftover outcome files
     "slocum_weekly_report_job": JobPlatformEnum.SLOCUM,
     "slocum_overage_cleanup_job": JobPlatformEnum.SLOCUM,
     "slocum_sfmc_cache_refresh_job": JobPlatformEnum.SLOCUM,

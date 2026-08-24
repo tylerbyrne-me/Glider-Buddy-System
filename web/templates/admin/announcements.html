@@ -15,8 +15,9 @@
         <div class="card-body">
             <form id="createAnnouncementForm">
                 <div class="mb-3">
-                    <label for="announcementContent" class="form-label">Announcement Text (Markdown is supported)</label>
-                    <textarea class="form-control" id="announcementContent" rows="3" required></textarea>
+                    <label for="announcementContent" class="form-label">Announcement Text</label>
+                    <textarea class="form-control" id="announcementContent" rows="4" required placeholder="Type your announcement… Use the toolbar for bold, italics, lists, etc. Emoji are fine 👍"></textarea>
+                    <small class="form-text text-muted">Formatting uses Markdown (and &lt;u&gt; for underline). Unicode emoji are supported.</small>
                 </div>
                 <div class="mb-3">
                     <label for="announcementType" class="form-label">Announcement Type</label>
@@ -70,8 +71,9 @@
         <form id="editAnnouncementForm">
             <input type="hidden" id="editAnnouncementId">
             <div class="mb-3">
-                <label for="editAnnouncementContent" class="form-label">Announcement Text (Markdown is supported)</label>
+                <label for="editAnnouncementContent" class="form-label">Announcement Text</label>
                 <textarea class="form-control" id="editAnnouncementContent" rows="5" required></textarea>
+                <small class="form-text text-muted">Formatting uses Markdown (and &lt;u&gt; for underline). Unicode emoji are supported.</small>
             </div>
             <div class="mb-3">
                 <label for="editAnnouncementType" class="form-label">Announcement Type</label>

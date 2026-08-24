@@ -716,8 +716,17 @@ async def _load_from_remote_sources(
     
     remote_mission_folder = None
     
-    # Try exact match first (for backward compatibility)
-    remote_mission_folder = settings.remote_mission_folder_map.get(mission_id)
+    # Prefer catalog + shared resolver (falls back to REMOTE_MISSION_FOLDER_MAP_JSON).
+    try:
+        from app.core.mission_catalog.wgms_resolve import resolve_wgms_folder
+
+        remote_mission_folder = resolve_wgms_folder(mission_id)
+    except Exception as exc:
+        logger.debug("Catalog WGMS resolve unavailable for %s: %s", mission_id, exc)
+
+    if remote_mission_folder is None:
+        # Legacy inline fallback (kept for safety if catalog import fails)
+        remote_mission_folder = settings.remote_mission_folder_map.get(mission_id)
     
     if remote_mission_folder is None:
         # Handle "1071-m169" format - convert to "1071 m169" for lookup
@@ -757,10 +766,20 @@ async def _load_from_remote_sources(
     user_role = current_user.role if current_user else models.UserRoleEnum.admin
 
     if user_role in [models.UserRoleEnum.admin, models.UserRoleEnum.pilot]:
-        remote_base_urls_to_try.extend([
-            f"{base_remote_url}/output_realtime_missions",
-            f"{base_remote_url}/output_past_missions",
-        ])
+        # Prefer realtime for active missions; otherwise try past first when not active.
+        active_ids = {m.strip() for m in (settings.active_realtime_missions or []) if m and str(m).strip()}
+        code = utils.deployment_mission_code_from_mission_id(mission_id)
+        is_active = mission_id in active_ids or (code and code in active_ids)
+        if is_active:
+            remote_base_urls_to_try.extend([
+                f"{base_remote_url}/output_realtime_missions",
+                f"{base_remote_url}/output_past_missions",
+            ])
+        else:
+            remote_base_urls_to_try.extend([
+                f"{base_remote_url}/output_past_missions",
+                f"{base_remote_url}/output_realtime_missions",
+            ])
 
     last_accessed_remote_path_if_empty = None
     for constructed_base_url in remote_base_urls_to_try:

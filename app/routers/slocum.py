@@ -1144,6 +1144,58 @@ async def force_sync_slocum_mirror(
     return summary
 
 
+@router.post("/erddap-poke")
+async def poke_slocum_erddap(
+    dataset_id: Optional[str] = Query(
+        None,
+        description="Poke one dataset (alias OK). Omit to poke all active warm keys.",
+    ),
+    sync_if_new: bool = Query(
+        True,
+        description="Run an incremental mirror sync when allDatasets maxTime advanced.",
+    ),
+    hours_back: Optional[int] = Query(None, ge=1, le=8760),
+    current_admin: models.User = Depends(get_current_admin_user),
+):
+    """Admin: cheap ERDDAP maxTime poke; sync only when Ocean Track has new data."""
+    if not is_feature_enabled("slocum_platform"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
+    from app.platforms.slocum.erddap_poke import poke_active_slocum_datasets, poke_dataset
+
+    try:
+        if dataset_id and dataset_id.strip():
+            result = await poke_dataset(
+                dataset_id.strip(),
+                hours_back=hours_back,
+                sync_if_new=sync_if_new,
+                use_cache=False,
+            )
+            summary = {
+                "poked": 1,
+                "synced": 1 if result.get("action") == "synced" else 0,
+                "skipped": 1 if result.get("action") in {"skipped", "new_data"} else 0,
+                "errors": 1 if result.get("action") == "error" else 0,
+                "datasets": [result],
+            }
+        else:
+            summary = await poke_active_slocum_datasets(
+                hours_back=hours_back,
+                sync_if_new=sync_if_new,
+                use_cache=False,
+            )
+    except Exception as err:
+        logger.exception("Admin ERDDAP poke failed (dataset_id=%s)", dataset_id)
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(err)) from err
+    logger.info(
+        "Admin '%s' ERDDAP poke (dataset_id=%s, sync_if_new=%s, synced=%s)",
+        current_admin.username,
+        dataset_id,
+        sync_if_new,
+        summary.get("synced"),
+    )
+    return summary
+
+
 @router.get("/overage-cache/status")
 async def get_slocum_overage_cache_status(
     dataset_id: Optional[str] = Query(None),

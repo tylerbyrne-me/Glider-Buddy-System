@@ -48,5 +48,5 @@ Fixed 2026-08-08.
 - `get_bundle_dataframe` prefers partial mirror overlap (with `stale` / `mirror_max` metadata) over live ERDDAP when the rolling mirror already covers part of the window; interactive reads skip `ensure_mirror_synced` when parquet already has rows.
 - Gap-fetch / overage populate failures fall back to mirror overlap; `cache_service` reads mirror first on exceptions and also recovers empty primary results from on-disk mirror.
 - Chart/profile endpoints use anchored-end display slices; map timeout falls back to `load_mirror_df`.
-- Dashboard badge shows “Cached data — ERDDAP unreachable” when `stale` or `fallback_error` is set.
+- Dashboard badge shows “Cached data — ERDDAP unreachable” only when `fallback_error` is set (a live ERDDAP fetch failed). `stale` alone means the 72h mirror ends before wall-clock now — normal for realtime; see [BUG-006](./BUG-006-slocum-stale-badge-false-outage.md).
 - Coverage: `tests/test_slocum_mirror_fallback.py`.

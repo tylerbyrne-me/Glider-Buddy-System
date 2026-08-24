@@ -872,6 +872,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     // --- Cached Dataset Inspector ---
     const cacheInspectorHoursBack = document.getElementById('cacheInspectorHoursBack');
     const runCacheInspectorBtn = document.getElementById('runCacheInspectorBtn');
+    const erddapPokeBtn = document.getElementById('erddapPokeBtn');
     const rebuildCtdMirrorBtn = document.getElementById('rebuildCtdMirrorBtn');
     const purgeOverageCacheBtn = document.getElementById('purgeOverageCacheBtn');
     const cacheInspectorStatus = document.getElementById('cacheInspectorStatus');
@@ -998,6 +999,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                 `is_historical: ${Boolean(report?.is_historical)}`,
                 `last_sync_timestamp: ${formatIsoOrDash(meta.last_sync_timestamp)}`,
                 `last_data_timestamp: ${formatIsoOrDash(meta.last_data_timestamp)}`,
+                `erddap_max_time: ${formatIsoOrDash(meta.erddap_max_time)}`,
+                `last_poke_timestamp: ${formatIsoOrDash(meta.last_poke_timestamp)}`,
+                `last_poke_action: ${meta.last_poke_action ?? '—'}`,
                 `archived: ${meta.archived ?? '—'}`,
             ].join('\n');
         }
@@ -1059,6 +1063,53 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             showToast(`Cache inspection failed: ${error.message}`, 'danger');
         } finally {
+            if (runCacheInspectorBtn) runCacheInspectorBtn.disabled = false;
+        }
+    }
+
+    async function pokeErddapNow() {
+        if (!currentDatasetId) {
+            showToast('Select a dataset first.', 'warning');
+            return;
+        }
+        const parsedHours = parseInt(cacheInspectorHoursBack?.value || '72', 10);
+        const hoursBack = Number.isNaN(parsedHours) ? 72 : Math.max(1, Math.min(8760, parsedHours));
+        if (cacheInspectorStatus) {
+            cacheInspectorStatus.textContent = `Poking ERDDAP maxTime for ${currentDatasetId}...`;
+        }
+        if (erddapPokeBtn) erddapPokeBtn.disabled = true;
+        if (runCacheInspectorBtn) runCacheInspectorBtn.disabled = true;
+        try {
+            const summary = await apiRequest(
+                `/api/slocum/erddap-poke?dataset_id=${encodeURIComponent(currentDatasetId)}&sync_if_new=true&hours_back=${hoursBack}`,
+                'POST'
+            );
+            const row = Array.isArray(summary?.datasets) ? summary.datasets[0] : null;
+            const action = row?.action || 'unknown';
+            const reason = row?.reason || '';
+            showToast(
+                action === 'synced'
+                    ? `New ERDDAP data — mirror synced (${reason || 'maxTime advanced'}).`
+                    : action === 'skipped'
+                        ? `No new ERDDAP data (${reason || 'unchanged'}).`
+                        : `ERDDAP poke: ${action}${reason ? ` (${reason})` : ''}.`,
+                action === 'error' ? 'danger' : 'success'
+            );
+            if (cacheInspectorStatus) {
+                cacheInspectorStatus.textContent =
+                    `Poke ${action} for ${currentDatasetId}` +
+                    (row?.erddap_max_time ? ` — ERDDAP max ${row.erddap_max_time}` : '') +
+                    (row?.known_max_time ? `; mirror ${row.known_max_time}` : '') +
+                    '.';
+            }
+            await runDatasetCacheInspection();
+        } catch (error) {
+            if (cacheInspectorStatus) {
+                cacheInspectorStatus.textContent = `ERDDAP poke failed: ${error.message}`;
+            }
+            showToast(`ERDDAP poke failed: ${error.message}`, 'danger');
+        } finally {
+            if (erddapPokeBtn) erddapPokeBtn.disabled = false;
             if (runCacheInspectorBtn) runCacheInspectorBtn.disabled = false;
         }
     }
@@ -1132,6 +1183,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (runCacheInspectorBtn) {
         runCacheInspectorBtn.addEventListener('click', runDatasetCacheInspection);
+    }
+    if (erddapPokeBtn) {
+        erddapPokeBtn.addEventListener('click', pokeErddapNow);
     }
     if (rebuildCtdMirrorBtn) {
         rebuildCtdMirrorBtn.addEventListener('click', rebuildCtdMirror);
