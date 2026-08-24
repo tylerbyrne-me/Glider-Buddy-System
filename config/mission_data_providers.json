@@ -1,0 +1,60 @@
+{
+  "providers": [
+    {
+      "key": "ceotr_sensor_tracker",
+      "connector": "sensor_tracker",
+      "organization": "ceotr",
+      "enabled": true,
+      "base_url_setting": "sensor_tracker_host",
+      "rate_limit_seconds": 1.0,
+      "notes": "Primary CEOTR Sensor Tracker metadata catalog."
+    },
+    {
+      "key": "oceantrack_erddap",
+      "connector": "erddap",
+      "organization": "ceotr",
+      "enabled": true,
+      "base_url_setting": "slocum_erddap_server",
+      "dataset_id_filter": ".*(_realtime|_delayed)$",
+      "rate_limit_seconds": 2.0,
+      "naming": {
+        "wave_glider_preferred_variant": "realtime",
+        "slocum_variants": ["realtime", "delayed"]
+      },
+      "notes": "Ocean Track tabledap; Wave Glider and Slocum share this server."
+    },
+    {
+      "key": "ceotr_wgms_remote",
+      "connector": "wgms_remote",
+      "organization": "ceotr",
+      "enabled": true,
+      "base_url_setting": "remote_data_url",
+      "collections": [
+        "output_realtime_missions",
+        "output_past_missions"
+      ],
+      "rate_limit_seconds": 1.0,
+      "notes": "Wave Glider CSV telemetry remote folders."
+    },
+    {
+      "key": "legacy_env",
+      "connector": "legacy_env",
+      "organization": "ceotr",
+      "enabled": true,
+      "notes": "Backfill from ACTIVE_* / HISTORICAL_* / alias maps during cutover."
+    }
+  ],
+  "platform_name_rules": {
+    "wave_glider_prefixes": ["SV3", "DL", "SV2"],
+    "slocum_known_names": []
+  },
+  "allowed_platform_models": {
+    "Slocum Glider G1": "slocum",
+    "Slocum Glider G2": "slocum",
+    "Slocum Glider G3": "slocum",
+    "Slocum Glider G3S": "slocum",
+    "Wave Glider SV2": "wave_glider",
+    "Wave Glider SV3": "wave_glider"
+  },
+  "stale_miss_threshold": 3
+}

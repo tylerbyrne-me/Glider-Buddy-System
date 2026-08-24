@@ -1,0 +1,122 @@
+[
+	{
+		"id": 2352,
+		"userLogNoteText": "When I started this mission I did not want low power mode to be on because I wanted lots of data, now that we have been flying well I sent a new mission file and commanded u_low_power_cycle_time to 30. I also set the u_alt_min_depth to 150 to help keep us in low power mode now that it has been activated.\n",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-31 20:07:37",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2349,
+		"userLogNoteText": "also added goto with initial wpt set to -1 to avoid turnaround",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-29 22:20:36",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2347,
+		"userLogNoteText": "Just added an updated yo file to reduce the autoballast from 460 -> 400 and to reduce the pitch angle from 26 -> 24.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-29 16:09:24",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2344,
+		"userLogNoteText": "Fundy is pretty close to zone B now, so I dropped the full goto in now. \nAlso reduced drive to 460cc and will possibly drop further. Hesitant to drop too much due to current Sable is currently fighting",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-28 01:14:36",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2339,
+		"userLogNoteText": "Added new goto to have Fundy continue into first few wpts of zone B, set to loop forever so mission doesn't end, but will need to update wpts once it reaches B1. \n\nAlso set drive to 500cc autoballast in order to avoid any delays in reaching Zone B",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-27 14:53:37",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2337,
+		"userLogNoteText": "Just added a new goto list to have us bounce back and forth between the first 3 waypoints in DSZ A as we wait for Sable to reach the border so we can swap the gliders between the 2 zones.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-26 20:51:23",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2336,
+		"userLogNoteText": "Just added an updated goto list to push us back into DSZ A to await Sable so we can swap zones. Sable is going to move into DSZ A and Fundy is going to move down into DSZ B. Also added an updated yo file to restrict the autoballast from 500 -> 450. Will reduce further once making it to DSZ A.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-25 12:17:10",
+		"modificationDateTime": "2026-07-25 12:26:30",
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2335,
+		"userLogNoteText": "Just added an updated surfac13, surfac16 and yo file. I bumped up the min depthrate for the thruster to come on for surfacing for pitch not commanded from 0.03m/s to 0.04m/s because the surface layer is quite light still. I disabled surfac16 so we will only be surfacing for pitch not commanded now and I bumped that up from every 2 yos to every 3 yos.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-24 21:42:01",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2319,
+		"userLogNoteText": "Increased ballast to 500cc, dive angle to 26 deg and 10 half-yos to hopefully get more ground while underwater to get back to the safe zone",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-12 02:34:52",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2318,
+		"userLogNoteText": "Just added an updated surfac11.ma, added this file to confirm that nocomms has a climb angle of 26 and will turn the thruster on if this surfacing behaviour gets triggered and the climb rate drops below 0.04 m/s. This file has been added to all of the gliders to prevent an accidental weight drop.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-10 15:07:17",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2307,
+		"userLogNoteText": "Just added a new yo file to turn on autoballast and reduce the bpump back down to a normal operating range because we are diving and climbing too fast. Reducing to 450cc, once we get new dive and climb values we should switch backed to fixed pump values.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-06 19:17:26",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2303,
+		"userLogNoteText": "Fundy aborted for the science logging error while I had it up offloading the backlog. I then finished sending remaining files and put back on mission. \nAlso note we had another HD pump warning",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-02 19:47:37",
+		"modificationDateTime": null,
+		"authorUsername": "jmeer"
+	},
+	{
+		"id": 2302,
+		"userLogNoteText": "New goto in to-glider setting intial wpt to -1, one after last acheived",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-02 18:35:55",
+		"modificationDateTime": null,
+		"authorUsername": "jmeer"
+	},
+	{
+		"id": 2300,
+		"userLogNoteText": "Fundy was blown past wpts 15 & 16, and into shipping lane while trying to double back. \nSkipped ahead to A17 in order to make headway north, can double back if need be after",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-02 02:12:45",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2297,
+		"userLogNoteText": "Fundy got 2 more HD pump warnings and two oddities. \nSeems to happen 1 warning 2 oddities per occurance",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-07-02 01:37:30",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	}
+]

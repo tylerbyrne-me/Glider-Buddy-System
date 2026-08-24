@@ -1,0 +1,26 @@
+[
+	{
+		"id": 2285,
+		"userLogNoteText": "Set u_alt_min_depth to 150m",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-06-24 17:55:08",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2283,
+		"userLogNoteText": "Updated goto initial wpt to -1.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-06-24 11:52:44",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2280,
+		"userLogNoteText": "Just added an updated surfac14.ma to disable surfacing for hit a waypoint.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-06-22 17:02:52",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	}
+]

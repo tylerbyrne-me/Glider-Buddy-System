@@ -1,0 +1,122 @@
+[
+	{
+		"id": 2367,
+		"userLogNoteText": "Set u_use_current_correction 1 -> 0",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-08-10 20:58:55",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2363,
+		"userLogNoteText": "Just added an updated goto list to switch initial_wpt to -1.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-08-09 10:39:25",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2362,
+		"userLogNoteText": "Just added a new goto list to switch us back over to our mission waypoints because I suspect next surfacing we will be back in between the lanes. I also added a new yo file to restrict the bpump, I turned on autoballast and set it to 450cc and surfacing every 4 yos.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-08-07 02:27:57",
+		"modificationDateTime": "2026-08-07 03:44:57",
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2360,
+		"userLogNoteText": "Just added a new yo file with another yo before surfacing for pitch not commanded, this should help keep us down a bit longer to fight these currents now that we are making some progress. I think it should add about 40 minutes to our surfacing interval.\n",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-08-05 17:26:33",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2357,
+		"userLogNoteText": "Got blown past the first waypoint in the new goto, sent an updated version that is pushing us to the second waypoint, also added a new yo file to use full drive.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-08-04 19:06:54",
+		"modificationDateTime": "2026-08-04 20:02:19",
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2355,
+		"userLogNoteText": "Just added a new goto list to push us NW a bit to hopefully get out of this current before moving back in to try and get back in between the shipping lanes near A6.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-08-03 23:51:46",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2354,
+		"userLogNoteText": "Just added an updated yo file to bump up num_half_cycles_to_do from 12 -> 14, we have been getting some potential false inflections and not always doing full dives. This will help keep us down longer to fight the currents. I am going to try to investigate the false inflections tomorrow to see if any changes can be made to avoid them.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-08-02 03:37:18",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2353,
+		"userLogNoteText": "Just added an updated yo file to keep us down for 6 dives, we have been doing 4 when it goes to full depth in less than 4 hours because of the increased drive. This should keep us down and fighting the currents longer so hopefully we can make better progress, will continue to tweak this if we continue to struggle.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-08-01 18:58:15",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2351,
+		"userLogNoteText": "We have been getting pushed by a strong N current, so I added a new yo file to increase the bpump from 450 -> 550cc. The currents have been consistent so I also turned on current correction, once we get back between the lanes this should be turned back off.\n",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-31 20:05:33",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2348,
+		"userLogNoteText": "Now that we have made it DSZ A, I just added an updated yo file to bump the autoballast back down to 450cc. After seeing how the glider does will probably bump this down further tomorrow, also added a new goto list to switch initial_wpt back to -1.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-29 17:27:11",
+		"modificationDateTime": "2026-07-29 17:39:19",
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2343,
+		"userLogNoteText": "Sable is moving into a lower density area in Zone A.  Re-initiating autoballast at 550cc to find good values again and to help boost it into Zone A in good time. \n\nAlso since we have sped up the dive/climb cycle time I am temporarily increasing number of yos to 4 (was 3)",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-28 00:36:23",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2341,
+		"userLogNoteText": "Just added an updated goto to push Sable into its new survey area DSZ A, currently stuck in some strong currents though.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-27 19:30:46",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2338,
+		"userLogNoteText": "Bumping up the drive to -350, 200, pitch to 26, while Sable fights some currents, also updated goto initial wpt to 16",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-27 13:02:23",
+		"modificationDateTime": "2026-07-28 17:41:16",
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2331,
+		"userLogNoteText": "Noticed the depth rate was a bit fast, so changed pitch angle to 22 degrees",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-21 16:00:36",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2323,
+		"userLogNoteText": "Just added an updated surfac11, surfac13 and yo file. Increased the c_bpump value on both surfac files to 1000 so we will use full drive on the climb. Increased the upper inflection point on the yo file from 30 -> 35 and increased the drive on both the dive and climb by 10cc.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-16 14:54:32",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	}
+]

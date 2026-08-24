@@ -1,0 +1,122 @@
+[
+	{
+		"id": 2361,
+		"userLogNoteText": "test",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-08-05 21:19:53",
+		"modificationDateTime": null,
+		"authorUsername": "tylerbyrne"
+	},
+	{
+		"id": 2359,
+		"userLogNoteText": "Just added an updated yo file to restrict the autoballast from 440 -> 400cc.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-08-05 17:16:47",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2358,
+		"userLogNoteText": "I noticed the fixed battery position from a few weeks ago isn't working anymore, so I sent a new yo file to put the battpos on servo until we can get new good values.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-08-05 03:44:13",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2356,
+		"userLogNoteText": "Just added a new yo file to switch us back to the fixed battery position that had us diving and climbing around ~22 deg a few weeks ago and turned the autoballast on until we get some good values at this new pitch.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-08-04 16:32:39",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2345,
+		"userLogNoteText": "Just added an updated yo file to set the pitch angle to 18 degrees, this is the last pitch angle we want data from so once we get some data this should be bumped back up again soon.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-28 19:03:04",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2332,
+		"userLogNoteText": "The dive and climb rates were a bit fast, so changed pitch angle to 20 (rather than 22 because we want data for various pitch angles and already have data for 22)",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-21 16:04:00",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2324,
+		"userLogNoteText": "Sent an updated yo file at 21:43 on 07/15 to switch the pitch to servo and set the angle to 24 for dive and climb.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-18 00:20:44",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2320,
+		"userLogNoteText": "u_alt_min_depth has been updated to 250m",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-14 12:51:33",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2316,
+		"userLogNoteText": "Just added an updated surfac11.ma, added this file to confirm that nocomms has a climb angle of 26 and will turn the thruster on if this surfacing behaviour gets triggered and the climb rate drops below 0.04 m/s. This file has been added to all of the gliders to prevent an accidental weight drop.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-10 15:06:58",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2314,
+		"userLogNoteText": "My tweaks haven't been increasing the pitch, I looked back on some older data and picked a new battpos value and added the updated yo file. If this doesn't get the glider closer to where I want I might put the servo back on for a bit.",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-09 14:13:02",
+		"modificationDateTime": "2026-07-09 14:13:32",
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2313,
+		"userLogNoteText": "Just added an updated yo file to tweak the battpos, since fixing the battery we are diving a little too shallow.\n",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-09 00:24:43",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2311,
+		"userLogNoteText": "Just added an updated yo file to fix the battery position, changed b_arg: d_use_pitch(enum)  and b_arg: c_use_pitch(enum) from 3 -> 1 and set the battery to the position the servo had been using.    ",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-08 14:35:26",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2309,
+		"userLogNoteText": "manually set u_alt_min_depth to 280m",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-07 15:49:19",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2299,
+		"userLogNoteText": "peggy blown off course, increase drive to total 450cc\n(-290, 150)",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-07-02 02:01:53",
+		"modificationDateTime": "2026-07-02 02:02:15",
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2287,
+		"userLogNoteText": "Changed yo file to use fixed ballast (-275, 125), waiting in the to-glider folder",
+		"gliderDeploymentId": 315,
+		"creationDateTime": "2026-06-25 13:17:00",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	}
+]

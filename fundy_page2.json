@@ -1,0 +1,106 @@
+[
+	{
+		"id": 2295,
+		"userLogNoteText": "Was getting pushed north out of the safe zone, so increasing bpump volume to a total of 515 cc's until the current lets up.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-28 02:58:10",
+		"modificationDateTime": null,
+		"authorUsername": "adamcomeau"
+	},
+	{
+		"id": 2294,
+		"userLogNoteText": "still got a hd_pump warning and some oddities while diving at 300 m",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-27 19:58:04",
+		"modificationDateTime": null,
+		"authorUsername": "adamcomeau"
+	},
+	{
+		"id": 2293,
+		"userLogNoteText": "The glider has been struggling to move forward to fight the currents. With the recent changes it was surfacing every 3hr 20 min, so I increased the number of you's per segment to 4 from 3. Also increased the climb bpump to 165 from 150.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-27 12:53:36",
+		"modificationDateTime": null,
+		"authorUsername": "adamcomeau"
+	},
+	{
+		"id": 2292,
+		"userLogNoteText": "decreased depth to 300m, started noticed more hd_pump warnings",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-26 19:31:46",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2290,
+		"userLogNoteText": "increasing drive to 450cc ( -300 + 150) \nincreased dive/climb angle to 24 (was 22)",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-25 19:50:07",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2289,
+		"userLogNoteText": "Updated yo file to fixed ballast (-275, 120), waiting in the to-glider folder with the low res sbdlist.dat ",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-25 13:20:16",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2286,
+		"userLogNoteText": "Set u_alt_min_depth to 150m",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-24 17:55:41",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2284,
+		"userLogNoteText": "On June 23, I updated Fundy's goto initial wpt to -1",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-24 11:53:26",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2282,
+		"userLogNoteText": "During the single dive tests for the previous abort, fundy aborted for a leak in the digifin. There were some low readings at the surface, but none at depth in all the tests that had recently been run, so it was tested at the surface by moving the fin back and forth before continuing with tests for the previous abort.",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-23 01:58:52",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2281,
+		"userLogNoteText": "Fundy had an abort for device error stemming from the pump. It appears to have stalled at depth, causing it to be taken out of service. We looked at the mlg and ebd before determining it was safe to run an ini0. Then we stepped it down in 50m increments to 300m. Nothing seemed out of the ordinary in the single dives, so Fundy is now doing three 300m dives and surfacing primarily for pitch not commanded. ",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-23 01:57:48",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2279,
+		"userLogNoteText": "surfac16 deactivated (set to 11)",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-22 05:03:43",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2278,
+		"userLogNoteText": "Fundy was recovered and all roll weights were moved (5) to starboard to account for a sudden roll. \n\n- test dive to 150m was run. Goto was set back to DSZ-A, 3 dives per segment, 340m to 30 climb, 22 deg pitch",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-22 04:59:08",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2276,
+		"userLogNoteText": "Fundy was deployed at 1400UTC. \nPassed initial checks except roll is a bit high. \nSwapped goto to Zone B to head towards vessel, surfacing hourly until they can head over to recover it and fix roll",
+		"gliderDeploymentId": 316,
+		"creationDateTime": "2026-06-21 20:34:41",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	}
+]

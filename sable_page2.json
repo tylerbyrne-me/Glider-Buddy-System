@@ -1,0 +1,122 @@
+[
+	{
+		"id": 2322,
+		"userLogNoteText": "Decided to activate under ice measures, the surface layer is getting quite light and we don't want to blow another emergency weight. Added an updated autoexec.mi, config.srf, and sbdlist.dat. The changes to the config.srf and sbdlist.dat are to increase the amount of data we get about to thruster to ensure it is easy to tell when it has been activated if needed to pierce the freshwater lens. The changes to the autoexec are for the under ice measures, I also made these changes via manual commands so that they would take effect right away. !put u_expect_ice_near_surface 0 -> 1, !put u_always_cop_tickle_hardware 0 -> 1, !put u_max_expected_iceberg_depth 35, !put u_lat_goto_l99 4854.093, !put u_lon_goto_l99 -6301.086.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-15 17:33:42",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2321,
+		"userLogNoteText": "sample10 updated to include sampling on the surface to see the surface density while the freshwater layer moves towards Sable",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-14 17:39:35",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	},
+	{
+		"id": 2317,
+		"userLogNoteText": "Just added an updated surfac11.ma, added this file to confirm that nocomms has a climb angle of 26 and will turn the thruster on if this surfacing behaviour gets triggered and the climb rate drops below 0.04 m/s. This file has been added to all of the gliders to prevent an accidental weight drop.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-10 15:07:10",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2315,
+		"userLogNoteText": "Just added an updated yo file to reduce our pitch angle from 26 -> 22 and to reduce the bpump from 500cc -> 450cc. I am hoping this change will get our depthrate back to where we want it. Yesterday I also updated the goto list to switch initial_wpt back to -1.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-09 14:28:30",
+		"modificationDateTime": "2026-07-09 14:30:03",
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2312,
+		"userLogNoteText": "We have finally made it back into the survey zone and out of the shipping lanes. The glider surfaced for achieving its final waypoint, I put its regular mission goto list back on the glider to push us forward on our transect and dialed back the bpump to 500cc.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-08 17:20:03",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2310,
+		"userLogNoteText": "Added a new goto to push us NE to hopefully get out of these currents faster and make it back to the survey zone.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-07 15:50:33",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2308,
+		"userLogNoteText": "Just added a new yo file to turn on autoballast and increase the bpump to 700cc to help fight the currents",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-07 04:08:56",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2306,
+		"userLogNoteText": "nocomms was set to 5 hours, pushed that back to 8. \nSet goto to initial after last achieved.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-06 13:56:26",
+		"modificationDateTime": null,
+		"authorUsername": "jmeer"
+	},
+	{
+		"id": 2305,
+		"userLogNoteText": "Just added a new goto_l10, this new path will move us perpendicular to the currents before turning and once again heading North. Hopefully the currents won't be as strong when we start heading North again.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-04 16:14:31",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2304,
+		"userLogNoteText": "Noticed that after the last change to increase the bpump and pitch angle to help us fight the currents it increased the glider's speed enough that it is completing 3 full dives in 2-2.5 hours. I just added an updated yo file to increase the number of dives to 6 from 3. I want to keep the glider down underneath the surface currents for longer to help us get back in between the lanes.",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-03 19:51:04",
+		"modificationDateTime": null,
+		"authorUsername": "zachviva"
+	},
+	{
+		"id": 2301,
+		"userLogNoteText": "still struggling. Sable drifted to the south side of shipping lanes, safe to send files. \nQuit mission because glider was about to dive, sent new goto heading to wpt 2 to start to make headway to the east",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-02 16:47:03",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2298,
+		"userLogNoteText": "Sable has been pushed quite a ways off course.  Adjust drive to 450cc (-305, +145cc)",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-07-02 01:43:57",
+		"modificationDateTime": "2026-07-02 01:44:36",
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2296,
+		"userLogNoteText": "Sable aborted for beh science logging. \nWill have to keep an eye on it to see if we need to re-activate the abort handling script\n-it hit wpt in lastgasp so had to edit goto to head for wpt 15 (not one after last achieved)",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-06-30 18:33:03",
+		"modificationDateTime": "2026-06-30 18:33:59",
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2291,
+		"userLogNoteText": "set u_alt_min_depth to 150m",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-06-25 19:50:31",
+		"modificationDateTime": null,
+		"authorUsername": "judevdm"
+	},
+	{
+		"id": 2288,
+		"userLogNoteText": "updated yo file to fixed ballast (-285, 120), waiting in the to-glider folder",
+		"gliderDeploymentId": 317,
+		"creationDateTime": "2026-06-25 13:18:34",
+		"modificationDateTime": null,
+		"authorUsername": "jallan"
+	}
+]

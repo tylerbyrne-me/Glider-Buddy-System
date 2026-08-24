@@ -75,7 +75,7 @@ secrets/
 *.shx 
 
 
-*.json
+# *.json
 *.txt
 !requirements.txt
 !config/feature_toggles.example.json
