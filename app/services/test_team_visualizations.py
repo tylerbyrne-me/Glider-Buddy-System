@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from app.core.mission_catalog.providers_config import ProvidersManifest
+from app.core.sensor_tracker.platform_display import enrich_rows_platform_names
 from app.services.team_visualizations import (
+    _platform_key,
     aggregate_platform_share,
     aggregate_sensor_days_by_platform,
     aggregate_use_over_time,
@@ -172,6 +174,57 @@ def test_classify_glider_platform_family_allowlist_and_heuristic():
         )
         is None
     )
+
+
+def test_platform_key_prefers_name_then_numeric_id():
+    assert _platform_key(288, "SV3-1071") == "SV3-1071"
+    assert _platform_key(288, None) == "288"
+    assert _platform_key(None, None) == "unknown"
+
+
+def test_aggregate_platform_share_uses_enriched_hull_name():
+    snap = _fake_snapshot()
+    snap["deployments"] = [
+        {
+            "id": 50,
+            "platform_id": 288,
+            "platform_name": None,
+            "start_time": "2024-01-01T00:00:00Z",
+            "end_time": "2024-01-11T00:00:00Z",
+        }
+    ]
+    snap["platforms"].append(
+        {
+            "id": 288,
+            "name": "SV3-1071",
+            "platform_family": "wave_glider",
+            "model": "Wave Glider SV3",
+        }
+    )
+    enrich_rows_platform_names(
+        snap["deployments"],
+        {288: "SV3-1071"},
+    )
+    data = aggregate_platform_share(snap)
+    by_name = {r["platform"]: r for r in data["rows"]}
+    assert "SV3-1071" in by_name
+    assert "288" not in by_name
+    assert "platform#288" not in by_name
+
+
+def test_aggregate_platform_share_falls_back_to_numeric_id():
+    snap = _fake_snapshot()
+    snap["deployments"] = [
+        {
+            "id": 51,
+            "platform_id": 9999,
+            "platform_name": None,
+            "start_time": "2024-01-01T00:00:00Z",
+            "end_time": "2024-01-02T00:00:00Z",
+        }
+    ]
+    data = aggregate_platform_share(snap)
+    assert data["rows"][0]["platform"] == "9999"
 
 
 def test_filter_snapshot_drops_non_glider_platforms():

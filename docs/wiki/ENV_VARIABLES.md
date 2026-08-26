@@ -321,7 +321,8 @@ Some settings use JSON strings:
 - `MISSION_CATALOG_SYNC_CRON_HOUR` / `MISSION_CATALOG_STARTUP_MAX_AGE_HOURS` - Catalog reconciliation schedule (UTC hour, default 6) and startup freshness window (default 24h)
 - `MISSION_CATALOG_AUTO_APPLY` - When `true`, leader/startup catalog jobs write to SQLite; default **`false`** (dry-run only). CLI `--apply` still writes when identity gates are clean.
 - `MISSION_CATALOG_WG_SYNC_FROM_CATALOG` - When `true`, WG `sync_all_realtime_missions` reads keys via catalog enablement API (still exact `ACTIVE_REALTIME_MISSIONS` strings); default **`false`**
-- `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG` - When `true`, Slocum `warm_active_slocum_datasets` reads keys via catalog enablement API (still exact `ACTIVE_SLOCUM_DATASETS` / alias strings); default **`false`**. Code defaults stay false; local laptop may override. Prod deploy starts with all three catalog consumer flags **false**. Order: [mission catalog cutover](./how-tos/mission_catalog_cutover.md)
+- `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG` - When `true`, Slocum `warm_active_slocum_datasets` reads keys via catalog enablement API (still exact `ACTIVE_SLOCUM_DATASETS` / alias strings); default **`false`** in code. Local and prod soaks (2026-08-25) run with WG sync / AUTO_APPLY / Slocum warm **true**. New hosts: start flags **false**, apply catalog, then flip in order — [mission catalog cutover](./how-tos/mission_catalog_cutover.md)
+
 - `SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES` - Leader job `slocum_erddap_poke_job` interval (default **90**). Cheap Ocean Track `allDatasets` maxTime check; incremental mirror sync only when a dataset tail advanced. Startup still does a full warm. Admin **Check ERDDAP now** on Manage Slocum Mission Overviews. Wave Glider realtime is not on ERDDAP yet. Ops: [ERDDAP poke](./how-tos/erddap_poke.md) / [Slocum how-to](./how-tos/slocum.md)
 
 ### Public login map

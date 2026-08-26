@@ -23,5 +23,6 @@ Operational procedures, sensor guides, and admin quick starts.
 - [AIS vessel density map layer (DFO 2025 monthly rasters)](./vessel_density_map_layer.md)
 - [CIOPS-East ice forecast map layer (MSC GeoMet WMS)](./ciops_ice_map_layer.md)
 - [NAVWARN map layer (CCG navigational warnings)](./navwarn_map_layer.md)
-- [Mission catalog cutover (local soak done; prod replay)](./mission_catalog_cutover.md)
+- [Mission catalog cutover (local + prod soak done; public map later)](./mission_catalog_cutover.md)
+
 - [RAG document template](./DOCUMENT_TEMPLATE.md)

@@ -27,6 +27,7 @@ Hardcoded `.env` mission lists do not scale. A source-neutral catalog was introd
 ## Consequences
 
 - Safer cutover: dry-run gates and live-link before consumer swaps.
-- Local consumer soak completed 2026-08-15 (env-equivalent WG sync / AUTO_APPLY / Slocum warm). Production must replay apply on its own SQLite; do not copy the laptop DB.
+- Local consumer soak completed 2026-08-15; production apply + consumer soak completed 2026-08-24/25 (env-equivalent WG sync / AUTO_APPLY / Slocum warm). Do not copy laptop SQLite between hosts.
 - Ops must allowlist ST model names in `config/mission_data_providers.json` when new glider types appear.
-- Full retirement of `ACTIVE_*` env lists waits for set-equality soak **after production** enablement wiring.
+- Full retirement of `ACTIVE_*` env lists waits for set-equality soak after the public-map consumer is wired.
+

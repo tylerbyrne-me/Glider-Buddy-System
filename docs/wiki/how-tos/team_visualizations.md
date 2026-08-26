@@ -14,11 +14,11 @@ Inspired by [RU-COOL Glider Viz](https://marine.rutgers.edu/cool/data/gliders/vi
 
 | Slug | Chart | Meaning |
 |------|--------|---------|
-| `platform_share` | Grouped bars per hull | Deployment count and days at sea |
+| `platform_share` | Dual-axis grouped bars per hull (labels on bars) | Deployment count (right axis) and days at sea (left) |
 | `sensor_days_by_platform` | Stacked bars | At-sea days by **sensor identifier** (top ~12 + Other) |
 | `use_over_time` | Year × month heatmap (or yearly bars if sparse) | Glider-days from deployment windows |
 
-All values are **at-sea days** (not shelf time) on **Wave Glider and Slocum platforms only**. Other Sensor Tracker platform types (buoys, etc.) are excluded using the same allowlist as the mission catalog (`allowed_platform_models` in `config/mission_data_providers.json`, with name heuristics when the model is missing). Open-ended Tracker windows run through the snapshot `as_of`. Totals may be low if a join list hit the fleet fetch cap.
+All values are **at-sea days** (not shelf time) on **Wave Glider and Slocum platforms only**. Other Sensor Tracker platform types (buoys, etc.) are excluded using the same allowlist as the mission catalog (`allowed_platform_models` in `config/mission_data_providers.json`, with name heuristics when the model is missing). Chart axes use **hull names** (`SV3-1071`); when Tracker only stored a numeric platform FK, the snapshot build resolves the name from the platforms list (or a Tracker fetch) and falls back to the numeric id — never `platform#id`. Open-ended Tracker windows run through the snapshot `as_of`. Totals may be low if a join list hit the fleet fetch cap.
 
 Sensor days use the same intersection rule as Team Sensor Tracker detail: sensor-on-instrument ∩ instrument attachment ∩ that hull’s deployments (including logger-mounted instruments). The gallery does **not** page the full `/api/sensor/` catalog.
 
@@ -27,7 +27,7 @@ Wave Glider telemetry hexbin stays at `/team/telemetry-hexbin` (parameterized, g
 ## Rebuild
 
 1. Open Team → Visualizations.
-2. **Rebuild all** (or per-card **Rebuild**). Optional **Reuse snapshot** skips a new Tracker walk and re-renders from `data_store/team_viz_cache/fleet_snapshot.json`.
+2. **Rebuild all** (or per-card **Rebuild**). Optional **Reuse snapshot** skips a new Tracker walk and re-renders from `data_store/team_viz_cache/fleet_snapshot.json`. After a release that changes platform labeling, run a **full** rebuild once (not reuse) so compact rows pick up hull names.
 3. Prefer the CLI for the first full rebuild if gunicorn’s ~200s timeout is a risk:
 
 ```powershell

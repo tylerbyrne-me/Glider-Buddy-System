@@ -23,11 +23,18 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap  # noqa: E402
+from matplotlib.ticker import MaxNLocator  # noqa: E402
 
 from app.core.mission_catalog.naming import classify_platform_family
 from app.core.mission_catalog.providers_config import (
     ProvidersManifest,
     load_providers_manifest,
+)
+from app.core.sensor_tracker.platform_display import (
+    collect_row_platform_ids,
+    enrich_rows_platform_names,
+    ensure_platform_labels,
+    platform_name_from_record,
 )
 from app.services.sensor_tracker_analytics import (
     intersect_intervals,
@@ -39,10 +46,10 @@ from app.services.sensor_tracker_query import (
     SensorTrackerQueryError,
     _as_int,
     _identifier,
-    _platform_name,
     _record_id,
     _serial_of,
     _walk_tracker_pages,
+    get_entity_record,
     pin_relationship_rows,
     relationship_window,
     tracker_base_url,
@@ -77,10 +84,10 @@ CHART_SPECS: Dict[str, ChartSpec] = {
         slug="platform_share",
         title="Platform share of deployments and days at sea",
         caption=(
-            "Deployment count and at-sea days per Wave Glider / Slocum hull from "
-            "Sensor Tracker deployment windows (open-ended through as-of). "
-            "Non-glider Tracker platforms are excluded. At-sea days only — not "
-            "shelf time. Totals may be low if Tracker lists were truncated."
+            "Deployment count (right axis) and at-sea days (left axis) per Wave Glider / "
+            "Slocum hull from Sensor Tracker deployment windows (open-ended through as-of). "
+            "Bar labels show exact totals. Non-glider Tracker platforms are excluded. "
+            "At-sea days only — not shelf time. Totals may be low if Tracker lists were truncated."
         ),
         renderer="platform_share",
     ),
@@ -288,7 +295,7 @@ def _compact_platform(
     manifest: Optional[ProvidersManifest] = None,
 ) -> Optional[Dict[str, Any]]:
     plat_id = _record_id(row)
-    name = _platform_name(row)
+    name = platform_name_from_record(row)
     if plat_id is None and not name:
         return None
     type_id = _as_int(row.get("platform_type"))
@@ -462,7 +469,7 @@ def _compact_deployment(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     plat_id = _record_id(plat) if isinstance(plat, dict) else None
     if plat_id is None:
         plat_id = _as_int(row.get("platform"))
-    plat_name = _platform_name(row)
+    plat_name = platform_name_from_record(row)
     if dep_id is None and start in (None, ""):
         return None
     return {
@@ -495,7 +502,9 @@ def _compact_instrument_on_platform(row: Dict[str, Any]) -> Optional[Dict[str, A
         "instrument_id": inst_id,
         "instrument_identifier": _identifier(inst, "identifier") if inst else None,
         "platform_id": _record_id(plat) if plat else None,
-        "platform_name": _platform_name(plat) if plat else _platform_name(row),
+        "platform_name": (
+            platform_name_from_record(plat) if plat else platform_name_from_record(row)
+        ),
         "start_time": start,
         "end_time": end,
         "via_logger": False,
@@ -531,7 +540,9 @@ def _compact_logger_on_platform(row: Dict[str, Any]) -> Optional[Dict[str, Any]]
             _identifier(logger_rec, "identifier") if logger_rec else None
         ),
         "platform_id": _record_id(plat) if plat else None,
-        "platform_name": _platform_name(plat) if plat else _platform_name(row),
+        "platform_name": (
+            platform_name_from_record(plat) if plat else platform_name_from_record(row)
+        ),
         "start_time": start,
         "end_time": end,
     }
@@ -622,6 +633,41 @@ def resolve_instrument_attachments(
                     }
                 )
     return out
+
+
+async def _hydrate_snapshot_platform_names(
+    *,
+    platforms: Sequence[Dict[str, Any]],
+    deployments: List[Dict[str, Any]],
+    instrument_attachments: List[Dict[str, Any]],
+    client: Optional[httpx.AsyncClient] = None,
+) -> Dict[int, str]:
+    """Fill missing platform_name from platforms[] then Tracker by id."""
+    seed: Dict[int, str] = {}
+    for plat in platforms:
+        if not isinstance(plat, dict):
+            continue
+        plat_id = _as_int(plat.get("id"))
+        name = plat.get("name")
+        if plat_id is not None and name:
+            seed[plat_id] = str(name)
+    missing = collect_row_platform_ids(deployments) + collect_row_platform_ids(
+        instrument_attachments
+    )
+    missing = [pid for pid in missing if pid not in seed]
+
+    async def fetch(plat_id: int) -> Optional[Dict[str, Any]]:
+        try:
+            return await get_entity_record("platform", plat_id, client=client)
+        except SensorTrackerQueryError:
+            return None
+
+    labels = await ensure_platform_labels(
+        missing, fetch_platform=fetch, seed=seed
+    )
+    enrich_rows_platform_names(deployments, labels)
+    enrich_rows_platform_names(instrument_attachments, labels)
+    return labels
 
 
 async def _fetch_per_platform_fallback(
@@ -911,6 +957,13 @@ async def build_fleet_snapshot(
             if s is not None
         ]
 
+        await _hydrate_snapshot_platform_names(
+            platforms=platforms,
+            deployments=deployments,
+            instrument_attachments=instrument_attachments,
+            client=client,
+        )
+
         if truncated:
             notes.append(
                 f"One or more Tracker lists hit the fleet fetch cap ({FLEET_FETCH_CAP}); "
@@ -972,7 +1025,7 @@ def _platform_key(platform_id: Any, platform_name: Any) -> str:
     if platform_name:
         return str(platform_name)
     if platform_id is not None:
-        return f"platform#{platform_id}"
+        return str(platform_id)
     return "unknown"
 
 
@@ -1224,6 +1277,34 @@ def _save_figure(fig: plt.Figure, slug: str) -> Path:
     return path
 
 
+def _annotate_bar_values(
+    ax: Any,
+    bars: Any,
+    values: Sequence[float],
+    *,
+    fmt: str = "{:.0f}",
+    fontsize: int = 7,
+    color: str = "#212529",
+) -> None:
+    """Place numeric labels just above each bar (skip zeros)."""
+    ymax = ax.get_ylim()[1] or 1.0
+    pad = ymax * 0.01
+    for bar, value in zip(bars, values):
+        if value in (None, 0, 0.0):
+            continue
+        height = bar.get_height()
+        ax.text(
+            bar.get_x() + bar.get_width() / 2.0,
+            height + pad,
+            fmt.format(value),
+            ha="center",
+            va="bottom",
+            fontsize=fontsize,
+            color=color,
+            clip_on=False,
+        )
+
+
 def render_platform_share(snapshot: Dict[str, Any], slug: str = "platform_share") -> Path:
     data = aggregate_platform_share(snapshot)
     rows = data["rows"]
@@ -1235,19 +1316,53 @@ def render_platform_share(snapshot: Dict[str, Any], slug: str = "platform_share"
         return _save_figure(fig, slug)
 
     platforms = [r["platform"] for r in rows]
-    deps = [r["deployment_count"] for r in rows]
-    days = [r["days_at_sea"] for r in rows]
-    x = range(len(platforms))
+    deps = [float(r["deployment_count"]) for r in rows]
+    days = [float(r["days_at_sea"]) for r in rows]
+    x = list(range(len(platforms)))
     width = 0.38
-    fig, ax = plt.subplots(figsize=(max(8, len(platforms) * 0.55), 5))
-    ax.bar([i - width / 2 for i in x], deps, width, label="Deployments", color="#0d6efd")
-    ax.bar([i + width / 2 for i in x], days, width, label="Days at sea", color="#198754")
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(platforms, rotation=45, ha="right")
-    ax.set_ylabel("Count / days")
-    ax.set_title("Platform share of deployments and days at sea")
-    ax.legend()
-    ax.grid(axis="y", alpha=0.4)
+    fig, ax_days = plt.subplots(figsize=(max(9, len(platforms) * 0.6), 5.5))
+    ax_deps = ax_days.twinx()
+
+    # Days (left axis) — dominates magnitude; deployments (right) scaled independently.
+    bars_days = ax_days.bar(
+        [i + width / 2 for i in x],
+        days,
+        width,
+        label="Days at sea",
+        color="#198754",
+        zorder=2,
+    )
+    bars_deps = ax_deps.bar(
+        [i - width / 2 for i in x],
+        deps,
+        width,
+        label="Deployments",
+        color="#0d6efd",
+        zorder=3,
+    )
+
+    ax_days.set_xticks(x)
+    ax_days.set_xticklabels(platforms, rotation=45, ha="right")
+    ax_days.set_ylabel("Days at sea", color="#198754")
+    ax_deps.set_ylabel("Deployments", color="#0d6efd")
+    ax_days.tick_params(axis="y", labelcolor="#198754")
+    ax_deps.tick_params(axis="y", labelcolor="#0d6efd")
+    ax_deps.yaxis.set_major_locator(MaxNLocator(integer=True, min_n_ticks=2))
+    ax_days.set_title("Platform share of deployments and days at sea")
+    ax_days.grid(axis="y", alpha=0.35, zorder=0)
+
+    # Headroom so value labels are not clipped.
+    max_days = max(days) if days else 1.0
+    max_deps = max(deps) if deps else 1.0
+    ax_days.set_ylim(0, max_days * 1.18 if max_days else 1)
+    ax_deps.set_ylim(0, max_deps * 1.35 if max_deps else 1)
+
+    _annotate_bar_values(ax_days, bars_days, days, fmt="{:.0f}", color="#146c43")
+    _annotate_bar_values(ax_deps, bars_deps, deps, fmt="{:.0f}", color="#0a58ca")
+
+    handles = [bars_deps, bars_days]
+    labels = ["Deployments", "Days at sea"]
+    ax_days.legend(handles, labels, loc="upper right")
     fig.tight_layout()
     return _save_figure(fig, slug)
 

@@ -21,6 +21,17 @@ from sqlmodel import Session as SQLModelSession, select
 
 from app.config import settings
 from app.core.models.database import SensorTrackerDeployment
+from app.core.sensor_tracker.platform_display import (
+    clear_platform_display_cache,
+    collect_deployment_platform_ids,
+    ensure_platform_labels,
+    format_platform_label,
+    platform_display_cache,
+    platform_fk_from_value,
+    platform_label_from_value,
+    platform_name_from_record,
+    prepare_deployment_platform_labels as _prepare_deployment_platform_labels_core,
+)
 from app.services.sensor_tracker_service import format_attached_time_for_api
 from app.services.sensor_tracker_analytics import (
     build_analytics_payload,
@@ -265,11 +276,77 @@ def _title_for(entity: str, row: Dict[str, Any]) -> str:
             return text
     rec_id = _record_id(row)
     if rec_id is not None:
+        if entity == "platform":
+            return str(rec_id)
         return f"{entity} {rec_id}"
     return entity
 
 
-def summarize_cells(entity: str, row: Dict[str, Any]) -> Dict[str, Optional[str]]:
+def _platform_fk_from_value(value: Any) -> Optional[int]:
+    return platform_fk_from_value(value)
+
+
+def _platform_label_from_value(value: Any) -> Optional[str]:
+    return platform_label_from_value(value)
+
+
+def _platform_display_cache() -> Dict[int, str]:
+    return platform_display_cache()
+
+
+def _format_deployment_platform_cell(
+    value: Any,
+    *,
+    platform_labels: Optional[Dict[int, str]] = None,
+) -> Optional[str]:
+    return format_platform_label(value, platform_labels=platform_labels)
+
+
+def _collect_deployment_platform_ids(rows: Sequence[Dict[str, Any]]) -> List[int]:
+    return collect_deployment_platform_ids(rows)
+
+
+async def _fetch_platform_record(
+    plat_id: int,
+    *,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Optional[Dict[str, Any]]:
+    try:
+        return await get_entity_record("platform", plat_id, client=client)
+    except SensorTrackerQueryError:
+        return None
+
+
+async def _ensure_platform_display_cache(
+    platform_ids: Sequence[int],
+    *,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Dict[int, str]:
+    async def fetch(plat_id: int) -> Optional[Dict[str, Any]]:
+        return await _fetch_platform_record(plat_id, client=client)
+
+    return await ensure_platform_labels(platform_ids, fetch_platform=fetch)
+
+
+async def _prepare_deployment_platform_labels(
+    rows: Sequence[Dict[str, Any]],
+    *,
+    client: Optional[httpx.AsyncClient] = None,
+) -> Dict[int, str]:
+    async def fetch(plat_id: int) -> Optional[Dict[str, Any]]:
+        return await _fetch_platform_record(plat_id, client=client)
+
+    return await _prepare_deployment_platform_labels_core(
+        rows, fetch_platform=fetch
+    )
+
+
+def summarize_cells(
+    entity: str,
+    row: Dict[str, Any],
+    *,
+    platform_labels: Optional[Dict[int, str]] = None,
+) -> Dict[str, Optional[str]]:
     spec = ENTITY_REGISTRY.get(entity)
     columns = spec.columns if spec else ("id",)
     cells: Dict[str, Optional[str]] = {}
@@ -277,17 +354,26 @@ def summarize_cells(entity: str, row: Dict[str, Any]) -> Dict[str, Optional[str]
         if col == "id":
             rec_id = _record_id(row)
             cells[col] = str(rec_id) if rec_id is not None else None
+        elif entity == "deployment" and col == "platform":
+            cells[col] = _format_deployment_platform_cell(
+                row.get("platform"), platform_labels=platform_labels
+            )
         else:
             cells[col] = _fmt_cell(row.get(col))
     return cells
 
 
-def summarize_row(entity: str, row: Dict[str, Any]) -> Dict[str, Any]:
+def summarize_row(
+    entity: str,
+    row: Dict[str, Any],
+    *,
+    platform_labels: Optional[Dict[int, str]] = None,
+) -> Dict[str, Any]:
     return {
         "id": _record_id(row),
         "entity": entity,
         "title": _title_for(entity, row),
-        "cells": summarize_cells(entity, row),
+        "cells": summarize_cells(entity, row, platform_labels=platform_labels),
     }
 
 
@@ -710,6 +796,7 @@ def clear_probe_cache() -> None:
     _PROBE_CACHE.clear()
     _AUTH_403_PATHS.clear()
     _REJECTED_PARAMS_BY_PATH.clear()
+    clear_platform_display_cache()
 
 
 async def resolve_entity_path(
@@ -823,11 +910,18 @@ async def get_entity_detail(
     spec = get_spec(entity)
     record = await get_entity_record(entity, resource_id, client=client)
     rec_id = _record_id(record) or resource_id
+    platform_labels = None
+    if entity == "deployment":
+        platform_labels = await _prepare_deployment_platform_labels(
+            [record], client=client
+        )
     return {
         "entity": entity,
         "id": rec_id,
         "title": _title_for(entity, record),
-        "summary": summarize_cells(entity, record),
+        "summary": summarize_cells(
+            entity, record, platform_labels=platform_labels
+        ),
         "relations": list(spec.relations),
         "st_api_url": _api_url(spec.path, rec_id),
         "st_web_url": _web_url(spec, rec_id),
@@ -1699,6 +1793,11 @@ async def list_entities(
         if pk is not None:
             try:
                 record = await get_entity_record(entity, pk, client=client)
+                platform_labels = None
+                if entity == "deployment":
+                    platform_labels = await _prepare_deployment_platform_labels(
+                        [record], client=client
+                    )
                 return {
                     "entity": entity,
                     "count": 1,
@@ -1706,7 +1805,11 @@ async def list_entities(
                     "page_size": page_size,
                     "has_next": False,
                     "has_prev": False,
-                    "results": [summarize_row(entity, record)],
+                    "results": [
+                        summarize_row(
+                            entity, record, platform_labels=platform_labels
+                        )
+                    ],
                 }
             except SensorTrackerQueryError as exc:
                 if exc.status_code != 404:
@@ -1768,6 +1871,11 @@ async def list_entities(
 
     start = (page - 1) * page_size
     sliced = rows[start : start + page_size]
+    platform_labels = None
+    if entity == "deployment" and sliced:
+        platform_labels = await _prepare_deployment_platform_labels(
+            sliced, client=client
+        )
     if tracker_count is not None:
         total = tracker_count
     else:
@@ -1783,27 +1891,20 @@ async def list_entities(
         "page_size": page_size,
         "has_next": has_next,
         "has_prev": has_prev,
-        "results": [summarize_row(entity, row) for row in sliced],
+        "results": [
+            summarize_row(entity, row, platform_labels=platform_labels)
+            for row in sliced
+        ],
     }
 
 
 def _platform_name(record: Dict[str, Any]) -> Optional[str]:
     """Return a Tracker platform *name*, never a numeric FK stringified as one."""
-    for key in ("name", "platform_name"):
-        text = _fmt_cell(record.get(key))
-        if text:
-            return text
-    platform = record.get("platform")
-    if isinstance(platform, dict):
-        return _fmt_cell(platform.get("name") or platform.get("platform_name"))
-    return None
+    return platform_name_from_record(record)
 
 
 def _platform_fk_id(record: Dict[str, Any]) -> Optional[int]:
-    platform = record.get("platform")
-    if isinstance(platform, dict):
-        return _record_id(platform)
-    return _as_int(platform)
+    return platform_fk_from_value(record.get("platform"))
 
 
 def _identifier(record: Dict[str, Any], *keys: str) -> Optional[str]:
@@ -2312,13 +2413,20 @@ async def list_related(
             if not isinstance(platform_raw, dict)
             else _record_id(platform_raw)
         )
-        if isinstance(platform_raw, dict):
+        nested_name = (
+            _platform_name(platform_raw)
+            if isinstance(platform_raw, dict)
+            else None
+        )
+        if nested_name and isinstance(platform_raw, dict):
             rows = [platform_raw]
         elif platform_id is not None:
             try:
                 rows = [await get_entity_record("platform", platform_id, client=client)]
             except SensorTrackerQueryError:
-                rows = []
+                rows = [{"id": platform_id}]
+        else:
+            rows = []
 
     elif entity == "deployment" and relation in ("loggers", "instruments", "sensors", "components"):
         if relation == "loggers":
