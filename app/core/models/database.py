@@ -18,6 +18,10 @@ from .enums import (
     CatalogSourceVariant,
     CatalogSyncPolicy,
     UserRoleEnum,
+    VmtCreatedVia,
+    VmtCustodyStatus,
+    VmtSensorTrackerLinkStatus,
+    VmtServiceEventType,
 )
 
 if TYPE_CHECKING:
@@ -1425,3 +1429,147 @@ class CatalogMissionSource(SQLModel, table=True):
     )
 
     mission: Optional[CatalogMission] = Relationship(back_populates="sources")
+
+
+# --- VMT (Vemco Mobile Transceiver) Team log book ---
+class VmtUnit(SQLModel, table=True):
+    """Physical VMT inventory row; retained even if Sensor Tracker linkage is lost."""
+
+    __tablename__ = "vmt_units"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    serial_number: str = SQLModelField(
+        index=True,
+        unique=True,
+        description="InnovaSea / Vemco serial number (SN)",
+    )
+    tag_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="Optional InnovaSea tag ID",
+    )
+    code_map: str = SQLModelField(
+        default="A69-9001",
+        index=True,
+        description="Transmit code map, e.g. A69-9001",
+    )
+    always_tx: bool = SQLModelField(
+        default=False,
+        index=True,
+        description="Whether the unit is set to Always Tx",
+    )
+    comments: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    custody_status: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description=(
+            f"Manual custody when unattached; one of "
+            f"{[s.value for s in VmtCustodyStatus]} or null when attached"
+        ),
+    )
+    custody_status_other: Optional[str] = SQLModelField(
+        default=None,
+        description="Free text when custody_status is other",
+    )
+    sensor_tracker_instrument_id: Optional[int] = SQLModelField(
+        default=None,
+        index=True,
+        description="Last known Sensor Tracker instrument pk",
+    )
+    sensor_tracker_identifier: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="Last known Sensor Tracker instrument identifier",
+    )
+    sensor_tracker_link_status: str = SQLModelField(
+        default=VmtSensorTrackerLinkStatus.NEVER_LINKED.value,
+        index=True,
+        description=f"One of {[s.value for s in VmtSensorTrackerLinkStatus]}",
+    )
+    sensor_tracker_last_seen_at_utc: Optional[datetime] = SQLModelField(default=None)
+    sensor_tracker_last_sync_at_utc: Optional[datetime] = SQLModelField(default=None)
+    sensor_tracker_sync_error: Optional[str] = SQLModelField(
+        default=None,
+        sa_column=Column(Text),
+    )
+    created_via: str = SQLModelField(
+        default=VmtCreatedVia.MANUAL.value,
+        index=True,
+        description=f"One of {[s.value for s in VmtCreatedVia]}",
+    )
+    is_active: bool = SQLModelField(default=True, index=True)
+    created_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+    )
+    updated_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+    )
+    updated_by_username: Optional[str] = SQLModelField(default=None, index=True)
+
+    battery_checks: List["VmtBatteryCheck"] = Relationship(back_populates="unit")
+    service_events: List["VmtServiceEvent"] = Relationship(back_populates="unit")
+    audit_logs: List["VmtUnitAuditLog"] = Relationship(back_populates="unit")
+
+
+class VmtBatteryCheck(SQLModel, table=True):
+    """Append-only battery check for a VMT unit."""
+
+    __tablename__ = "vmt_battery_checks"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    vmt_unit_id: int = SQLModelField(foreign_key="vmt_units.id", index=True)
+    checked_at: date = SQLModelField(index=True)
+    days_remaining: Optional[int] = SQLModelField(default=None)
+    percent_remaining: Optional[int] = SQLModelField(default=None)
+    notes: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    recorded_by_username: Optional[str] = SQLModelField(default=None, index=True)
+    recorded_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+    unit: VmtUnit = Relationship(back_populates="battery_checks")
+
+
+class VmtServiceEvent(SQLModel, table=True):
+    """Append-only service / InnovaSea work event for a VMT unit."""
+
+    __tablename__ = "vmt_service_events"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    vmt_unit_id: int = SQLModelField(foreign_key="vmt_units.id", index=True)
+    event_date: Optional[date] = SQLModelField(default=None, index=True)
+    event_type: str = SQLModelField(
+        index=True,
+        description=f"One of {[t.value for t in VmtServiceEventType]}",
+    )
+    description: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    recorded_by_username: Optional[str] = SQLModelField(default=None, index=True)
+    recorded_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+    unit: VmtUnit = Relationship(back_populates="service_events")
+
+
+class VmtUnitAuditLog(SQLModel, table=True):
+    """Field-level change audit for VMT unit metadata."""
+
+    __tablename__ = "vmt_unit_audit_log"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    vmt_unit_id: int = SQLModelField(foreign_key="vmt_units.id", index=True)
+    changed_by_username: Optional[str] = SQLModelField(default=None, index=True)
+    changed_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    changes_json: Dict = SQLModelField(
+        default_factory=dict,
+        sa_column=Column(JSON),
+        description="Dict of field -> {before, after}",
+    )
+
+    unit: VmtUnit = Relationship(back_populates="audit_logs")

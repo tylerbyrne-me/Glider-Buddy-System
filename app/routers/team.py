@@ -12,6 +12,7 @@ from ..core import models
 from ..core.auth import get_current_admin_user
 from ..core.infra.db import get_db_session
 from ..core.infra.feature_guards import require_feature_dep
+from ..core.mission_catalog.service import list_unmatched_sources
 from ..core.template_context import get_template_context
 from ..core.templates import templates
 from ..services.team_ops_catalog import get_ops_script, list_ops_scripts, run_ops_script
@@ -38,6 +39,7 @@ from ..services.sensor_tracker_query import (
     lookup_buddy_deployment,
     get_entity_analytics,
 )
+from ..services import team_vmt_logbook as vmt_logbook
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +116,36 @@ async def get_visualizations_page(
         show_banner_nav=True,
     )
     return templates.TemplateResponse("team/visualizations.html", context)
+
+
+@router.get("/team/mission-catalog", response_class=HTMLResponse, include_in_schema=False)
+async def get_mission_catalog_page(
+    request: Request,
+    current_user: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    unmatched = list_unmatched_sources(session, source_kind="erddap")
+    context = get_template_context(
+        request=request,
+        current_user=current_user,
+        show_banner_nav=True,
+        unmatched_sources=unmatched,
+        unmatched_count=len(unmatched),
+    )
+    return templates.TemplateResponse("team/mission_catalog.html", context)
+
+
+@router.get("/team/vmt-logbook", response_class=HTMLResponse, include_in_schema=False)
+async def get_vmt_logbook_page(
+    request: Request,
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    context = get_template_context(
+        request=request,
+        current_user=current_user,
+        show_banner_nav=True,
+    )
+    return templates.TemplateResponse("team/vmt_logbook.html", context)
 
 
 @router.get("/api/team/scripts", response_model=List[models.OpsScriptInfo])
@@ -404,3 +436,150 @@ async def sensor_tracker_related(
     except SensorTrackerQueryError as exc:
         _raise_st_query_error(exc)
     return models.SensorTrackerRelatedResponse.model_validate(payload)
+
+
+def _raise_vmt_error(exc: vmt_logbook.VmtLogbookError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get(
+    "/api/team/vmt-logbook/units",
+    response_model=models.VmtUnitListResponse,
+)
+async def vmt_logbook_list_units(
+    include_inactive: bool = Query(False),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        return await vmt_logbook.list_units_with_overlay(
+            session, include_inactive=include_inactive
+        )
+    except SensorTrackerQueryError as exc:
+        _raise_st_query_error(exc)
+
+
+@router.get(
+    "/api/team/vmt-logbook/units/{unit_id}",
+    response_model=models.VmtUnitDetail,
+)
+async def vmt_logbook_get_unit(
+    unit_id: int,
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        return await vmt_logbook.get_unit_detail_with_overlay(session, unit_id)
+    except vmt_logbook.VmtLogbookError as exc:
+        _raise_vmt_error(exc)
+    except SensorTrackerQueryError as exc:
+        _raise_st_query_error(exc)
+
+
+@router.post(
+    "/api/team/vmt-logbook/units",
+    response_model=models.VmtUnitDetail,
+    status_code=status.HTTP_201_CREATED,
+)
+async def vmt_logbook_create_unit(
+    body: models.VmtUnitCreate,
+    current_user: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        unit = vmt_logbook.create_unit(
+            session, body, username=current_user.username
+        )
+        return await vmt_logbook.get_unit_detail_with_overlay(session, unit.id)
+    except vmt_logbook.VmtLogbookError as exc:
+        _raise_vmt_error(exc)
+
+
+@router.patch(
+    "/api/team/vmt-logbook/units/{unit_id}",
+    response_model=models.VmtUnitDetail,
+)
+async def vmt_logbook_update_unit(
+    unit_id: int,
+    body: models.VmtUnitUpdate,
+    current_user: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        vmt_logbook.update_unit(
+            session, unit_id, body, username=current_user.username
+        )
+        return await vmt_logbook.get_unit_detail_with_overlay(session, unit_id)
+    except vmt_logbook.VmtLogbookError as exc:
+        _raise_vmt_error(exc)
+
+
+@router.post(
+    "/api/team/vmt-logbook/units/{unit_id}/battery-checks",
+    response_model=models.VmtBatteryCheckRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def vmt_logbook_add_battery_check(
+    unit_id: int,
+    body: models.VmtBatteryCheckCreate,
+    current_user: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        row = vmt_logbook.append_battery_check(
+            session, unit_id, body, username=current_user.username
+        )
+        return models.VmtBatteryCheckRead.model_validate(row)
+    except vmt_logbook.VmtLogbookError as exc:
+        _raise_vmt_error(exc)
+
+
+@router.post(
+    "/api/team/vmt-logbook/units/{unit_id}/service-events",
+    response_model=models.VmtServiceEventRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def vmt_logbook_add_service_event(
+    unit_id: int,
+    body: models.VmtServiceEventCreate,
+    current_user: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        row = vmt_logbook.append_service_event(
+            session, unit_id, body, username=current_user.username
+        )
+        return models.VmtServiceEventRead.model_validate(row)
+    except vmt_logbook.VmtLogbookError as exc:
+        _raise_vmt_error(exc)
+
+
+@router.post(
+    "/api/team/vmt-logbook/sync-from-sensor-tracker",
+    response_model=models.VmtSyncResult,
+)
+async def vmt_logbook_sync_from_st(
+    dry_run: bool = Query(True),
+    current_user: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        return await vmt_logbook.sync_vmt_units_from_sensor_tracker(
+            session, username=current_user.username, dry_run=dry_run
+        )
+    except SensorTrackerQueryError as exc:
+        _raise_st_query_error(exc)
+
+
+@router.get(
+    "/api/team/vmt-logbook/units/{unit_id}/st-accounting",
+    response_model=models.VmtStAccountingResponse,
+)
+async def vmt_logbook_st_accounting(
+    unit_id: int,
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        return await vmt_logbook.get_st_accounting(session, unit_id)
+    except vmt_logbook.VmtLogbookError as exc:
+        _raise_vmt_error(exc)
+    except SensorTrackerQueryError as exc:
+        _raise_st_query_error(exc)

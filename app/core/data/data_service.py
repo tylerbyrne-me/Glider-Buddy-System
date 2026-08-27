@@ -767,7 +767,9 @@ async def _load_from_remote_sources(
 
     if user_role in [models.UserRoleEnum.admin, models.UserRoleEnum.pilot]:
         # Prefer realtime for active missions; otherwise try past first when not active.
-        active_ids = {m.strip() for m in (settings.active_realtime_missions or []) if m and str(m).strip()}
+        from app.core.mission_catalog.enablement import resolve_active_wave_glider_keys
+
+        active_ids = set(resolve_active_wave_glider_keys())
         code = utils.deployment_mission_code_from_mission_id(mission_id)
         is_active = mission_id in active_ids or (code and code in active_ids)
         if is_active:

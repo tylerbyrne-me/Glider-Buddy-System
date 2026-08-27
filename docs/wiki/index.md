@@ -13,10 +13,11 @@ Start here. This folder is the source of truth for "how does this work."
 - [AIS vessel density map layer](./how-tos/vessel_density_map_layer.md) — DFO NW Atlantic AIS density rasters (2025 monthly) on home maps
 - [CIOPS-East ice forecast map layer](./how-tos/ciops_ice_map_layer.md) — MSC GeoMet sea ice concentration WMS on home maps
 - [NAVWARN map layer](./how-tos/navwarn_map_layer.md) — CCG navigational warnings on home maps (HTML scrape + cache)
-- [Mission catalog cutover](./how-tos/mission_catalog_cutover.md) — local + prod consumer soak done; public map / env retirement later (ADR 0005)
+- [Mission catalog cutover](./how-tos/mission_catalog_cutover.md) — empty-env soak failed (reconcile wipes ST end dates); env lists authoritative until ST lifecycle authority fix + enrollment (ADR 0005)
 
 - [Sensor Tracker Team browser](./how-tos/sensor_tracker_team_browser.md) — admin Team hub live inventory search
 - [Team Visualizations gallery](./how-tos/team_visualizations.md) — static fleet charts from Sensor Tracker
+- [VMT Team log book](./how-tos/vmt_logbook.md) — Vemco Mobile Transceiver inventory, battery/service history, ST sync
 - [Glossary template](./GLOSSARY_TEMPLATE.md) — RAG/glossary authoring
 - [Module templates](./MODULE_TEMPLATES_README.md) — module scaffolding notes
 

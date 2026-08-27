@@ -16,7 +16,8 @@ Hardcoded `.env` mission lists do not scale. A source-neutral catalog was introd
 2. **Sensor Tracker** is membership and lifecycle authority for allowlisted glider Platforms models. Start/end dates drive `operational_state`; no `deployment_number` (preemptive staging) stays `PLANNED` / `CATALOG_ONLY` and never invents `m{n}`.
 3. **`deployment_code` / Slocum `mission_key`** are org-scoped global identities across providers. ERDDAP/WGMS/legacy attach; they do not create a second CEOTR mission for the same code.
 4. **Platforms** match by ST platform id or canonical name — never by ERDDAP `data_prefix`.
-5. **Enablement** stays `.env` key strings until crossover proof. Leader/startup catalog apply defaults off (`MISSION_CATALOG_AUTO_APPLY=false`); CLI `--apply` is refused when identity gates are unclean. Optional consumers (`MISSION_CATALOG_WG_SYNC_FROM_CATALOG`, `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG`) still return those env strings. Public map stays env-gated last. Ops: [mission catalog cutover](../wiki/how-tos/mission_catalog_cutover.md).
+5. **Lifecycle vs enrollment.** Sensor Tracker alone may set/clear catalog `start_time` / `end_time` and drive `operational_state` re-derive. WGMS / ERDDAP / legacy_env update sources and identities only (and may seed enrollment). **Enrollment** is `sync_policy=CONTINUOUS` (GBS operates/pilots the mission); it is preserved while ACTIVE and dropped to `ON_DEMAND` on completion. Env lists seed CONTINUOUS once via `legacy_env` on `--apply`.
+6. **Enablement** when env membership lists are empty: catalog `ACTIVE` ∧ `CONTINUOUS` (WG also requires an enabled realtime WGMS source + linked overview; Slocum requires a linked `is_active` deployment). Unenrolled in-water missions (e.g. `m230`) stay out. Non-empty `ACTIVE_*` / historical lists remain an override/fail-safe and still return exact env strings. Optional consumers (`MISSION_CATALOG_WG_SYNC_FROM_CATALOG`, `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG`, `MISSION_CATALOG_PUBLIC_MAP_FROM_CATALOG`) plus `app.py` startup cache / refresh / weekly reports read through this API. Leader/startup catalog apply defaults off until gates are clean. Ops: [mission catalog cutover](../wiki/how-tos/mission_catalog_cutover.md).
 
 ## Alternatives considered
 
@@ -27,7 +28,7 @@ Hardcoded `.env` mission lists do not scale. A source-neutral catalog was introd
 ## Consequences
 
 - Safer cutover: dry-run gates and live-link before consumer swaps.
-- Local consumer soak completed 2026-08-15; production apply + consumer soak completed 2026-08-24/25 (env-equivalent WG sync / AUTO_APPLY / Slocum warm). Do not copy laptop SQLite between hosts.
+- Local consumer soak completed 2026-08-15; production apply + consumer soak completed 2026-08-24/25; public-map enablement soaked 2026-08-26. Empty-env live-row membership failed soak 2026-08-26 (WGMS wiped ST end dates); ST lifecycle authority + CONTINUOUS enrollment + enablement v2 shipped 2026-08-26. Do not copy laptop SQLite between hosts.
 - Ops must allowlist ST model names in `config/mission_data_providers.json` when new glider types appear.
-- Full retirement of `ACTIVE_*` env lists waits for set-equality soak after the public-map consumer is wired.
+- Emptying `ACTIVE_*` is an ops step after post-fix apply + enrollment seed + set-equality confirmation; restoring env lists re-engages the override.
 

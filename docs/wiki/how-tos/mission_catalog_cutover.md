@@ -1,30 +1,90 @@
 # Mission catalog cutover
 
-Live-key-safe catalog (ADR [0005](../../decisions/0005-mission-catalog-live-keys.md)) stays an **index**. Catalog UUIDs never replace `mission_id`, Slocum `mission_key`, routes, or disk folders. Enablement still returns exact `.env` strings.
+Live-key-safe catalog (ADR [0005](../../decisions/0005-mission-catalog-live-keys.md)) stays an **index**. Catalog UUIDs never replace `mission_id`, Slocum `mission_key`, routes, or disk folders.
 
-**Status (2026-08-25):** local and production consumer soaks are done. Prod: `--apply` (Fundy id=6 linked; no archived duplicate of `fundy_20260724_229`), post-apply dry-run `created=0` / CLEAN, then WG sync → AUTO_APPLY → Slocum warm with no issues. Public map and `ACTIVE_*` retirement remain later.
+**Status (2026-08-26):** WG sync / AUTO_APPLY / Slocum warm / public-map consumers soaked. ST lifecycle authority + CONTINUOUS enrollment + enablement v2 shipped (code). **Env lists stay restored until the local empty-env re-soak below passes.** Unmatched ERDDAP review: Team `/team/mission-catalog`.
 
-## Consumer flag order (local + prod — done)
+## Enablement membership
 
-Flip one at a time. Restart after each change. Do not empty `ACTIVE_*` lists or sync the extra ST `m{n}` inventory.
+`list_catalog_sync_targets(platform, session)`:
 
-1. `MISSION_CATALOG_WG_SYNC_FROM_CATALOG=true`  
-   WG `sync_all_realtime_missions` reads keys via `list_catalog_sync_targets("wave_glider")`. Same `ACTIVE_REALTIME_MISSIONS` strings. Watch: only env WG missions, no new `data/` trees.
+| Env list | Result |
+|----------|--------|
+| Non-empty `ACTIVE_*` / historical | Exact env strings (override / fail-safe) |
+| Empty + catalog on | Catalog `ACTIVE` ∧ `CONTINUOUS` (WG also needs an enabled realtime WGMS source + linked overview; Slocum needs linked `is_active` deployment). Unenrolled in-water missions (e.g. `m230`) stay out |
+| Catalog off / empty / no session | Env list (possibly empty) |
 
-2. `MISSION_CATALOG_AUTO_APPLY=true` (after step 1 is uneventful)  
-   Leader/startup catalog job writes when gates are clean. CLI `--apply` is unchanged. Watch one run: `created=0`, gates CLEAN, no new `MissionOverview` / `SlocumDeployment` rows. If gates go unclean, set the flag back to `false` and run `python -m app.cli.mission_catalog_sync --dry-run`.
+Startup cache, WG refresh jobs, and weekly reports in `app.py` also resolve WG keys through this API (env fallback on error).
 
-3. `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG=true` (after step 2 is uneventful)  
-   `warm_active_slocum_datasets` reads keys via `list_catalog_sync_targets("slocum")`. Same `ACTIVE_SLOCUM_DATASETS` / alias strings.
+Does **not** sync ST catalog extras without enrollment. Does **not** auto-CONTINUOUS for every ST-open glider.
 
-Public map stays env-gated (`ACTIVE_*` ∩ `public_map_enabled`). Leave it last.
+## Post-fix apply + enrollment seed (required before empty env)
 
-## Leave off until set-equality soak after public-map consumer
+With **env lists still restored** (so `legacy_env` can seed CONTINUOUS):
 
-- Emptying `ACTIVE_REALTIME_MISSIONS` / `ACTIVE_SLOCUM_DATASETS` / folder-map lists
-- Syncing catalog extras (ST missions not in `.env`)
+```powershell
+conda activate WorkPython
+python -m app.cli.mission_catalog_sync --dry-run
+python -m app.cli.mission_catalog_sync --apply
+```
+
+Then verify lifecycle (read-only):
+
+- Catalog `ACTIVE` count should collapse from ~25 wiped historicals toward the real in-water set (enrolled WG + Slocums + any ST-open extras that remain ACTIVE but **unenrolled**).
+- Env-listed missions should show `sync_policy=CONTINUOUS`.
+- Past missions that share WGMS folders should keep ST `end_time` and `COMPLETED`.
+
+## Slocum active-flag tidy (done locally 2026-08-26)
+
+There is **no UI** for deactivating a `SlocumDeployment` (the model is not in
+SQLAdmin and nothing calls `DELETE /api/slocum/deployments/{id}`). Archive via
+the API or a one-off DB update with the same semantics
+(`is_active=False`, `status="archived"`; do **not** delete rows):
+
+| id | dataset / key | reason | local |
+|----|---------------|--------|-------|
+| 3 | `fundy_20260621_225` | superseded by `fundy_20260724_229` | archived |
+| 4 | `polly_20260519_222` | delayed/recovered; not in water | archived |
+
+Prod needs the same archive when replaying (ids may differ — match on `mission_key`).
+
+## Overview PK hygiene (optional, independent)
+
+```powershell
+python -m app.cli.merge_overview_pk_duplicates --dry-run
+# review outbox statuses; only then:
+python -m app.cli.merge_overview_pk_duplicates --apply
+# pending outbox on legacy PKs: investigate, or --force-outbox after review
+```
+
+Merges `1070-m211`→`m211`, `1070-m216`→`m216`; deletes empty `1071-m169`, `1071-m209`, stray `1071`. Leaves single legacy `####-m###` rows, `_test`/`_offloads`, `m204_realtime` alone.
+
+## Consumer flag order (local + prod)
+
+Flip one at a time. Restart after each change.
+
+1. `MISSION_CATALOG_WG_SYNC_FROM_CATALOG=true` — **done**
+2. `MISSION_CATALOG_AUTO_APPLY=true` — **done**
+3. `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG=true` — **done**
+4. `MISSION_CATALOG_PUBLIC_MAP_FROM_CATALOG=true` — **soaked** (still env ∩ `public_map_enabled` while lists non-empty)
+
+## Emptying `ACTIVE_*` (ops — after apply + enrollment verify)
+
+Attempted 2026-08-26 and rolled back (19 historical WG keys leaked). Retry only after post-fix apply + CONTINUOUS seed:
+
+1. Confirm dry-run gates CLEAN and enablement keys **exactly** match current env lists (parity logs); `m230` stays out.
+2. Empty `ACTIVE_REALTIME_MISSIONS` / `ACTIVE_SLOCUM_DATASETS` (and historical when ready) on one host; restart.
+3. Watch: sync/warm/public map/startup cache use the enrolled set; no new `data/` trees for ST-only catalog missions.
+4. Restore-test: put env lists back; confirm override returns.
+5. Restore env lists immediately if anything drifts; then prod.
+
+Keep `REMOTE_MISSION_FOLDER_MAP_JSON` / alias maps as needed until folder resolution is fully catalog-backed.
+
+## Leave off
+
+- Syncing catalog extras (ST missions not enrolled)
 - Auto-CONTINUOUS for every ST-open glider
-- Merging leftover historical overview PKs (`m211` vs `1070-m211`)
+- Renaming single leftover historical overview PKs (`1070-m170`, …)
 
 ## Production replay (done 2026-08-24 / 2026-08-25)
 
@@ -37,16 +97,21 @@ Each host applies its own `catalog_mission_id` links (do **not** copy laptop SQL
 5. Post-apply dry-run: `created=0`, CLEAN.
 6. Flag order: WG sync → AUTO_APPLY → Slocum warm (restart after each). Completed with no issues 2026-08-25.
 
+## Admin review
+
+- Team `/team/mission-catalog` — read-only unmatched ERDDAP sources (does not create missions)
+- Team ops script `mission_catalog_sync` — dry-run only
+
 ## Next (backlog)
 
-- Catalog unmatched ERDDAP admin UI
-- Public login map via enablement (last consumer)
-- Retire `ACTIVE_*` membership authority after set-equality
-- Optional historical overview PK merges
+- Empty `ACTIVE_*` on local then prod after set-equality confirmation (restoreable fail-safe)
+- Broader admin runtime mission/config control (Team enroll/unenroll UI)
 
 ## Related
 
 - Env reference: [ENV_VARIABLES.md](../ENV_VARIABLES.md)
 - Architecture: [architecture.md](../architecture.md)
+- Public map: [public_login_map.md](./public_login_map.md)
 - Tracking: [in-progress](../../tasks/in-progress.md) / [backlog](../../tasks/backlog.md) / [done](../../tasks/done.md)
 - CLI: `python -m app.cli.mission_catalog_sync --dry-run|--apply`
+- PK merge: `python -m app.cli.merge_overview_pk_duplicates --dry-run|--apply`

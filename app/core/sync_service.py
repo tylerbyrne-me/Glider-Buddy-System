@@ -246,7 +246,7 @@ async def sync_all_realtime_missions() -> dict:
         Dictionary mapping mission_id to (successful, failed) sync counts
     """
     results = {}
-    # Prefer catalog enablement API when configured; still returns exact env key strings.
+    # Prefer catalog enablement API when configured (env override or live-row keys).
     active_missions: list[str]
     if getattr(settings, "mission_catalog_wg_sync_from_catalog", False):
         try:

@@ -22,7 +22,8 @@ def derive_operational_state_and_policy(
     - end_time set → COMPLETED + ON_DEMAND
     - start_time in the future → PLANNED + CATALOG_ONLY
     - otherwise open → ACTIVE + CATALOG_ONLY
-      (CONTINUOUS enablement stays behind env ∩ catalog until crossover)
+      (CONTINUOUS enrollment is seeded by legacy_env / preserved by reconcile;
+       live sync membership is env override or ACTIVE∧CONTINUOUS enablement)
     """
     if deployment_number is None:
         return CatalogOperationalState.PLANNED, CatalogSyncPolicy.CATALOG_ONLY

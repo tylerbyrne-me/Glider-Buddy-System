@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Mission catalog - {{ platform_buddy_title }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <p class="mb-2"><a href="/team">&larr; Team</a></p>
+    <h1 class="mb-2">Mission catalog</h1>
+    <p class="text-muted">
+        Read-only review of unmatched ERDDAP datasets discovered by catalog sync.
+        These leftovers are inventory only — this page does not create missions or
+        change enablement. Use the Team ops script for a catalog dry-run.
+    </p>
+
+    <div class="card gbs-card mt-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h2 class="h5 mb-0">Unmatched ERDDAP sources</h2>
+            <span class="badge text-bg-secondary">{{ unmatched_count }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if unmatched_sources %}
+            <div class="table-responsive">
+                <table class="table table-striped table-hover align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Dataset ID</th>
+                            <th>Provider</th>
+                            <th>Variant</th>
+                            <th>Status</th>
+                            <th>First seen</th>
+                            <th>Last seen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for source in unmatched_sources %}
+                        <tr>
+                            <td>
+                                {% if source.provider_url %}
+                                <a href="{{ source.provider_url }}" target="_blank" rel="noopener noreferrer">
+                                    {{ source.external_ref }}
+                                </a>
+                                {% else %}
+                                <code>{{ source.external_ref }}</code>
+                                {% endif %}
+                            </td>
+                            <td>{{ source.provider_key }}</td>
+                            <td>{{ source.source_variant or "—" }}</td>
+                            <td>{{ source.match_status }}</td>
+                            <td class="text-nowrap small">
+                                {% if source.first_seen_at %}{{ source.first_seen_at }}{% else %}—{% endif %}
+                            </td>
+                            <td class="text-nowrap small">
+                                {% if source.last_seen_at %}{{ source.last_seen_at }}{% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="p-3 mb-0 text-muted">
+                No unmatched ERDDAP sources. Catalog sync is linking everything it can,
+                or the catalog has not been applied on this host yet.
+            </p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

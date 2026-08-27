@@ -430,6 +430,13 @@ def count_dmon_confirmed_detections(review_payload: Optional[dict[str, Any]]) ->
 def deployment_is_dmon_review_eligible(deployment: models.SlocumDeployment) -> bool:
     if not deployment or not deployment.is_active:
         return False
+    # Deployments linked to config-historical datasets are done — no prefetch.
+    from app.platforms.slocum.mirror_service import is_historical_dataset
+
+    if deployment.erddap_dataset_id and is_historical_dataset(deployment.erddap_dataset_id):
+        return False
+    if deployment.mission_key and is_historical_dataset(deployment.mission_key):
+        return False
     cards = {c.lower() for c in parse_enabled_sensor_cards(deployment.enabled_sensor_cards)}
     if "dmon" not in cards:
         return False

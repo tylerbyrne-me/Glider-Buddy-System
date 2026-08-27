@@ -34,6 +34,8 @@ from app.core.models.database import (
 from app.core.models.enums import (
     CatalogIdentityKind,
     CatalogMatchStatus,
+    CatalogOperationalState,
+    CatalogSyncPolicy,
 )
 
 logger = logging.getLogger(__name__)
@@ -400,17 +402,93 @@ def _upsert_source(
     )
 
 
+def _is_lifecycle_authority(
+    discovered: DiscoveredMission,
+    manifest: ProvidersManifest,
+) -> bool:
+    """True when this provider alone may set/clear dates and drive lifecycle."""
+    provider = manifest.get(discovered.provider_key)
+    if provider is None:
+        return False
+    if provider.lifecycle_authority:
+        return True
+    # Safe default: sensor_tracker connector is lifecycle authority.
+    return provider.connector == "sensor_tracker"
+
+
+def _may_seed_enrollment(
+    discovered: DiscoveredMission,
+    manifest: ProvidersManifest,
+) -> bool:
+    """Only the env lists (legacy_env) may seed CONTINUOUS enrollment.
+
+    WGMS also emits CONTINUOUS for realtime folders, but a folder existing is
+    data location — not GBS operating the mission (e.g. m230 stays unenrolled).
+    """
+    provider = manifest.get(discovered.provider_key)
+    if provider is None:
+        return False
+    return provider.connector == "legacy_env"
+
+
 def _apply_lifecycle_fields(
     discovered: DiscoveredMission,
+    *,
+    allow_continuous: bool = True,
 ) -> Tuple[str, str]:
-    """Prefer adapter-provided state; re-derive when deployment_number is absent."""
-    state, policy = derive_operational_state_and_policy(
+    """Derive state/policy from dates; honor adapter state when no date evidence.
+
+    ``allow_continuous=False`` masks an adapter-provided CONTINUOUS policy so
+    non-enrollment providers (WGMS realtime folders) cannot enroll missions.
+    """
+    derived_state, derived_policy = derive_operational_state_and_policy(
         start_time=discovered.start_time,
         end_time=discovered.end_time,
         deployment_number=discovered.deployment_number,
     )
-    # Adapter may already have set state; re-derive always so preemptive/date rules win.
-    return state.value, policy.value
+    has_date_evidence = (
+        discovered.start_time is not None or discovered.end_time is not None
+    )
+    # Preemptive (no deployment_number) always uses derived PLANNED/CATALOG_ONLY.
+    if discovered.deployment_number is None:
+        return derived_state.value, derived_policy.value
+
+    # WGMS/legacy past folders often set COMPLETED with no dates — honor that
+    # when ST is not the observer (create path / non-authority adapters).
+    if not has_date_evidence and discovered.operational_state is not None:
+        state_value = _enum_value(discovered.operational_state)
+        adapter_policy = (
+            _enum_value(discovered.sync_policy) if discovered.sync_policy else None
+        )
+        if adapter_policy == CatalogSyncPolicy.CONTINUOUS.value and not allow_continuous:
+            adapter_policy = None
+        if adapter_policy is not None:
+            return state_value, adapter_policy
+        if state_value == CatalogOperationalState.COMPLETED.value:
+            return state_value, CatalogSyncPolicy.ON_DEMAND.value
+        return state_value, CatalogSyncPolicy.CATALOG_ONLY.value
+
+    return derived_state.value, derived_policy.value
+
+
+def _resolve_sync_policy(
+    *,
+    operational_state: str,
+    derived_policy: str,
+    existing_policy: Optional[str] = None,
+    discovered_policy: Optional[str] = None,
+) -> str:
+    """Preserve CONTINUOUS enrollment while ACTIVE; drop to ON_DEMAND when done."""
+    if operational_state == CatalogOperationalState.COMPLETED.value:
+        return CatalogSyncPolicy.ON_DEMAND.value
+    if operational_state == CatalogOperationalState.ARCHIVED.value:
+        return CatalogSyncPolicy.CATALOG_ONLY.value
+    # Seed or preserve enrollment for active (and planned) missions.
+    if existing_policy == CatalogSyncPolicy.CONTINUOUS.value:
+        return CatalogSyncPolicy.CONTINUOUS.value
+    if discovered_policy == CatalogSyncPolicy.CONTINUOUS.value:
+        return CatalogSyncPolicy.CONTINUOUS.value
+    return derived_policy
 
 
 def _create_mission(
@@ -420,6 +498,7 @@ def _create_mission(
     *,
     dry_run: bool,
     counts: ReconcileCounts,
+    manifest: ProvidersManifest,
 ) -> CatalogMission:
     now = _utcnow()
     owner = None
@@ -433,7 +512,20 @@ def _create_mission(
         start=discovered.start_time,
         deployment_number=discovered.deployment_number,
     )
-    state_value, policy_value = _apply_lifecycle_fields(discovered)
+    may_seed = _may_seed_enrollment(discovered, manifest)
+    discovered_policy = (
+        _enum_value(discovered.sync_policy) if discovered.sync_policy else None
+    )
+    if discovered_policy == CatalogSyncPolicy.CONTINUOUS.value and not may_seed:
+        discovered_policy = None
+    state_value, derived_policy = _apply_lifecycle_fields(
+        discovered, allow_continuous=may_seed
+    )
+    policy_value = _resolve_sync_policy(
+        operational_state=state_value,
+        derived_policy=derived_policy,
+        discovered_policy=discovered_policy,
+    )
 
     mission = CatalogMission(
         id=str(uuid.uuid4()),
@@ -469,22 +561,53 @@ def _update_mission_from_discovery(
     platform: Optional[CatalogPlatform],
     *,
     dry_run: bool,
+    manifest: ProvidersManifest,
 ) -> None:
-    """Update mission fields. ST dates/state always win; title respects overrides."""
+    """Update mission fields.
+
+    Only the lifecycle-authority provider (Sensor Tracker) may set/clear dates
+    and drive operational_state. Other providers update sources/identities and
+    may seed ``sync_policy=CONTINUOUS`` enrollment without touching dates.
+    """
     if dry_run:
         return
     now = _utcnow()
-    state_value, policy_value = _apply_lifecycle_fields(discovered)
+    is_authority = _is_lifecycle_authority(discovered, manifest)
+    may_seed = _may_seed_enrollment(discovered, manifest)
+    discovered_policy = (
+        _enum_value(discovered.sync_policy) if discovered.sync_policy else None
+    )
+    if discovered_policy == CatalogSyncPolicy.CONTINUOUS.value and not may_seed:
+        # WGMS realtime folders emit CONTINUOUS but are data location only.
+        discovered_policy = None
 
-    # Dates / lifecycle always refresh (has_manual_overrides does not protect them).
-    if discovered.start_time is not None:
-        mission.start_time = discovered.start_time
-    # Always take discovered end_time (including None when ST reopens a deployment).
-    mission.end_time = discovered.end_time
-    mission.operational_state = state_value
-    mission.sync_policy = policy_value
-    if discovered.deployment_number is not None:
-        mission.deployment_number = discovered.deployment_number
+    if is_authority:
+        # ST dates win, including None when ST reopens a deployment.
+        if discovered.start_time is not None:
+            mission.start_time = discovered.start_time
+        mission.end_time = discovered.end_time
+        state_value, derived_policy = _apply_lifecycle_fields(
+            discovered, allow_continuous=may_seed
+        )
+        mission.operational_state = state_value
+        mission.sync_policy = _resolve_sync_policy(
+            operational_state=state_value,
+            derived_policy=derived_policy,
+            existing_policy=mission.sync_policy,
+            discovered_policy=discovered_policy,
+        )
+        if discovered.deployment_number is not None:
+            mission.deployment_number = discovered.deployment_number
+    else:
+        # Non-authority: never wipe dates or re-derive lifecycle.
+        if discovered.deployment_number is not None and mission.deployment_number is None:
+            mission.deployment_number = discovered.deployment_number
+        # Enrollment seed: legacy_env CONTINUOUS only, while mission stays ACTIVE.
+        if (
+            discovered_policy == CatalogSyncPolicy.CONTINUOUS.value
+            and mission.operational_state == CatalogOperationalState.ACTIVE.value
+        ):
+            mission.sync_policy = CatalogSyncPolicy.CONTINUOUS.value
 
     if not mission.has_manual_overrides:
         mission.title = discovered.title or mission.title
@@ -565,6 +688,7 @@ def reconcile_batches(
                         platform,
                         dry_run=dry_run,
                         counts=counts,
+                        manifest=manifest,
                     )
                 else:
                     counts.missions_updated += 1
@@ -574,6 +698,7 @@ def reconcile_batches(
                         discovered,
                         platform,
                         dry_run=dry_run,
+                        manifest=manifest,
                     )
 
                 mission_id = mission.id

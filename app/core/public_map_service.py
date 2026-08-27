@@ -207,12 +207,59 @@ def resolve_public_mission_labels(
     return platform_name, mission_title
 
 
+def _env_keys_for_public_map(platform: PlatformId) -> List[str]:
+    if platform == "wave_glider":
+        return [
+            str(mission_id).strip()
+            for mission_id in (getattr(settings, "active_realtime_missions", None) or [])
+            if mission_id and str(mission_id).strip()
+        ]
+    return configured_slocum_dataset_keys(
+        getattr(settings, "active_slocum_datasets", None)
+    )
+
+
+def active_keys_for_public_map(
+    platform: PlatformId,
+    session: SQLModelSession,
+) -> List[str]:
+    """Active config keys for the public map allowlist.
+
+    Default: exact env strings. When ``MISSION_CATALOG_PUBLIC_MAP_FROM_CATALOG``
+    is true, read the same strings via catalog enablement and fall back to env
+    on error.
+    """
+    env_keys = _env_keys_for_public_map(platform)
+    if not getattr(settings, "mission_catalog_public_map_from_catalog", False):
+        return env_keys
+    try:
+        from .mission_catalog.enablement import (
+            list_catalog_sync_targets,
+            log_enablement_parity,
+        )
+
+        log_enablement_parity(session)
+        keys = list_catalog_sync_targets(platform, session)
+        logger.info(
+            "PUBLICMAP: Catalog enablement platform=%s keys=%s",
+            platform,
+            keys,
+        )
+        return list(keys)
+    except Exception as exc:
+        logger.warning(
+            "PUBLICMAP: Catalog enablement failed for %s (%s); falling back to env",
+            platform,
+            exc,
+        )
+        return env_keys
+
+
 def get_public_mission_allowlist(session: SQLModelSession) -> List[PublicMissionRef]:
     """Active config ∩ DB public_map_enabled, capped at max_missions."""
     refs: List[PublicMissionRef] = []
 
-    active_wg = list(getattr(settings, "active_realtime_missions", None) or [])
-    for mission_id in active_wg:
+    for mission_id in active_keys_for_public_map("wave_glider", session):
         mid = str(mission_id).strip()
         if not mid:
             continue
@@ -242,10 +289,7 @@ def get_public_mission_allowlist(session: SQLModelSession) -> List[PublicMission
         )
 
     if is_feature_enabled("slocum_platform"):
-        active_slocum = configured_slocum_dataset_keys(
-            getattr(settings, "active_slocum_datasets", None)
-        )
-        for configured_key in active_slocum:
+        for configured_key in active_keys_for_public_map("slocum", session):
             did = resolve_slocum_dataset_id(configured_key)
             mkey = slocum_mission_key(did) or did
             deployment = session.exec(

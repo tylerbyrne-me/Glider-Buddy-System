@@ -124,3 +124,44 @@ class CatalogIdentityKind(str, Enum):
     LEGACY_ENV_KEY = "legacy_env_key"
     MANUAL = "manual"
 
+
+class VmtCustodyStatus(str, Enum):
+    """Manual custody when a VMT is not currently attached in Sensor Tracker."""
+
+    ON_LOAN = "on_loan"
+    COVE = "cove"
+    SERVICING = "servicing"
+    MISSING = "missing"
+    LOST = "lost"
+    OTHER = "other"
+
+
+class VmtSensorTrackerLinkStatus(str, Enum):
+    """Local Sensor Tracker instrument linkage state for a VMT unit."""
+
+    NEVER_LINKED = "never_linked"
+    LINKED = "linked"
+    NOT_FOUND = "not_found"
+    STALE = "stale"
+
+
+class VmtCreatedVia(str, Enum):
+    """How a VMT unit row entered the log book."""
+
+    MANUAL = "manual"
+    SEED = "seed"
+    ST_SYNC = "st_sync"
+
+
+class VmtServiceEventType(str, Enum):
+    """Service / InnovaSea work event types for VMT log book history."""
+
+    REBATTERY = "rebattery"
+    HEAD_REPLACEMENT = "head_replacement"
+    MAINBOARD_REPLACEMENT = "mainboard_replacement"
+    HYDROPHONE_REPLACEMENT = "hydrophone_replacement"
+    REPROGRAMMED = "reprogrammed"
+    CODE_SPACE_UPDATE = "code_space_update"
+    MANUFACTURER_REPAIR = "manufacturer_repair"
+    OTHER = "other"
+

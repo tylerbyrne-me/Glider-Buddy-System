@@ -5,12 +5,12 @@ Unauthenticated Leaflet map on `/login.html` for allowlisted Wave Glider and Slo
 ## Enable
 
 1. Set feature toggle `public_login_map` to `true` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**).
-2. List the mission in the active env config:
-   - Wave Glider: `ACTIVE_REALTIME_MISSIONS`
-   - Slocum: `ACTIVE_SLOCUM_DATASETS` (aliases via `SLOCUM_DATASET_ALIAS_MAP_JSON` are fine)
+2. Membership — either:
+   - List the mission in the active env config (`ACTIVE_REALTIME_MISSIONS` / `ACTIVE_SLOCUM_DATASETS`), or
+   - With `MISSION_CATALOG_PUBLIC_MAP_FROM_CATALOG=true` and empty env lists, rely on enrolled enablement (catalog ACTIVE ∧ CONTINUOUS + linked live rows).
 3. In admin Mission Overview (WG) or Slocum Mission Overviews, enable **Show on public map**. Optionally enable **Show latest weekly report**.
 
-Both the env active list **and** the DB flag are required. Cap: `public_map_max_missions` in config. Mission-catalog enablement does **not** drive public-map membership yet (last consumer after prod catalog soak) — [mission catalog cutover](./mission_catalog_cutover.md).
+Both membership **and** the DB flag are required. Cap: `public_map_max_missions` in config. Ops: [mission catalog cutover](./mission_catalog_cutover.md).
 
 ## APIs
 

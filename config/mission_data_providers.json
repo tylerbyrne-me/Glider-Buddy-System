@@ -5,9 +5,10 @@
       "connector": "sensor_tracker",
       "organization": "ceotr",
       "enabled": true,
+      "lifecycle_authority": true,
       "base_url_setting": "sensor_tracker_host",
       "rate_limit_seconds": 1.0,
-      "notes": "Primary CEOTR Sensor Tracker metadata catalog."
+      "notes": "Primary CEOTR Sensor Tracker metadata catalog (sole lifecycle authority for dates/state)."
     },
     {
       "key": "oceantrack_erddap",

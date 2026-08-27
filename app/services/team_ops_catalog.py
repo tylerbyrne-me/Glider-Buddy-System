@@ -77,6 +77,16 @@ OPS_SCRIPTS: Dict[str, OpsScriptSpec] = {
         module_path="app.cli.mission_catalog_sync",
         func_name="run_dry_run_checks",
     ),
+    "mission_catalog": OpsScriptSpec(
+        id="mission_catalog",
+        label="Mission catalog (unmatched ERDDAP)",
+        description=(
+            "Read-only review of unmatched ERDDAP datasets in the mission "
+            "catalog (does not create missions)."
+        ),
+        kind="page",
+        href="/team/mission-catalog",
+    ),
     "sensor_tracker": OpsScriptSpec(
         id="sensor_tracker",
         label="Sensor Tracker browser",
@@ -96,6 +106,16 @@ OPS_SCRIPTS: Dict[str, OpsScriptSpec] = {
         ),
         kind="page",
         href="/team/visualizations",
+    ),
+    "vmt_logbook": OpsScriptSpec(
+        id="vmt_logbook",
+        label="VMT log book",
+        description=(
+            "Track Vemco Mobile Transceiver inventory, battery checks, service "
+            "history, Sensor Tracker sync, and deployment accounting."
+        ),
+        kind="page",
+        href="/team/vmt-logbook",
     ),
 }
 

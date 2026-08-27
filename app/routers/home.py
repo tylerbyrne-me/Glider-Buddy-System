@@ -145,7 +145,9 @@ async def _get_wave_glider_home_response(
     session: SQLModelSession,
 ):
     """Build Wave Glider home page context and return TemplateResponse. Used by GET /wave-glider/home."""
-    active_missions = settings.active_realtime_missions
+    from app.core.mission_catalog.enablement import resolve_active_wave_glider_keys
+
+    active_missions = resolve_active_wave_glider_keys(session)
     logger.info(f"Loading home page with active missions: {active_missions}")
     
     # Load mission data for each active mission
@@ -370,12 +372,10 @@ async def get_slocum_home(
     denied = redirect_if_platform_denied(current_user, PLATFORM_SLOCUM)
     if denied:
         return denied
+    from app.core.mission_catalog.enablement import resolve_active_wave_glider_keys
+
     show_wg_map_overlay = user_has_platform_access(current_user, PLATFORM_WAVE_GLIDER)
-    active_missions = (
-        list(settings.active_realtime_missions or [])
-        if show_wg_map_overlay
-        else []
-    )
+    active_missions = resolve_active_wave_glider_keys() if show_wg_map_overlay else []
     template_context = get_template_context(
         request=request,
         current_user=current_user,

@@ -1186,6 +1186,163 @@ class SensorTrackerAnalyticsResponse(BaseModel):
 
 
 # ============================================================================
+# VMT (Vemco Mobile Transceiver) Team log book
+# ============================================================================
+
+class VmtBatteryCheckCreate(BaseModel):
+    checked_at: date
+    days_remaining: Optional[int] = None
+    percent_remaining: Optional[int] = Field(default=None, ge=0, le=100)
+    notes: Optional[str] = None
+
+
+class VmtBatteryCheckRead(BaseModel):
+    id: int
+    vmt_unit_id: int
+    checked_at: date
+    days_remaining: Optional[int] = None
+    percent_remaining: Optional[int] = None
+    notes: Optional[str] = None
+    recorded_by_username: Optional[str] = None
+    recorded_at_utc: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VmtServiceEventCreate(BaseModel):
+    event_type: str
+    event_date: Optional[date] = None
+    description: Optional[str] = None
+
+
+class VmtServiceEventRead(BaseModel):
+    id: int
+    vmt_unit_id: int
+    event_date: Optional[date] = None
+    event_type: str
+    description: Optional[str] = None
+    recorded_by_username: Optional[str] = None
+    recorded_at_utc: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VmtUnitAuditLogRead(BaseModel):
+    id: int
+    vmt_unit_id: int
+    changed_by_username: Optional[str] = None
+    changed_at_utc: datetime
+    changes_json: Dict[str, Any] = {}
+
+    class Config:
+        from_attributes = True
+
+
+class VmtUnitCreate(BaseModel):
+    serial_number: str = Field(..., min_length=1)
+    tag_id: Optional[str] = None
+    code_map: str = "A69-9001"
+    always_tx: bool = False
+    comments: Optional[str] = None
+    custody_status: Optional[str] = None
+    custody_status_other: Optional[str] = None
+    sensor_tracker_instrument_id: Optional[int] = None
+    is_active: bool = True
+
+
+class VmtUnitUpdate(BaseModel):
+    tag_id: Optional[str] = None
+    code_map: Optional[str] = None
+    always_tx: Optional[bool] = None
+    comments: Optional[str] = None
+    custody_status: Optional[str] = None
+    custody_status_other: Optional[str] = None
+    sensor_tracker_instrument_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
+class VmtUnitListItem(BaseModel):
+    id: int
+    serial_number: str
+    tag_id: Optional[str] = None
+    code_map: str
+    always_tx: bool
+    comments: Optional[str] = None
+    custody_status: Optional[str] = None
+    custody_status_other: Optional[str] = None
+    sensor_tracker_instrument_id: Optional[int] = None
+    sensor_tracker_identifier: Optional[str] = None
+    sensor_tracker_link_status: str
+    created_via: str
+    is_active: bool
+    updated_at_utc: Optional[datetime] = None
+    updated_by_username: Optional[str] = None
+    latest_battery_checked_at: Optional[date] = None
+    latest_days_remaining: Optional[int] = None
+    latest_percent_remaining: Optional[int] = None
+    is_attached: bool = False
+    attached_platform_name: Optional[str] = None
+    st_browser_url: Optional[str] = None
+    low_battery: bool = False
+
+
+class VmtUnitDetail(VmtUnitListItem):
+    sensor_tracker_last_seen_at_utc: Optional[datetime] = None
+    sensor_tracker_last_sync_at_utc: Optional[datetime] = None
+    sensor_tracker_sync_error: Optional[str] = None
+    created_at_utc: Optional[datetime] = None
+    battery_checks: List[VmtBatteryCheckRead] = []
+    service_events: List[VmtServiceEventRead] = []
+    audit_logs: List[VmtUnitAuditLogRead] = []
+
+
+class VmtUnitListResponse(BaseModel):
+    count: int = 0
+    units: List[VmtUnitListItem] = []
+
+
+class VmtSyncPreviewItem(BaseModel):
+    action: str = Field(description="create | update | link_lost | unchanged | error")
+    serial_number: Optional[str] = None
+    sensor_tracker_instrument_id: Optional[int] = None
+    vmt_unit_id: Optional[int] = None
+    detail: Optional[str] = None
+
+
+class VmtSyncResult(BaseModel):
+    dry_run: bool
+    created: int = 0
+    updated: int = 0
+    link_lost: int = 0
+    unchanged: int = 0
+    errors: int = 0
+    items: List[VmtSyncPreviewItem] = []
+    summary: str = ""
+
+
+class VmtStAttachmentRow(BaseModel):
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    platform_name: Optional[str] = None
+    platform_serial: Optional[str] = None
+    platform_id: Optional[int] = None
+    via: Optional[str] = None
+    currently_open: bool = False
+
+
+class VmtStAccountingResponse(BaseModel):
+    vmt_unit_id: int
+    link_status: str
+    message: Optional[str] = None
+    analytics: Optional[SensorTrackerAnalyticsResponse] = None
+    attachment_history: List[VmtStAttachmentRow] = []
+    st_detail: Optional[SensorTrackerDetailResponse] = None
+    st_browser_url: Optional[str] = None
+
+
+# ============================================================================
 # Knowledge Base Models
 # ============================================================================
 

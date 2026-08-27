@@ -385,6 +385,15 @@ async def sync_dataset_mirror(
             hours_back=warm_hours,
             is_historical=is_historical,
         )
+        if is_historical:
+            logger.info(
+                "SLOCUM MIRROR: Historical fetch %s/%s window=%s→%s (existing_rows=%s)",
+                dataset_id,
+                bundle,
+                time_start,
+                time_end,
+                len(existing),
+            )
         effective_decimation = decimation if spec.allow_decimation else None
         try:
             fetched = await _fetch_raw_bundle(dataset_id, bundle, time_start, time_end, effective_decimation)
@@ -544,17 +553,38 @@ async def ensure_mirror_synced(
                 await sync_dataset_mirror(dataset_id, hours_back=hours_back)
 
 
-async def sync_active_slocum_mirrors(hours_back: Optional[int] = None) -> int:
-    """Sync all configured active + historical datasets (leader scheduler job)."""
-    dataset_ids = resolve_slocum_dataset_ids(
-        (*settings.active_slocum_datasets, *settings.historical_slocum_datasets)
-    )
+async def sync_active_slocum_mirrors(
+    hours_back: Optional[int] = None,
+    *,
+    include_active: bool = True,
+    include_historical: bool = True,
+) -> int:
+    """Sync configured Slocum datasets into the parquet mirror.
+
+    Startup should warm actives via ``warm_active_slocum_datasets`` and defer
+    historical full-window pulls (they can take many minutes on first build).
+    """
+    keys: list[str] = []
+    if include_active:
+        keys.extend(settings.active_slocum_datasets or [])
+    if include_historical:
+        keys.extend(settings.historical_slocum_datasets or [])
+    dataset_ids = resolve_slocum_dataset_ids(keys)
     synced = 0
     warm_hours = hours_back if hours_back is not None else getattr(settings, "slocum_warm_hours", 24)
+    logger.info(
+        "SLOCUM MIRROR: Sync of %s dataset(s) (active=%s historical=%s, window=%sh)",
+        len(dataset_ids),
+        include_active,
+        include_historical,
+        warm_hours,
+    )
     for dataset_id in dataset_ids:
+        logger.info("SLOCUM MIRROR: Syncing %s ...", dataset_id)
         try:
             await sync_dataset_mirror(dataset_id, hours_back=warm_hours)
             synced += 1
+            logger.info("SLOCUM MIRROR: Synced %s", dataset_id)
         except Exception as err:
             logger.warning("SLOCUM MIRROR: sync failed for %s: %s", dataset_id, err)
     return synced

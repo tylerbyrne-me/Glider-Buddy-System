@@ -138,7 +138,11 @@ async def get_slocum_datasets(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
         )
-    active_ids = configured_slocum_dataset_keys(settings.active_slocum_datasets)
+    from app.core.infra.db import SQLModelSession, sqlite_engine
+    from app.core.mission_catalog.enablement import resolve_active_slocum_keys
+
+    with SQLModelSession(sqlite_engine) as session:
+        active_ids = resolve_active_slocum_keys(session)
     cached_response, cached_at = get_datasets_cache()
     now = time.monotonic()
     if cached_response is not None and (now - cached_at) < datasets_cache_ttl_seconds():
@@ -175,7 +179,11 @@ async def get_available_datasets(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
         )
-    return configured_slocum_dataset_keys(settings.active_slocum_datasets)
+    from app.core.infra.db import SQLModelSession, sqlite_engine
+    from app.core.mission_catalog.enablement import resolve_active_slocum_keys
+
+    with SQLModelSession(sqlite_engine) as session:
+        return resolve_active_slocum_keys(session)
 
 
 @router.get("/available_historical_datasets", response_model=List[str])

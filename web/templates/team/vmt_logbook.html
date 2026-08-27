@@ -1,0 +1,245 @@
+{% extends "base.html" %}
+
+{% block title %}VMT log book - {{ platform_buddy_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4 px-3 px-lg-4">
+    <p class="mb-2"><a href="/team">&larr; Team</a></p>
+    <h1 class="mb-2">VMT log book</h1>
+    <p class="text-muted mb-3">
+        Manual inventory for Vemco Mobile Transceivers (self-powered / self-logging).
+        Battery and service history live in Buddy; attachment and deployment accounting
+        come live from Sensor Tracker when linked.
+    </p>
+
+    <div class="card gbs-card mb-3">
+        <div class="card-body py-2">
+            <strong>Code map reference:</strong>
+            A69-9001 = MAP-114 &mdash; Tx: H power only, random ping interval centered on
+            2&nbsp;min (60&ndash;180&nbsp;s).
+        </div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-3 align-items-center">
+        <button type="button" class="btn btn-primary" id="vmtAddBtn">Add VMT</button>
+        <button type="button" class="btn btn-outline-primary" id="vmtSyncDryBtn">
+            Sync from Sensor Tracker (dry-run)
+        </button>
+        <button type="button" class="btn btn-outline-danger" id="vmtSyncApplyBtn" disabled>
+            Apply sync
+        </button>
+        <div class="form-check ms-2">
+            <input class="form-check-input" type="checkbox" id="vmtIncludeInactive">
+            <label class="form-check-label" for="vmtIncludeInactive">Show inactive</label>
+        </div>
+        <div class="ms-auto d-flex flex-wrap gap-2">
+            <input type="search" class="form-control form-control-sm" id="vmtFilter"
+                   placeholder="Filter serial / tag / comments" style="min-width: 14rem;">
+            <select class="form-select form-select-sm" id="vmtFilterCustody" style="width: auto;">
+                <option value="">All custody</option>
+                <option value="on_loan">On loan</option>
+                <option value="cove">COVE</option>
+                <option value="servicing">Servicing</option>
+                <option value="missing">Missing</option>
+                <option value="lost">Lost</option>
+                <option value="other">Other</option>
+                <option value="attached">Attached (ST)</option>
+            </select>
+            <select class="form-select form-select-sm" id="vmtFilterLink" style="width: auto;">
+                <option value="">All ST links</option>
+                <option value="linked">Linked</option>
+                <option value="never_linked">Never linked</option>
+                <option value="not_found">ST link lost</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="vmtSyncSummary" class="alert alert-secondary py-2" style="display: none;" role="status"></div>
+
+    <div class="row g-3">
+        <div class="col-xl-7">
+            <div class="card gbs-card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h2 class="h5 mb-0">Inventory</h2>
+                    <span class="badge text-bg-secondary" id="vmtCountBadge">0</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-sm table-striped table-hover align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th>SN</th>
+                                    <th>Tag ID</th>
+                                    <th>Status / location</th>
+                                    <th>Battery</th>
+                                    <th>Always Tx</th>
+                                    <th>ST</th>
+                                </tr>
+                            </thead>
+                            <tbody id="vmtTableBody">
+                                <tr><td colspan="6" class="text-muted p-3">Loading&hellip;</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-5">
+            <div class="card gbs-card" id="vmtDetailCard">
+                <div class="card-header"><h2 class="h5 mb-0">Detail</h2></div>
+                <div class="card-body" id="vmtDetailBody">
+                    <p class="text-muted mb-0">Select a VMT row to inspect and edit.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{# Add / Edit modal #}
+<div class="modal fade" id="vmtUnitModal" tabindex="-1" aria-labelledby="vmtUnitModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <form class="modal-content" id="vmtUnitForm">
+            <div class="modal-header">
+                <h2 class="modal-title h5" id="vmtUnitModalTitle">Add VMT</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="vmtEditId">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label" for="vmtSerial">Serial (SN)</label>
+                        <input type="text" class="form-control" id="vmtSerial" required>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="vmtTagId">Tag ID</label>
+                        <input type="text" class="form-control" id="vmtTagId">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="vmtCodeMap">Code map</label>
+                        <input type="text" class="form-control" id="vmtCodeMap" value="A69-9001">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="vmtCustody">Custody (when unattached)</label>
+                        <select class="form-select" id="vmtCustody">
+                            <option value="">—</option>
+                            <option value="on_loan">On loan</option>
+                            <option value="cove">COVE</option>
+                            <option value="servicing">Servicing</option>
+                            <option value="missing">Missing</option>
+                            <option value="lost">Lost</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="vmtCustodyOther">Custody other</label>
+                        <input type="text" class="form-control" id="vmtCustodyOther">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label" for="vmtStId">ST instrument id (optional)</label>
+                        <input type="number" class="form-control" id="vmtStId" min="1">
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="vmtAlwaysTx">
+                            <label class="form-check-label" for="vmtAlwaysTx">Always Tx</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="vmtIsActive" checked>
+                            <label class="form-check-label" for="vmtIsActive">Active</label>
+                        </div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label" for="vmtComments">Comments</label>
+                        <textarea class="form-control" id="vmtComments" rows="3"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary" id="vmtUnitSaveBtn">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# Battery check modal #}
+<div class="modal fade" id="vmtBatteryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form class="modal-content" id="vmtBatteryForm">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Add battery check</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="vmtBattDate">Checked at</label>
+                    <input type="date" class="form-control" id="vmtBattDate" required>
+                </div>
+                <div class="row g-3">
+                    <div class="col-6">
+                        <label class="form-label" for="vmtBattDays">Days remaining</label>
+                        <input type="number" class="form-control" id="vmtBattDays">
+                    </div>
+                    <div class="col-6">
+                        <label class="form-label" for="vmtBattPct">Percent remaining</label>
+                        <input type="number" class="form-control" id="vmtBattPct" min="0" max="100">
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <label class="form-label" for="vmtBattNotes">Notes</label>
+                    <textarea class="form-control" id="vmtBattNotes" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save check</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{# Service event modal #}
+<div class="modal fade" id="vmtServiceModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form class="modal-content" id="vmtServiceForm">
+            <div class="modal-header">
+                <h2 class="modal-title h5">Add service event</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label" for="vmtSvcType">Event type</label>
+                    <select class="form-select" id="vmtSvcType" required>
+                        <option value="rebattery">Rebattery</option>
+                        <option value="head_replacement">Head replacement</option>
+                        <option value="mainboard_replacement">Mainboard replacement</option>
+                        <option value="hydrophone_replacement">Hydrophone replacement</option>
+                        <option value="reprogrammed">Reprogrammed</option>
+                        <option value="code_space_update">Code space update</option>
+                        <option value="manufacturer_repair">Manufacturer repair</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="vmtSvcDate">Event date</label>
+                    <input type="date" class="form-control" id="vmtSvcDate">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="vmtSvcDesc">Description</label>
+                    <textarea class="form-control" id="vmtSvcDesc" rows="3"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save event</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block body_extra_js %}
+<script type="module" src="/static/js/team/vmt_logbook.js?v={{ app_version }}"></script>
+{% endblock %}

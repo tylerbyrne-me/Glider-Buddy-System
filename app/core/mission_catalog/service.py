@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
+from urllib.parse import quote
 
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from app.core.mission_catalog.schemas import (
     CatalogMissionRead,
@@ -14,6 +15,7 @@ from app.core.mission_catalog.schemas import (
     MissionCatalogQuery,
     MissionSourceRequest,
     MissionSourceResolution,
+    UnmatchedSourceRead,
 )
 from app.core.models.database import (
     CatalogExternalIdentity,
@@ -38,6 +40,23 @@ def _parse_capabilities(raw: Optional[str]) -> List[str]:
     return [str(item) for item in data if item]
 
 
+def _safe_provider_url(metadata: Any, *, collection: str, external_ref: str) -> Optional[str]:
+    """Build an http(s) review link from discovery metadata.server when present."""
+    if not isinstance(metadata, dict):
+        return None
+    server = metadata.get("server")
+    if not isinstance(server, str):
+        return None
+    base = server.strip().rstrip("/")
+    if not (base.startswith("https://") or base.startswith("http://")):
+        return None
+    if not external_ref:
+        return base
+    if (collection or "").strip().lower() == "tabledap":
+        return f"{base}/tabledap/{quote(external_ref, safe='')}.html"
+    return base
+
+
 def source_to_read(source: CatalogMissionSource) -> CatalogSourceRead:
     return CatalogSourceRead(
         id=source.id,
@@ -53,6 +72,51 @@ def source_to_read(source: CatalogMissionSource) -> CatalogSourceRead:
         match_status=source.match_status,
         is_verified=bool(source.is_verified),
     )
+
+
+def unmatched_source_to_read(source: CatalogMissionSource) -> UnmatchedSourceRead:
+    return UnmatchedSourceRead(
+        id=source.id,
+        provider_key=source.provider_key,
+        source_kind=source.source_kind,
+        collection=source.collection or "",
+        external_ref=source.external_ref,
+        source_variant=source.source_variant,
+        match_status=source.match_status,
+        enabled=bool(source.enabled),
+        first_seen_at=source.first_seen_at,
+        last_seen_at=source.last_seen_at,
+        provider_url=_safe_provider_url(
+            source.metadata_json,
+            collection=source.collection or "",
+            external_ref=source.external_ref,
+        ),
+    )
+
+
+def list_unmatched_sources(
+    session: Session,
+    *,
+    source_kind: str = "erddap",
+    provider_key: Optional[str] = None,
+) -> List[UnmatchedSourceRead]:
+    """List orphan catalog sources awaiting review (newest first)."""
+    statement = select(CatalogMissionSource).where(
+        CatalogMissionSource.mission_id.is_(None),  # type: ignore[arg-type]
+        CatalogMissionSource.match_status == CatalogMatchStatus.UNMATCHED.value,
+    )
+    kind = (source_kind or "").strip().lower()
+    if kind:
+        statement = statement.where(CatalogMissionSource.source_kind == kind)
+    if provider_key:
+        statement = statement.where(
+            CatalogMissionSource.provider_key == provider_key.strip()
+        )
+    statement = statement.order_by(
+        col(CatalogMissionSource.last_seen_at).desc(),
+        col(CatalogMissionSource.id).desc(),
+    )
+    return [unmatched_source_to_read(source) for source in session.exec(statement).all()]
 
 
 def mission_to_read(

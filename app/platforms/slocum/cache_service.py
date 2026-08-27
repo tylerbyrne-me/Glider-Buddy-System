@@ -356,8 +356,8 @@ def list_slocum_warm_source_keys() -> list[str]:
     """Active Slocum keys for mirror warm.
 
     Default: exact ``ACTIVE_SLOCUM_DATASETS`` strings (aliases preserved).
-    When ``MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG`` is true, read the same
-    strings via catalog enablement; fall back to env on error.
+    When ``MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG`` is true, read via catalog
+    enablement (env override when non-empty; live ``is_active`` deployments when empty).
     """
     env_keys = [
         str(k).strip()

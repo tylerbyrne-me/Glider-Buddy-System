@@ -322,12 +322,16 @@ Some settings use JSON strings:
 - `MISSION_CATALOG_AUTO_APPLY` - When `true`, leader/startup catalog jobs write to SQLite; default **`false`** (dry-run only). CLI `--apply` still writes when identity gates are clean.
 - `MISSION_CATALOG_WG_SYNC_FROM_CATALOG` - When `true`, WG `sync_all_realtime_missions` reads keys via catalog enablement API (still exact `ACTIVE_REALTIME_MISSIONS` strings); default **`false`**
 - `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG` - When `true`, Slocum `warm_active_slocum_datasets` reads keys via catalog enablement API (still exact `ACTIVE_SLOCUM_DATASETS` / alias strings); default **`false`** in code. Local and prod soaks (2026-08-25) run with WG sync / AUTO_APPLY / Slocum warm **true**. New hosts: start flags **false**, apply catalog, then flip in order — [mission catalog cutover](./how-tos/mission_catalog_cutover.md)
+- `MISSION_CATALOG_PUBLIC_MAP_FROM_CATALOG` - When `true`, public login map allowlist reads keys via catalog enablement API (env strings when `ACTIVE_*` non-empty; enrolled ACTIVE∧CONTINUOUS keys when empty) ∩ `public_map_enabled`; default **`false`**. Ops: [mission catalog cutover](./how-tos/mission_catalog_cutover.md) / [public login map](./how-tos/public_login_map.md)
+
+Enablement membership (all `MISSION_CATALOG_*_FROM_CATALOG` consumers): non-empty `ACTIVE_REALTIME_MISSIONS` / `ACTIVE_SLOCUM_DATASETS` / historical lists override; empty lists derive from live rows only (linked active WG overviews / Slocum `is_active` deployments) — never the full ST catalog inventory.
 
 - `SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES` - Leader job `slocum_erddap_poke_job` interval (default **90**). Cheap Ocean Track `allDatasets` maxTime check; incremental mirror sync only when a dataset tail advanced. Startup still does a full warm. Admin **Check ERDDAP now** on Manage Slocum Mission Overviews. Wave Glider realtime is not on ERDDAP yet. Ops: [ERDDAP poke](./how-tos/erddap_poke.md) / [Slocum how-to](./how-tos/slocum.md)
 
 ### Public login map
 - Kill switch: `public_login_map` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON`
-- Allowlist intersection: active env lists (`ACTIVE_REALTIME_MISSIONS`, `ACTIVE_SLOCUM_DATASETS`) ∩ admin `public_map_enabled`
+- Allowlist intersection: active membership (`ACTIVE_*` or enrolled ACTIVE∧CONTINUOUS enablement) ∩ admin `public_map_enabled`
+- Optional catalog rail: `MISSION_CATALOG_PUBLIC_MAP_FROM_CATALOG`
 - Optional: `TRUSTED_PROXY_COUNT` (int; default `0`) — how many rightmost `X-Forwarded-For` hops to trust for rate-limit client IP
 - Cache dir / TTL defaults live in `app/config.py` (`public_map_cache_dir`, `public_map_cache_ttl_seconds`, `public_map_warm_interval_minutes`, `public_map_max_missions`)
 - Ops detail: [Public login map how-to](./how-tos/public_login_map.md)

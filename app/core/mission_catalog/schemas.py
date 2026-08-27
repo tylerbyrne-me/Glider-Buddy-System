@@ -115,6 +115,22 @@ class CatalogSourceRead(BaseModel):
     is_verified: bool = False
 
 
+class UnmatchedSourceRead(BaseModel):
+    """Flat review DTO for orphan catalog sources (admin UI)."""
+
+    id: Optional[int] = None
+    provider_key: str
+    source_kind: str
+    collection: str = ""
+    external_ref: str
+    source_variant: str
+    match_status: str = CatalogMatchStatus.UNMATCHED.value
+    enabled: bool = True
+    first_seen_at: Optional[datetime] = None
+    last_seen_at: Optional[datetime] = None
+    provider_url: Optional[str] = None
+
+
 class CatalogMissionRead(BaseModel):
     id: str
     title: Optional[str] = None

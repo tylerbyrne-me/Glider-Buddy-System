@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     # When true, Slocum warm_active_slocum_datasets reads keys via catalog enablement
     # (still exact ACTIVE_SLOCUM_DATASETS / alias strings). Default false until soak.
     mission_catalog_slocum_warm_from_catalog: bool = False
+    # When true, public login map allowlist reads keys via catalog enablement
+    # (still exact ACTIVE_* / alias strings ∩ public_map_enabled). Default false.
+    mission_catalog_public_map_from_catalog: bool = False
 
     # --- Slocum ERDDAP Settings ---
     # Ocean Track Slocum glider ERDDAP server; override in .env if needed

@@ -21,6 +21,9 @@ class ProviderSpec:
     connector: str
     organization: str
     enabled: bool = True
+    # When true, this provider alone may set/clear catalog mission dates and
+    # drive operational_state re-derive (Sensor Tracker).
+    lifecycle_authority: bool = False
     base_url_setting: Optional[str] = None
     dataset_id_filter: Optional[str] = None
     collections: List[str] = field(default_factory=list)
@@ -75,6 +78,7 @@ def load_providers_manifest(path: Optional[Path] = None) -> ProvidersManifest:
                     key="ceotr_sensor_tracker",
                     connector="sensor_tracker",
                     organization="ceotr",
+                    lifecycle_authority=True,
                     base_url_setting="sensor_tracker_host",
                 ),
                 ProviderSpec(
@@ -127,6 +131,12 @@ def load_providers_manifest(path: Optional[Path] = None) -> ProvidersManifest:
                 connector=str(item["connector"]).strip(),
                 organization=str(item.get("organization") or "unknown").strip(),
                 enabled=bool(item.get("enabled", True)),
+                lifecycle_authority=bool(
+                    item.get(
+                        "lifecycle_authority",
+                        str(item.get("connector") or "").strip() == "sensor_tracker",
+                    )
+                ),
                 base_url_setting=(
                     str(item["base_url_setting"]).strip()
                     if item.get("base_url_setting")

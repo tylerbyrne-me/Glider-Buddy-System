@@ -31,6 +31,10 @@ from .enums import (
     CatalogSourceVariant,
     CatalogMatchStatus,
     CatalogIdentityKind,
+    VmtCustodyStatus,
+    VmtSensorTrackerLinkStatus,
+    VmtCreatedVia,
+    VmtServiceEventType,
 )
 
 # Import database models
@@ -74,6 +78,10 @@ from .database import (
     CatalogMission,
     CatalogExternalIdentity,
     CatalogMissionSource,
+    VmtUnit,
+    VmtBatteryCheck,
+    VmtServiceEvent,
+    VmtUnitAuditLog,
 )
 
 # Import Pydantic schemas
@@ -181,6 +189,20 @@ from .schemas import (
     SensorTrackerRelatedResponse,
     SensorTrackerAnalyticsMetric,
     SensorTrackerAnalyticsResponse,
+    VmtBatteryCheckCreate,
+    VmtBatteryCheckRead,
+    VmtServiceEventCreate,
+    VmtServiceEventRead,
+    VmtUnitAuditLogRead,
+    VmtUnitCreate,
+    VmtUnitUpdate,
+    VmtUnitListItem,
+    VmtUnitDetail,
+    VmtUnitListResponse,
+    VmtSyncPreviewItem,
+    VmtSyncResult,
+    VmtStAttachmentRow,
+    VmtStAccountingResponse,
     
     # Knowledge base models
     KnowledgeDocumentCreate,
@@ -234,6 +256,10 @@ __all__ = [
     "CatalogSourceVariant",
     "CatalogMatchStatus",
     "CatalogIdentityKind",
+    "VmtCustodyStatus",
+    "VmtSensorTrackerLinkStatus",
+    "VmtCreatedVia",
+    "VmtServiceEventType",
     
     # Database models
     "UserInDB",
@@ -275,6 +301,10 @@ __all__ = [
     "CatalogMission",
     "CatalogExternalIdentity",
     "CatalogMissionSource",
+    "VmtUnit",
+    "VmtBatteryCheck",
+    "VmtServiceEvent",
+    "VmtUnitAuditLog",
     
     # Pydantic schemas (add all schema names here)
     "ReportDataParams",
@@ -363,6 +393,20 @@ __all__ = [
     "SensorTrackerRelatedResponse",
     "SensorTrackerAnalyticsMetric",
     "SensorTrackerAnalyticsResponse",
+    "VmtBatteryCheckCreate",
+    "VmtBatteryCheckRead",
+    "VmtServiceEventCreate",
+    "VmtServiceEventRead",
+    "VmtUnitAuditLogRead",
+    "VmtUnitCreate",
+    "VmtUnitUpdate",
+    "VmtUnitListItem",
+    "VmtUnitDetail",
+    "VmtUnitListResponse",
+    "VmtSyncPreviewItem",
+    "VmtSyncResult",
+    "VmtStAttachmentRow",
+    "VmtStAccountingResponse",
     "KnowledgeDocumentCreate",
     "KnowledgeDocumentUpdate",
     "KnowledgeDocumentRead",

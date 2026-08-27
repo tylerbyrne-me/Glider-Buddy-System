@@ -120,7 +120,7 @@ ENTITY_REGISTRY: Dict[str, EntitySpec] = {
         search_hint="Partial identifier, name, or serial",
         search_params=("identifier", "name"),
         columns=("id", "identifier", "name", "serial"),
-        relations=("instruments",),
+        relations=("platforms", "deployments", "instruments"),
         optional=True,
         alt_paths=("datalogger",),
     ),
@@ -131,7 +131,7 @@ ENTITY_REGISTRY: Dict[str, EntitySpec] = {
         search_hint="Partial identifier, serial, or short name",
         search_params=("identifier", "serial"),
         columns=("id", "identifier", "serial", "short_name", "active"),
-        relations=("sensors",),
+        relations=("platforms", "deployments", "loggers", "sensors"),
     ),
     "sensor": EntitySpec(
         key="sensor",
@@ -140,7 +140,7 @@ ENTITY_REGISTRY: Dict[str, EntitySpec] = {
         search_hint="Id, exact identifier, or a token from an attached sensor (e.g. SBE43F, 4051)",
         search_params=("identifier", "short_name", "long_name"),
         columns=("id", "identifier", "short_name", "long_name", "serial"),
-        relations=("instruments",),
+        relations=("instruments", "platforms", "deployments"),
     ),
     "component": EntitySpec(
         key="component",
@@ -1350,6 +1350,128 @@ def _fmt_interval_bound(value: datetime) -> str:
     return value.strftime("%Y-%m-%d %H:%M:%S")
 
 
+def _parse_as_of_datetime(as_of: Optional[str]) -> datetime:
+    as_of_dt = datetime.now(timezone.utc)
+    if as_of:
+        parsed = parse_window_time(as_of)
+        if parsed is not None:
+            as_of_dt = parsed
+            if as_of_dt.tzinfo is None:
+                as_of_dt = as_of_dt.replace(tzinfo=timezone.utc)
+    return as_of_dt
+
+
+def _append_platform_wrapper(
+    wrappers: List[Dict[str, Any]],
+    seen_plat: set[int],
+    *,
+    plat_id: Optional[int],
+    plat_name: Optional[str],
+    plat_serial: Optional[str],
+    start: Any,
+    end: Any,
+) -> None:
+    if plat_id is not None and plat_id in seen_plat:
+        return
+    if plat_id is not None:
+        seen_plat.add(plat_id)
+    platform: Dict[str, Any] = {}
+    if plat_id is not None:
+        platform["id"] = plat_id
+    if plat_name:
+        platform["name"] = plat_name
+    if plat_serial:
+        platform["serial"] = plat_serial
+    if not platform:
+        return
+    wrappers.append(
+        {
+            "platform": platform,
+            "start_time": start,
+            "end_time": end,
+        }
+    )
+
+
+async def _platform_wrappers_from_instrument_attachments(
+    attach_rows: Sequence[Dict[str, Any]],
+    as_of: datetime,
+    *,
+    client: Optional[httpx.AsyncClient] = None,
+) -> List[Dict[str, Any]]:
+    """Build platform-bearing attach wrappers (direct + logger-mounted), one per hull."""
+    logger_cache: Dict[int, Tuple[List[Dict[str, Any]], bool]] = {}
+    wrappers: List[Dict[str, Any]] = []
+    seen_plat: set[int] = set()
+
+    for row in attach_rows:
+        if not isinstance(row, dict):
+            continue
+        has_platform = (
+            isinstance(row.get("platform"), dict)
+            or _as_int(row.get("platform")) is not None
+        )
+        if has_platform:
+            plat_id, plat_name, plat_serial = await _platform_ref_from_relationship(
+                row, client=client
+            )
+            start, end = relationship_window(row)
+            _append_platform_wrapper(
+                wrappers,
+                seen_plat,
+                plat_id=plat_id,
+                plat_name=plat_name,
+                plat_serial=plat_serial,
+                start=start,
+                end=end,
+            )
+            continue
+
+        logger_id, logger_ident, logger_serial = await _logger_ref_from_relationship(
+            row, client=client
+        )
+        if logger_id is None:
+            continue
+        if logger_id not in logger_cache:
+            logger_cache[logger_id] = await _logger_on_platform_rows(
+                logger_id=logger_id,
+                logger_identifier=logger_ident,
+                logger_serial=logger_serial,
+                client=client,
+            )
+        lop_rows, _more = logger_cache[logger_id]
+        inst_iv = windows_to_intervals([relationship_window(row)], as_of)
+        if not inst_iv:
+            continue
+        _inst_start, inst_end = relationship_window(row)
+        for lop in lop_rows:
+            if not isinstance(lop, dict):
+                continue
+            lop_iv = windows_to_intervals([relationship_window(lop)], as_of)
+            overlap = intersect_intervals(inst_iv, lop_iv)
+            if not overlap:
+                continue
+            plat_id, plat_name, plat_serial = await _platform_ref_from_relationship(
+                lop, client=client
+            )
+            ov_start, ov_end = overlap[0]
+            _lop_start, lop_end = relationship_window(lop)
+            still_open = (
+                parse_window_time(inst_end) is None
+                and parse_window_time(lop_end) is None
+            )
+            _append_platform_wrapper(
+                wrappers,
+                seen_plat,
+                plat_id=plat_id,
+                plat_name=plat_name,
+                plat_serial=plat_serial,
+                start=_fmt_interval_bound(ov_start),
+                end=None if still_open else _fmt_interval_bound(ov_end),
+            )
+    return wrappers
+
+
 async def _overlapping_deployment_rows(
     attach_rows: Sequence[Dict[str, Any]],
     as_of: datetime,
@@ -2474,6 +2596,29 @@ async def list_related(
                 inst_rows, attached=attached, client=client
             )
 
+    elif entity == "data_logger" and relation == "platforms":
+        logger_id = _record_id(record) or resource_id
+        identifier = _identifier(record, "identifier", "data_logger_identifier")
+        rows, _more = await _logger_on_platform_rows(
+            logger_id=logger_id,
+            logger_identifier=identifier,
+            logger_serial=_serial_of(record),
+            client=client,
+        )
+
+    elif entity == "data_logger" and relation == "deployments":
+        logger_id = _record_id(record) or resource_id
+        identifier = _identifier(record, "identifier", "data_logger_identifier")
+        attach_rows, _more = await _logger_on_platform_rows(
+            logger_id=logger_id,
+            logger_identifier=identifier,
+            logger_serial=_serial_of(record),
+            client=client,
+        )
+        rows = await _overlapping_deployment_rows(
+            attach_rows, _parse_as_of_datetime(as_of), client=client
+        )
+
     elif entity == "data_logger" and relation == "instruments":
         logger_id = _record_id(record) or resource_id
         identifier = _identifier(record, "identifier", "data_logger_identifier")
@@ -2486,6 +2631,43 @@ async def list_related(
                 fetched,
                 parent_id=logger_id,
                 parent_entity="data_logger",
+                parent_serial=_serial_of(record),
+            )
+
+    elif entity == "instrument" and relation == "platforms":
+        instrument_id = _record_id(record) or resource_id
+        attach_rows, _more, _notes = await _instrument_attachment_rows(
+            record, instrument_id, client=client
+        )
+        rows = await _platform_wrappers_from_instrument_attachments(
+            attach_rows, _parse_as_of_datetime(as_of), client=client
+        )
+
+    elif entity == "instrument" and relation == "deployments":
+        instrument_id = _record_id(record) or resource_id
+        attach_rows, _more, _notes = await _instrument_attachment_rows(
+            record, instrument_id, client=client
+        )
+        plat_wrappers = await _platform_wrappers_from_instrument_attachments(
+            attach_rows, _parse_as_of_datetime(as_of), client=client
+        )
+        rows = await _overlapping_deployment_rows(
+            plat_wrappers, _parse_as_of_datetime(as_of), client=client
+        )
+
+    elif entity == "instrument" and relation == "loggers":
+        identifier = _identifier(record, "identifier")
+        instrument_id = _record_id(record) or resource_id
+        if identifier:
+            query = dict(rel_params)
+            query["instrument_identifier"] = identifier
+            fetched = await _list_relationship(
+                "instrument_on_data_logger", query, client=client
+            )
+            rows = pin_relationship_rows(
+                fetched,
+                parent_id=instrument_id,
+                parent_entity="instrument",
                 parent_serial=_serial_of(record),
             )
 
@@ -2523,6 +2705,60 @@ async def list_related(
                     }
                 ]
 
+    elif entity == "sensor" and relation in ("platforms", "deployments"):
+        rec_id = _record_id(record) or resource_id
+        soi_rows, _more = await _sensor_on_instrument_rows(
+            record, rec_id, rel_params=rel_params, client=client
+        )
+        instruments: List[Dict[str, Any]] = []
+        seen_inst: set[int] = set()
+        for soi in soi_rows:
+            if not isinstance(soi, dict):
+                continue
+            inst = soi.get("instrument") if isinstance(soi.get("instrument"), dict) else None
+            if inst is None:
+                continue
+            inst_id = _record_id(inst)
+            if inst_id is not None:
+                if inst_id in seen_inst:
+                    continue
+                seen_inst.add(inst_id)
+            instruments.append(inst)
+        if not instruments:
+            parent = await _sensor_parent_instrument(record, client=client)
+            if isinstance(parent, dict):
+                instruments = [parent]
+        as_of_dt = _parse_as_of_datetime(as_of)
+        plat_wrappers: List[Dict[str, Any]] = []
+        seen_plat: set[int] = set()
+        for inst in instruments[:RELATIONSHIP_FETCH_CAP]:
+            inst_id = _record_id(inst)
+            if inst_id is None:
+                continue
+            attach_rows, _att_more, _notes = await _instrument_attachment_rows(
+                inst, inst_id, client=client
+            )
+            for wrapper in await _platform_wrappers_from_instrument_attachments(
+                attach_rows, as_of_dt, client=client
+            ):
+                plat = wrapper.get("platform")
+                plat_id = _record_id(plat) if isinstance(plat, dict) else None
+                if plat_id is not None and plat_id in seen_plat:
+                    continue
+                if plat_id is not None:
+                    seen_plat.add(plat_id)
+                plat_wrappers.append(wrapper)
+                if len(plat_wrappers) >= RELATIONSHIP_FETCH_CAP:
+                    break
+            if len(plat_wrappers) >= RELATIONSHIP_FETCH_CAP:
+                break
+        if relation == "platforms":
+            rows = plat_wrappers
+        else:
+            rows = await _overlapping_deployment_rows(
+                plat_wrappers, as_of_dt, client=client
+            )
+
     elif entity == "component" and relation == "platforms":
         rec_id = _record_id(record) or resource_id
         rows, _more = await _component_attachment_rows(
@@ -2534,13 +2770,8 @@ async def list_related(
         attach_rows, _more = await _component_attachment_rows(
             record, rec_id, rel_params=rel_params, client=client
         )
-        as_of_dt = datetime.now(timezone.utc)
-        if as_of:
-            parsed = parse_window_time(as_of)
-            if parsed is not None:
-                as_of_dt = parsed
         rows = await _overlapping_deployment_rows(
-            attach_rows, as_of_dt, client=client
+            attach_rows, _parse_as_of_datetime(as_of), client=client
         )
 
     else:

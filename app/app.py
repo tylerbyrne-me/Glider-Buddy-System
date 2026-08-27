@@ -341,6 +341,13 @@ mission_forms_db: Dict[Tuple[str, str, str], models.MissionFormDataResponse] = {
 # These are imported above for backward compatibility with app.py functions
 
 
+def _wave_glider_active_mission_keys(session: Optional[SQLModelSession] = None) -> list[str]:
+    """Resolve WG active keys via catalog enablement (env override or enrollment)."""
+    from app.core.mission_catalog.enablement import resolve_active_wave_glider_keys
+
+    return resolve_active_wave_glider_keys(session)
+
+
 async def initialize_startup_cache():
     """
     Initialize cache with all active mission data on startup.
@@ -352,8 +359,8 @@ async def initialize_startup_cache():
     local_data_loading_enabled = feature_toggles.is_feature_enabled("local_data_loading")
     logger.info(f"STARTUP: Local data loading feature toggle: {'ENABLED' if local_data_loading_enabled else 'DISABLED'}")
     
-    # Get all active missions, filtering out empty strings
-    active_missions = [m for m in settings.active_realtime_missions if m and m.strip()]
+    # Enablement: non-empty env override, else enrolled ACTIVE∧CONTINUOUS
+    active_missions = _wave_glider_active_mission_keys()
     if not active_missions:
         logger.warning("STARTUP: No valid active real-time missions found. Skipping cache initialization.")
         return 0
@@ -1275,13 +1282,11 @@ async def refresh_active_mission_cache():
         if user_id in user_sessions:
             active_missions.update(user_sessions[user_id]["missions_accessed"])
     
-    # Filter out historical missions - only refresh active real-time missions
-    # Historical missions are those NOT in settings.active_realtime_missions
+    # Filter out historical missions - only refresh enablement targets
     # Also handle "1071-m169" format by extracting base mission ID (e.g., "m169")
-    # Filter out empty strings from active_realtime_missions
-    active_realtime_missions_set = set(m for m in settings.active_realtime_missions if m and m.strip())
+    active_realtime_missions_set = set(_wave_glider_active_mission_keys())
     
-    # Filter missions: only include those that are in active_realtime_missions
+    # Filter missions: only include those that are in the enablement set
     # Handle both "m169" and "1071-m169" formats
     filtered_missions = []
     for mission_id in active_missions:
@@ -1292,12 +1297,11 @@ async def refresh_active_mission_cache():
         if base_mission_id in active_realtime_missions_set or mission_id in active_realtime_missions_set:
             filtered_missions.append(mission_id)
         else:
-            logger.debug(f"BACKGROUND TASK: Skipping historical mission {mission_id} (not in active_realtime_missions)")
+            logger.debug(f"BACKGROUND TASK: Skipping historical mission {mission_id} (not in enablement set)")
     
-    # Fallback to configured active missions if no user activity or all missions were historical
+    # Fallback to enablement targets if no user activity or all missions were historical
     if not filtered_missions:
-        # Filter out empty strings from configured active missions
-        filtered_missions = [m for m in settings.active_realtime_missions if m and m.strip()]
+        filtered_missions = list(active_realtime_missions_set)
         logger.info("BACKGROUND TASK: No active real-time missions from user activity. Using configured active missions.")
     else:
         logger.info(f"BACKGROUND TASK: Refreshing data for active real-time missions: {filtered_missions}")
@@ -1452,8 +1456,8 @@ async def smart_background_refresh():
     """
     logger.info("BACKGROUND TASK: Starting smart background refresh.")
     
-    # Get active missions
-    active_missions = settings.active_realtime_missions
+    # Enablement: non-empty env override, else enrolled ACTIVE∧CONTINUOUS
+    active_missions = _wave_glider_active_mission_keys()
     
     for mission_id in active_missions:
         logger.info(f"BACKGROUND TASK: Smart refresh for mission {mission_id}")
@@ -1514,7 +1518,7 @@ async def run_weekly_reports_job():
     logger.info("AUTOMATED: Kicking off weekly report generation for all active missions.")
     try:
         with SQLModelSession(sqlite_engine) as session:
-            active_missions = [mission_id.strip() for mission_id in settings.active_realtime_missions if mission_id and mission_id.strip()]
+            active_missions = _wave_glider_active_mission_keys(session)
             if not active_missions:
                 logger.info("AUTOMATED: No active missions configured. Skipping weekly report generation.")
                 record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active missions configured")
@@ -1583,8 +1587,13 @@ async def run_slocum_weekly_reports_job():
 
     try:
         from app.core.mission_aliases import resolve_slocum_dataset_ids
+        from app.platforms.slocum.mirror_service import is_historical_dataset
 
-        dataset_ids = resolve_slocum_dataset_ids(settings.active_slocum_datasets)
+        dataset_ids = [
+            did
+            for did in resolve_slocum_dataset_ids(settings.active_slocum_datasets)
+            if not is_historical_dataset(did)
+        ]
         if not dataset_ids:
             logger.info("AUTOMATED: No active Slocum datasets configured. Skipping weekly reports.")
             record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active Slocum datasets")
@@ -2061,11 +2070,30 @@ async def startup_event():
                 from app.platforms.slocum.cache_service import warm_active_slocum_datasets
                 from app.platforms.slocum.mirror_service import sync_active_slocum_mirrors
                 slocum_warmed = await warm_active_slocum_datasets()
-                historical_synced = await sync_active_slocum_mirrors()
+                # Historical mirrors (e.g. delayed Polly) can take many minutes on a
+                # cold full-window ERDDAP pull — do not block uvicorn startup.
+                async def _deferred_historical_slocum_mirrors() -> None:
+                    try:
+                        n = await sync_active_slocum_mirrors(
+                            include_active=False,
+                            include_historical=True,
+                        )
+                        logger.info(
+                            "STARTUP: Deferred historical Slocum mirror sync finished (%s)",
+                            n,
+                        )
+                    except Exception as hist_exc:
+                        logger.error(
+                            "STARTUP: Deferred historical Slocum mirror sync failed: %s",
+                            hist_exc,
+                            exc_info=True,
+                        )
+
+                asyncio.create_task(_deferred_historical_slocum_mirrors())
                 logger.info(
-                    "STARTUP: Slocum mirror warm complete (active=%s, all=%s)",
+                    "STARTUP: Slocum mirror warm complete (active=%s); "
+                    "historical sync deferred to background",
                     slocum_warmed,
-                    historical_synced,
                 )
             except Exception as e:
                 logger.error("STARTUP: Error warming Slocum cache: %s", e, exc_info=True)
@@ -2987,7 +3015,8 @@ async def _render_dashboard(request: Request, mission: str, current_user: models
     context["fluorometer_channel_labels"] = build_channel_labels_for_display(channel_map)
     
     # Determine if this is a realtime mission (only for active missions)
-    is_realtime = mission in settings.active_realtime_missions if not is_historical else False
+    active_wg_keys = set(_wave_glider_active_mission_keys())
+    is_realtime = mission in active_wg_keys if not is_historical else False
     context["is_current_mission_realtime"] = is_realtime
     context["is_historical_mission"] = is_historical
     

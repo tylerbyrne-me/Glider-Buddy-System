@@ -1622,9 +1622,9 @@ async def get_available_missions(
     session: SQLModelSession = Depends(get_db_session)
 ):
     """Get list of active real-time missions."""
-    # Filter out empty strings and None values
-    missions = [m for m in settings.active_realtime_missions if m and m.strip()]
-    return missions
+    from app.core.mission_catalog.enablement import resolve_active_wave_glider_keys
+
+    return resolve_active_wave_glider_keys(session)
 
 
 @router.get("/api/available_all_missions", response_model=Dict[str, List[str]])
@@ -1636,8 +1636,9 @@ async def get_all_available_missions(
     Get list of all missions (active + historical).
     Returns a dictionary with 'active' and 'historical' keys.
     """
-    # Get active missions
-    active_missions = [m for m in settings.active_realtime_missions if m and m.strip()]
+    from app.core.mission_catalog.enablement import resolve_active_wave_glider_keys
+
+    active_missions = resolve_active_wave_glider_keys(session)
     
     # Get historical missions
     historical_missions = []
