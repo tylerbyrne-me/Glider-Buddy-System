@@ -254,7 +254,7 @@ def update_unit(
         if key == "code_map" and value is not None:
             value = (value or "").strip() or DEFAULT_CODE_MAP
         if key == "tag_id" and value is not None:
-            value = (value or "").strip() || None
+            value = (value or "").strip() or None
         setattr(unit, key, value)
     if "sensor_tracker_instrument_id" in data:
         st_id = data["sensor_tracker_instrument_id"]
