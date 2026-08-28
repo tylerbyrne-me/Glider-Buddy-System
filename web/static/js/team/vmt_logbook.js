@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
         units: [],
         selectedId: null,
         detailSeq: 0,
+        loadSeq: 0,
         syncDryRunOk: false,
         lastSyncPreview: null,
     };
@@ -341,10 +342,12 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const loadUnits = async () => {
+        const seq = (state.loadSeq += 1);
         tableBody.innerHTML = '<tr><td colspan="6" class="text-muted p-3">Loading&hellip;</td></tr>';
         try {
             const qs = includeInactive.checked ? '?include_inactive=true' : '';
             const payload = await apiRequest(`/api/team/vmt-logbook/units${qs}`, 'GET');
+            if (seq !== state.loadSeq) return;
             state.units = payload.units || [];
             renderTable();
             if (state.selectedId) {
@@ -352,6 +355,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (stillThere) await renderDetail(state.selectedId);
             }
         } catch (err) {
+            if (seq !== state.loadSeq) return;
             tableBody.innerHTML = `<tr><td colspan="6" class="text-danger p-3">${escapeHtml(err.message || err)}</td></tr>`;
             showToast(err.message || String(err), 'error');
         }
@@ -395,8 +399,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             unitModal?.hide();
             showToast(editId ? 'VMT updated' : 'VMT created', 'success');
+            if (!editId && detail?.id) {
+                state.selectedId = detail.id;
+            }
             await loadUnits();
-            if (detail?.id) await renderDetail(detail.id);
         } catch (err) {
             showToast(err.message || String(err), 'error');
         }
