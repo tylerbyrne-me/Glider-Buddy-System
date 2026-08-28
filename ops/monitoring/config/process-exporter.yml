@@ -1,0 +1,6 @@
+# process-exporter: group gunicorn master + workers
+# Install: --config.path=/etc/gliderbuddy-monitoring/process-exporter.yml
+process_names:
+  - name: "gunicorn"
+    cmdline:
+      - 'gunicorn.*app\.app:app'

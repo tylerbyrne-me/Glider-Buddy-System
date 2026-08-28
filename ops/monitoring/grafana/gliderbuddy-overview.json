@@ -1,0 +1,146 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "id": 1,
+      "options": { "colorMode": "value", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [{ "expr": "node_memory_MemAvailable_bytes", "legendFormat": "MemAvailable", "refId": "A" }],
+      "title": "Memory available",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "id": 2,
+      "targets": [{ "expr": "sum(namedprocess_namegroup_memory_bytes{groupname=~\"gunicorn.*\"})", "legendFormat": "gunicorn RSS", "refId": "A" }],
+      "title": "Gunicorn RSS (sum)",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "id": 3,
+      "targets": [{ "expr": "gbs_gunicorn_process_count", "legendFormat": "processes", "refId": "A" }],
+      "title": "Gunicorn process count (expect 3)",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "max": 1, "min": 0, "unit": "percentunit" } },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "id": 4,
+      "targets": [{ "expr": "probe_success{job=\"blackbox_http\", instance=~\".*/healthz\"}", "legendFormat": "healthz", "refId": "A" }],
+      "title": "Healthz probe success",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "id": 5,
+      "targets": [
+        { "expr": "node_memory_MemAvailable_bytes", "legendFormat": "MemAvailable", "refId": "A" },
+        { "expr": "node_memory_SwapFree_bytes", "legendFormat": "SwapFree", "refId": "B" }
+      ],
+      "title": "Host memory and swap",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "id": 6,
+      "targets": [{ "expr": "sum by (groupname) (namedprocess_namegroup_memory_bytes{groupname=~\"gunicorn.*\"})", "legendFormat": "{{groupname}}", "refId": "A" }],
+      "title": "Gunicorn RSS over time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "percent" } },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "id": 7,
+      "targets": [
+        { "expr": "100 - (avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m])) * 100)", "legendFormat": "CPU used", "refId": "A" },
+        { "expr": "avg(rate(node_cpu_seconds_total{mode=\"iowait\"}[5m])) * 100", "legendFormat": "IO wait", "refId": "B" }
+      ],
+      "title": "CPU and I/O wait",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "s" } },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "id": 8,
+      "targets": [{ "expr": "probe_duration_seconds{job=\"blackbox_http\"}", "legendFormat": "{{instance}}", "refId": "A" }],
+      "title": "HTTP probe duration (healthz / login)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": { "defaults": { "unit": "bytes" } },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 20 },
+      "id": 9,
+      "targets": [{ "expr": "gbs_cache_bytes", "legendFormat": "{{dir}}", "refId": "A" }],
+      "title": "data_store cache sizes (textfile)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 28 },
+      "id": 10,
+      "targets": [
+        { "expr": "increase(gbs_journal_events_total{marker=\"slowreq\"}[1h])", "legendFormat": "SLOWREQ/h", "refId": "A" },
+        { "expr": "increase(gbs_journal_events_total{marker=\"app5xx\"}[1h])", "legendFormat": "APP5XX/h", "refId": "B" },
+        { "expr": "increase(gbs_journal_events_total{marker=\"worker_timeout\"}[24h])", "legendFormat": "WORKER TIMEOUT/24h", "refId": "C" }
+      ],
+      "title": "Journal log markers (textfile)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 28 },
+      "id": 11,
+      "targets": [
+        { "expr": "gbs_stranded_tmp_files", "legendFormat": "{{tree}}", "refId": "A" },
+        { "expr": "gbs_scheduler_outcome_errors", "legendFormat": "scheduler errors", "refId": "B" }
+      ],
+      "title": "Stranded tmp files and scheduler errors",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "tags": ["gliderbuddy", "capacity"],
+  "templating": { "list": [] },
+  "time": { "from": "now-24h", "to": "now" },
+  "timepicker": {},
+  "timezone": "utc",
+  "title": "Glider Buddy — capacity overview",
+  "uid": "gbs-capacity-overview",
+  "version": 1
+}

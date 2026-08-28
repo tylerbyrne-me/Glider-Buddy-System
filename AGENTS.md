@@ -158,6 +158,31 @@ Expect **one** `STARTUP: Syncing remote data`, **one** `APScheduler started`, an
 
 Watch for problems: `WORKER TIMEOUT`, `SIGKILL`, repeated `BACKGROUND TASK` storms.
 
+### Production monitoring and capacity (16 GB hosts)
+
+Executable runbooks, Prometheus rules, Grafana dashboard, textfile metrics, and systemd drop-ins live under [`ops/monitoring/`](ops/monitoring/README.md). Staging-first rollout: baseline → exporters → [STAGING_VALIDATION.md](ops/monitoring/STAGING_VALIDATION.md) → phased [PRODUCTION_ROLLOUT.md](ops/monitoring/PRODUCTION_ROLLOUT.md).
+
+| Resource | Warning | Critical |
+|----------|---------|----------|
+| MemAvailable | < 4 GB (10m) | < 2 GB |
+| Gunicorn RSS (sum) | > 8 GB (10m) | > 10 GB |
+| Root filesystem used | > 70% | > 85% |
+| `data_store` | > 100 GB or +10 GB/day | — |
+| `/healthz` | p95 > 3 s (probe) | down > 2m |
+
+**Alerts (journal via textfile):** any `WORKER TIMEOUT` or OOM; sustained `SLOWREQ` (>10/h); `APP5XX` bursts.
+
+**Systemd guardrails (after staging validation):** Phase A `MemoryAccounting=yes` only; Phase C `MemoryHigh=10G`; optional `MemoryMax=12G` + `MemorySwapMax=2G`. Do **not** add workers or lower `--timeout` below 200 to compensate for memory pressure — escalate app memory follow-up instead.
+
+**Rollback:** remove latest drop-in under `gliderbuddy.service.d/`; keep monitoring installed. See [RUNBOOK.md](ops/monitoring/RUNBOOK.md).
+
+Extended log grep (scheduler/catalog jobs):
+
+```bash
+sudo journalctl -u gliderbuddy --since "24 hours ago" | grep -E \
+  'STARTUP:|AUTOMATED:|BACKGROUND TASK:|SYNC:|SLOCUM WARM:|SLOCUM POKE:|SLOWREQ|APP5XX|WORKER TIMEOUT|startup leader|Mission catalog|Public map warm|SFMC'
+```
+
 ### Multi-worker behavior (application)
 
 With gunicorn `-w 2`, only the **leader** worker (fcntl lock on `data_store/.app_leader.lock`) runs:

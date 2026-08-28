@@ -1,0 +1,9 @@
+[Unit]
+Description=Glider Buddy textfile metrics for node_exporter
+After=network.target
+
+[Service]
+Type=oneshot
+Environment=GBS_ROOT=/home/cove/Glider-Buddy-System
+Environment=TEXTFILE_DIR=/var/lib/node_exporter/textfile_collector
+ExecStart=/usr/local/bin/gbs_textfile_metrics.sh

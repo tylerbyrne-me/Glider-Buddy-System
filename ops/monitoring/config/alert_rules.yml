@@ -1,0 +1,197 @@
+# Glider Buddy alert rules (16 GB RAM / 1 TB disk, gunicorn -w 2)
+# Thresholds align with ops/monitoring/README.md and AGENTS.md
+
+groups:
+  - name: gliderbuddy_critical
+    rules:
+      - alert: GliderBuddyServiceDown
+        expr: gbs_gunicorn_process_count == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: No gunicorn processes for app.app
+          description: Expected master + 2 workers; process count is 0 for 2+ minutes.
+
+      - alert: GliderBuddyHealthzDown
+        expr: probe_success{job="blackbox_http", instance=~".*/healthz"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: /healthz probe failing
+          description: Blackbox probe to /healthz has failed for 2+ minutes.
+
+      - alert: GliderBuddyWorkerTimeout
+        expr: increase(gbs_journal_events_total{marker="worker_timeout"}[15m]) >= 1
+        labels:
+          severity: critical
+        annotations:
+          summary: gunicorn WORKER TIMEOUT detected
+          description: Journal contains WORKER TIMEOUT within the last 15 minutes. Check gunicorn --timeout 200 and slow paths.
+
+      - alert: GliderBuddyMemoryCritical
+        expr: node_memory_MemAvailable_bytes < 2 * 1024 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Host memory critically low
+          description: MemAvailable below 2 GB for 10 minutes.
+
+      - alert: GliderBuddyDiskCritical
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.15
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Root filesystem above 85% used
+          description: Less than 15% free on root filesystem.
+
+      - alert: GliderBuddyUnexpectedRestart
+        expr: increase(gbs_systemd_nrestarts[1h]) >= 2
+        labels:
+          severity: critical
+        annotations:
+          summary: gliderbuddy.service restarted multiple times
+          description: NRestarts increased by 2 or more within one hour.
+
+  - name: gliderbuddy_warning
+    rules:
+      - alert: GliderBuddyMemoryWarning
+        expr: node_memory_MemAvailable_bytes < 4 * 1024 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Host memory below 4 GB available
+          description: MemAvailable below 4 GB for 10 minutes.
+
+      - alert: GliderBuddyGunicornRssHigh
+        expr: sum(namedprocess_namegroup_memory_bytes{groupname=~"gunicorn.*"}) > 8 * 1024 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Gunicorn RSS sum above 8 GB
+          description: Combined gunicorn process RSS exceeds 8 GB for 10 minutes.
+
+      - alert: GliderBuddyGunicornRssCritical
+        expr: sum(namedprocess_namegroup_memory_bytes{groupname=~"gunicorn.*"}) > 10 * 1024 * 1024 * 1024
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: Gunicorn RSS sum above 10 GB
+          description: Combined gunicorn process RSS exceeds 10 GB — application scaling signal.
+
+      - alert: GliderBuddySwapActivity
+        expr: rate(node_vmstat_pswpin[5m]) + rate(node_vmstat_pswpout[5m]) > 100
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: Sustained swap activity
+          description: Swap in/out rate elevated for 10 minutes.
+
+      - alert: GliderBuddyCpuHigh
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: CPU above 80%
+          description: Average CPU utilization above 80% for 15 minutes.
+
+      - alert: GliderBuddyIoWaitHigh
+        expr: avg by(instance) (rate(node_cpu_seconds_total{mode="iowait"}[5m])) * 100 > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: I/O wait above 10%
+          description: Disk I/O wait elevated during sync/cache jobs.
+
+      - alert: GliderBuddyDiskWarning
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) < 0.30
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: Root filesystem above 70% used
+
+      - alert: GliderBuddyDataStoreLarge
+        expr: gbs_cache_bytes{dir="data_store"} > 100 * 1024 * 1024 * 1024
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: data_store exceeds 100 GB
+          description: Review weather_cache and slocum mirrors per AGENTS.md cache inventory.
+
+      - alert: GliderBuddyDataStoreGrowth
+        expr: increase(gbs_cache_bytes{dir="data_store"}[24h]) > 10 * 1024 * 1024 * 1024
+        labels:
+          severity: warning
+        annotations:
+          summary: data_store grew more than 10 GB in 24h
+
+      - alert: GliderBuddySlowRequestRate
+        expr: increase(gbs_journal_events_total{marker="slowreq"}[1h]) > 10
+        labels:
+          severity: warning
+        annotations:
+          summary: SLOWREQ rate elevated
+          description: More than 10 SLOWREQ log lines in the past hour.
+
+      - alert: GliderBuddyApp5xxRate
+        expr: increase(gbs_journal_events_total{marker="app5xx"}[5m]) > 5
+        labels:
+          severity: warning
+        annotations:
+          summary: APP5XX burst
+          description: More than 5 APP5XX log lines in 5 minutes.
+
+      - alert: GliderBuddySchedulerErrors
+        expr: gbs_scheduler_outcome_errors > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: Scheduler job outcomes contain errors
+          description: Check data_store/scheduler_job_outcomes.json and admin scheduler UI on leader worker.
+
+      - alert: GliderBuddyGunicornProcessCount
+        expr: gbs_gunicorn_process_count != 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Unexpected gunicorn process count
+          description: Expected 3 processes (1 master + 2 workers) for -w 2.
+
+      - alert: GliderBuddyHealthzSlow
+        expr: histogram_quantile(0.95, sum by(le) (rate(probe_duration_seconds_bucket{job="blackbox_http",instance=~".*/healthz"}[5m]))) > 3
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: /healthz probe p95 above 3s
+          description: Not route-level SLO; indicates general HTTP slowness on liveness path.
+
+      - alert: GliderBuddyStrandedTmpFiles
+        expr: gbs_stranded_tmp_files{tree="slocum_cache"} > 100
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: Many stranded slocum_cache *.tmp files
+          description: Check data_store ownership (cove:cove) per AGENTS.md.
+
+      - alert: GliderBuddyWeatherCacheNearQuota
+        expr: gbs_cache_bytes{dir="weather_cache"} > 4 * 1024 * 1024 * 1024
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: weather_cache above 4 GB (80% of 5 GB cap)
