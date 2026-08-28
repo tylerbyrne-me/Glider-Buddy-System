@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const state = {
         units: [],
         selectedId: null,
+        detailSeq: 0,
         syncDryRunOk: false,
         lastSyncPreview: null,
     };
@@ -188,11 +189,13 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const renderDetail = async (unitId) => {
+        const seq = (state.detailSeq += 1);
         state.selectedId = unitId;
         renderTable();
         detailBody.innerHTML = '<p class="text-muted mb-0">Loading detail&hellip;</p>';
         try {
             const detail = await apiRequest(`/api/team/vmt-logbook/units/${unitId}`, 'GET');
+            if (seq !== state.detailSeq || state.selectedId !== unitId) return;
             let accountingHtml = '<p class="small text-muted mb-0">Loading Sensor Tracker accounting&hellip;</p>';
             detailBody.innerHTML = `
                 <div class="d-flex flex-wrap gap-2 mb-3">
@@ -278,6 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     `/api/team/vmt-logbook/units/${unitId}/st-accounting`,
                     'GET'
                 );
+                if (seq !== state.detailSeq || state.selectedId !== unitId) return;
                 const wrap = document.getElementById('vmtStAccounting');
                 if (!wrap) return;
                 if (accounting.message && !accounting.analytics) {
@@ -299,6 +303,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             }
         } catch (err) {
+            if (seq !== state.detailSeq || state.selectedId !== unitId) return;
             detailBody.innerHTML = `<p class="text-danger mb-0">${escapeHtml(err.message || err)}</p>`;
         }
     };
