@@ -41,6 +41,7 @@ import {
     drawNoDataOnCanvas,
     buildTimeScaleX,
     maskOutlierPointsByZScore,
+    maskScatterByValueZScore,
     shouldSkipOutlierSuppress,
 } from '/static/js/chart_time_series_utils.js';
 import { renderSensorTrackerInstrumentColumns } from '/static/js/sensor_tracker_instruments.js';
@@ -77,6 +78,7 @@ const USERNAME = document.body.dataset.username || '';
 const escapeHtml = (str) => escapeHTML(String(str ?? ''));
 const formatTimestamp = (value) => (value ? formatUtcDateTime(value) : '-');
 
+/** Slocum CTD depth-vs-time profile scatters (cmocean). Outlier suppress masks measurement `v`, not depth. */
 const CTD_PROFILE_CHARTS = [
     { variable: 'temperature', canvasId: 'slocumCtdTempChart', spinnerId: 'slocumCtdTempSpinner', label: 'Sea Water Temperature' },
     { variable: 'conductivity', canvasId: 'slocumCtdConductivityChart', spinnerId: 'slocumCtdConductivitySpinner', label: 'Conductivity' },
@@ -105,6 +107,7 @@ function buildSlocumTimeScaleX() {
 /** Declarative time-series card configs (Power / Flight / Navigation / Vehicle Health / DO).
  * Hover defaults (time-aligned tooltips, crosshair, hit radius) come from
  * applyTimeSeriesHoverDefaults in renderTimeSeriesChart — new sensors inherit them.
+ * Outlier suppress: renderTimeSeriesChart applies maybeMaskOutlierPoints per series key.
  */
 const TIME_SERIES_CARD_CONFIGS = {
     power: {
@@ -467,8 +470,8 @@ function setOutlierSuppressControlEnabled(isEnabled) {
     el.style.opacity = isEnabled ? '1' : '0.5';
     const label = document.querySelector('label[for="slocumOutlierSuppress"]');
     const title = isEnabled
-        ? 'Hide chart points with |z-score| > 2.5 (display only; does not change stored data).'
-        : 'Outlier suppress is not applied to CTD depth profiles.';
+        ? 'Hide chart points with |z-score| > 2.5 (display only; does not change stored data). Applies to time-series and CTD profile measurements.'
+        : 'Outlier suppress is available on chart tabs (not Mission Overview).';
     el.title = title;
     if (label) label.title = title;
 }
@@ -594,7 +597,10 @@ function renderOneProfileChart(config, payload) {
     const unit = payload?.units?.[config.variable] || '';
     const range = payload?.ranges?.[config.variable] || {};
     const stops = payload?.colormaps?.[config.variable] || [];
-    const { data, colors } = buildProfileDataset(payload?.points, config.variable, range, stops);
+    let { data, colors } = buildProfileDataset(payload?.points, config.variable, range, stops);
+    if (isSlocumOutlierSuppressEnabled() && data.length) {
+        ({ data, colors } = maskScatterByValueZScore(data, colors));
+    }
 
     if (ctdChartInstances[config.canvasId]) {
         try { ctdChartInstances[config.canvasId].destroy(); } catch (_) { /* ignore */ }
@@ -1648,9 +1654,9 @@ function handleLeftPanelClicks() {
             setSharedChartToolbarVisible(isChartCategory);
             // CTD profiles must keep full resolution; time-mean resample would destroy structure.
             // DO placeholder has no live series yet — keep resample enabled for consistency.
-            const chartsEnabled = !isOverview && category !== 'ctd';
-            setGranularityControlEnabled(chartsEnabled);
-            setOutlierSuppressControlEnabled(chartsEnabled);
+            const onChartTab = !isOverview && (category === 'ctd' || TIME_SERIES_CATEGORIES.includes(category));
+            setGranularityControlEnabled(onChartTab && category !== 'ctd');
+            setOutlierSuppressControlEnabled(onChartTab);
             activeChartCategory = isOverview ? null : category;
             if (category === 'ctd') loadCtdProfileCharts();
             if (TIME_SERIES_CATEGORIES.includes(category)) loadTimeSeriesCategory(category);
@@ -2589,6 +2595,7 @@ document.addEventListener('DOMContentLoaded', () => {
         outlierSuppress.addEventListener('change', () => {
             // Display-only: re-render from cache without refetch.
             timeSeriesLoaded.forEach((category) => reRenderCategoryFromCache(category));
+            reRenderCtdProfilesFromCache();
         });
     }
 

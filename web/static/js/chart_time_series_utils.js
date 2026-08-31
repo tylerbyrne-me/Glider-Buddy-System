@@ -145,6 +145,67 @@ export function maskOutlierPointsByZScore(points, options = {}) {
 }
 
 /**
+ * Drop depth-vs-time profile scatter points whose measurement value has |z| > threshold.
+ * Operates on parallel `data` (points with a numeric measurement field) and `colors` arrays.
+ * @param {Array<Record<string, unknown>>} data
+ * @param {Array<string>} colors
+ * @param {{ valueKey?: string, threshold?: number, minSamples?: number }} [options]
+ * @returns {{ data: Array<Record<string, unknown>>, colors: Array<string>, suppressedCount: number }}
+ */
+export function maskScatterByValueZScore(data, colors, options = {}) {
+    const valueKey = options.valueKey ?? 'v';
+    const threshold = options.threshold ?? OUTLIER_Z_THRESHOLD;
+    const minSamples = options.minSamples ?? OUTLIER_Z_MIN_SAMPLES;
+    if (!Array.isArray(data) || !data.length) {
+        return {
+            data: Array.isArray(data) ? data.slice() : [],
+            colors: Array.isArray(colors) ? colors.slice() : [],
+            suppressedCount: 0,
+        };
+    }
+    const finiteIdx = [];
+    const finiteVals = [];
+    for (let i = 0; i < data.length; i += 1) {
+        const v = data[i]?.[valueKey];
+        if (typeof v === 'number' && Number.isFinite(v)) {
+            finiteIdx.push(i);
+            finiteVals.push(v);
+        }
+    }
+    if (finiteVals.length < minSamples) {
+        return { data: data.slice(), colors: colors.slice(), suppressedCount: 0 };
+    }
+    let sum = 0;
+    for (const v of finiteVals) sum += v;
+    const mean = sum / finiteVals.length;
+    let varSum = 0;
+    for (const v of finiteVals) {
+        const d = v - mean;
+        varSum += d * d;
+    }
+    const std = Math.sqrt(varSum / finiteVals.length);
+    if (!Number.isFinite(std) || std === 0) {
+        return { data: data.slice(), colors: colors.slice(), suppressedCount: 0 };
+    }
+    const outData = [];
+    const outColors = [];
+    let suppressedCount = 0;
+    for (let i = 0; i < data.length; i += 1) {
+        const v = data[i]?.[valueKey];
+        if (typeof v === 'number' && Number.isFinite(v)) {
+            const z = Math.abs((v - mean) / std);
+            if (z > threshold) {
+                suppressedCount += 1;
+                continue;
+            }
+        }
+        outData.push(data[i]);
+        outColors.push(colors[i]);
+    }
+    return { data: outData, colors: outColors, suppressedCount };
+}
+
+/**
  * Draw a centered no-data message on a canvas (destroys any prior chart content).
  * @param {string} canvasId
  * @param {string} [message]

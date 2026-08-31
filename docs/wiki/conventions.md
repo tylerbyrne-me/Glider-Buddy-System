@@ -114,6 +114,20 @@ Shared UI classes: [`custom.css`](../../web/static/css/custom.css) (`.gbs-card`,
   4. On cache `last_data_timestamp` advance: quietly reload open charts **and** refresh summary cards/footers/mini-charts — no hard reload as the primary path.
   5. When changing left-nav cards or timestamps, ask: *does this update live, or only on SSR?* See [architecture](./architecture.md#dashboard-summary-soft-refresh).
 
+### Outlier suppress
+
+Display/report-only |z| > 2.5 filtering — never write back to mirror/ERDDAP. When adding sensors:
+
+| Surface | What to do |
+|---------|------------|
+| **WG dashboard** | Add series in [`wg_chart_config.js`](../../web/static/js/wg_chart_config.js); `renderWgTimeSeriesChart` applies `maskOutlierPointsByZScore` unless `shouldSkipOutlierSuppress` (circular/geo: heading, course, lat/lon, …). |
+| **Slocum time-series** | Add keys to [`TIME_SERIES_CARD_CONFIGS`](../../web/static/js/slocum_dashboard.js); `renderTimeSeriesChart` → `maybeMaskOutlierPoints`. |
+| **Slocum CTD profiles** | Add to `CTD_PROFILE_CHARTS`; `renderOneProfileChart` masks measurement `v` via `maskScatterByValueZScore` (depth axis unchanged). |
+| **Report KPIs (Python)** | Use `_stat_summary_with_zscore` / `_numeric_stat_summary` / `suppress_zscore_outliers`; thread `outliers_suppressed` into `KPI(flagged=True)` + `append_outlier_suppress_footnote`. |
+| **Report plots (Python)** | Time-series frames: `prepare_report_numeric_frame`. Slocum CTD profiles: `plot_slocum_ctd_profile_for_report` (returns whether any points were suppressed). |
+
+Shared JS: [`chart_time_series_utils.js`](../../web/static/js/chart_time_series_utils.js). Shared Python: [`processors.py`](../../app/core/data/processors.py).
+
 ## Patterns to avoid
 
 - Circular imports via `from app.app import ...` in routers/core.

@@ -1888,12 +1888,16 @@ def plot_slocum_ctd_profile_for_report(
     colorbar_label: str,
     depth_col: str = "Depth",
     water_depth_df: Optional[pd.DataFrame] = None,
-) -> None:
+) -> bool:
     """Depth-vs-time scatter colored by a CTD variable (dashboard-style cmocean profile).
 
     When ``water_depth_df`` provides filtered ``m_water_depth`` samples (Timestamp +
     MWaterDepth / water_depth), overlays a bathymetry line on the same axes.
+
+    Returns True when any measurement outliers were suppressed (|z| > 2.5).
     """
+    from app.core.data.processors import suppress_zscore_outliers
+
     if df.empty or "Timestamp" not in df.columns or value_col not in df.columns:
         fig.text(
             0.5,
@@ -1903,7 +1907,7 @@ def plot_slocum_ctd_profile_for_report(
             va="center",
             family=REPORT_PDF_FONT_PRIMARY,
         )
-        return
+        return False
 
     work = df.copy()
     work["Timestamp"] = utils.parse_timestamp_column(work["Timestamp"], errors="coerce", utc=True)
@@ -1914,7 +1918,9 @@ def plot_slocum_ctd_profile_for_report(
     if "Pressure" in work.columns:
         depth = depth.fillna(pd.to_numeric(work["Pressure"], errors="coerce"))
     values = pd.to_numeric(work[value_col], errors="coerce")
-    mask = work["Timestamp"].notna() & depth.notna() & values.notna()
+    cleaned_values, n_suppressed = suppress_zscore_outliers(values)
+    work[value_col] = cleaned_values
+    mask = work["Timestamp"].notna() & depth.notna() & cleaned_values.notna()
     if not mask.any():
         fig.text(
             0.5,
@@ -1924,11 +1930,11 @@ def plot_slocum_ctd_profile_for_report(
             va="center",
             family=REPORT_PDF_FONT_PRIMARY,
         )
-        return
+        return n_suppressed > 0
 
     ts = work.loc[mask, "Timestamp"]
     depth_vals = depth.loc[mask]
-    color_vals = values.loc[mask]
+    color_vals = cleaned_values.loc[mask]
 
     # Robust color bounds (2nd–98th percentile), matching dashboard profile charts.
     if len(color_vals) >= 8:
@@ -2003,6 +2009,7 @@ def plot_slocum_ctd_profile_for_report(
     fig.autofmt_xdate()
     cbar = fig.colorbar(scatter, ax=ax, pad=0.02)
     cbar.set_label(colorbar_label)
+    return n_suppressed > 0
 
 
 def plot_c3_for_report(

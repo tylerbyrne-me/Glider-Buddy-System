@@ -34,7 +34,7 @@ from app.core.reporting.builder import (
 )
 from app.core.reporting.common import build_platform_cover_flowables, get_report_logo_path, get_report_paragraph_styles
 from app.core.reporting.constants import REPORTS_ROOT
-from app.core.reporting.styling import WeeklyReportDocTemplate
+from app.core.reporting.styling import WeeklyReportDocTemplate, OUTLIER_SUPPRESS_FOOTNOTE
 from .battery_report import build_battery_report_context
 from .cache_service import get_cached_or_fetch_bundle_df, slice_processed_df
 from .checklist_autofill import (
@@ -500,12 +500,12 @@ def _ctd_profile_chart_image(
     colorbar_label: str,
     max_width_pt: float,
     water_depth_df: Optional[pd.DataFrame] = None,
-) -> Optional[Image]:
+) -> tuple[Optional[Image], bool]:
     if df.empty or "Timestamp" not in df.columns or value_col not in df.columns:
-        return None
+        return None, False
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(8.27, 3.8))
-        plot_slocum_ctd_profile_for_report(
+        suppressed = plot_slocum_ctd_profile_for_report(
             fig,
             df,
             value_col=value_col,
@@ -514,7 +514,7 @@ def _ctd_profile_chart_image(
             colorbar_label=colorbar_label,
             water_depth_df=water_depth_df,
         )
-    return _fig_to_image(fig, max_width_pt=max_width_pt)
+    return _fig_to_image(fig, max_width_pt=max_width_pt), suppressed
 
 
 def write_slocum_weekly_pdf(
@@ -692,6 +692,7 @@ def write_slocum_weekly_pdf(
         story.append(PageBreak())
 
     ctd_charts: list[Any] = []
+    ctd_any_suppressed = False
     water_depth_df = pd.DataFrame()
     if not dashboard_df.empty and "Timestamp" in dashboard_df.columns and "MWaterDepth" in dashboard_df.columns:
         water_depth_df = dashboard_df[["Timestamp", "MWaterDepth"]].copy()
@@ -700,7 +701,7 @@ def write_slocum_weekly_pdf(
         ("Salinity", "CTD salinity", cmo.haline, "Salinity (PSU)"),
         ("Density", "CTD density", cmo.dense, "Density (kg/m³)"),
     ):
-        img = _ctd_profile_chart_image(
+        img, suppressed = _ctd_profile_chart_image(
             ctd_df,
             value_col=value_col,
             title=title,
@@ -709,6 +710,8 @@ def write_slocum_weekly_pdf(
             max_width_pt=max_width,
             water_depth_df=water_depth_df if not water_depth_df.empty else None,
         )
+        if suppressed:
+            ctd_any_suppressed = True
         if img:
             ctd_charts.append(Paragraph(title, styles["Heading3"]))
             ctd_charts.append(img)
@@ -717,6 +720,9 @@ def write_slocum_weekly_pdf(
     if ctd_charts:
         story.append(Paragraph("CTD sensors", styles["Heading1"]))
         story.extend(ctd_charts)
+        if ctd_any_suppressed:
+            story.append(Paragraph(OUTLIER_SUPPRESS_FOOTNOTE, styles["Caption"]))
+            story.append(Spacer(1, 8))
 
     # Robots4Whales DMON analyst-review detections + ASC offload accounting.
     if dmon_review_payload:

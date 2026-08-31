@@ -1026,6 +1026,8 @@ document.addEventListener('DOMContentLoaded', async function() {
     }
 
     function renderWgTimeSeriesChart(category, chartCfg, cacheEntry) {
+        // New WG time-series sensors: add to wg_chart_config.js — outlier suppress applies
+        // in render unless shouldSkipOutlierSuppress(field/label) (circular/geo).
         const canvas = document.getElementById(chartCfg.canvasId);
         if (!canvas || typeof Chart === 'undefined') return;
         const ctx = canvas.getContext('2d');
