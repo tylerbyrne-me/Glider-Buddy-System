@@ -5,7 +5,7 @@
 
 import { checkAuth, logout, getUserProfile } from '/static/js/auth.js';
 import { apiRequest, showToast } from '/static/js/api.js';
-import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot } from '/static/js/pic_handoff_details.js';
+import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot, invalidatePicHandoffDetailSession } from '/static/js/pic_handoff_details.js';
 
 document.addEventListener('DOMContentLoaded', async function () {
     if (!await checkAuth()) {
@@ -18,7 +18,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     const formsSpinner = document.getElementById('formsSpinner');
     const formsTableContainer = document.getElementById('formsTableContainer');
     const noFormsMessage = document.getElementById('noFormsMessage');
-    const formDetailsModal = new bootstrap.Modal(document.getElementById('formDetailsModal'));
+    const formDetailsModalElement = document.getElementById('formDetailsModal');
+    const formDetailsModal = new bootstrap.Modal(formDetailsModalElement);
+    formDetailsModalElement?.addEventListener('hidden.bs.modal', invalidatePicHandoffDetailSession);
     const formDetailsContentElement = document.getElementById('formDetailsContent'); // Updated ID
     const userRole = document.body.dataset.userRole; // Get user role
 
@@ -92,20 +94,19 @@ document.addEventListener('DOMContentLoaded', async function () {
                             const isLatestForMission = Boolean(picHandoffHighlightedForMission[form.mission_id])
                                 && row.classList.contains('pic-handoff-highlight');
                             try {
-                                let modalShown = false;
                                 await openPicHandoffDetailsWithSnapshot({
                                     summary: form,
                                     apiRequest,
                                     withChanges: isLatestForMission,
-                                    render: (fullForm, changedItemIds) => {
+                                    isOpen: () => Boolean(formDetailsModalElement?.classList.contains('show')),
+                                    render: (fullForm, changedItemIds, options) => {
                                         formDetailsContentElement.innerHTML = renderPicHandoffDetails(
                                             fullForm,
                                             changedItemIds || [],
                                             currentUser
                                         );
-                                        if (!modalShown) {
+                                        if (!options?.refresh) {
                                             formDetailsModal.show();
-                                            modalShown = true;
                                         }
                                     },
                                 });

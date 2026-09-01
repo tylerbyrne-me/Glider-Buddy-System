@@ -5,7 +5,7 @@
 
 import { checkAuth, logout, getUserProfile } from "/static/js/auth.js";
 import { apiRequest, showToast } from "/static/js/api.js";
-import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot } from "/static/js/pic_handoff_details.js";
+import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot, invalidatePicHandoffDetailSession } from "/static/js/pic_handoff_details.js";
 
 document.addEventListener('DOMContentLoaded', async function () {
     if (!await checkAuth()) {
@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', async function () {
     let formDetailsModal;
     if (modalElement) {
         formDetailsModal = new bootstrap.Modal(modalElement);
+        modalElement.addEventListener('hidden.bs.modal', invalidatePicHandoffDetailSession);
     }
 
     async function fetchMyPicHandoffs() {
@@ -82,7 +83,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                         summary: form,
                         apiRequest,
                         withChanges: index === 0,
-                        render: (fullForm, changedItemIds) => displayFormDetailsInModal(fullForm, changedItemIds),
+                        isOpen: () => Boolean(modalElement?.classList.contains('show')),
+                        render: (fullForm, changedItemIds, options) => displayFormDetailsInModal(fullForm, changedItemIds, options),
                     });
                 } catch (e) {
                     showToast(`Error loading form: ${e.message}`, 'danger');
@@ -92,7 +94,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         });
     }
 
-    function displayFormDetailsInModal(form, changedItemIds = []) {
+    function displayFormDetailsInModal(form, changedItemIds = [], { refresh = false } = {}) {
         if (!formDetailsModal || !modalTitle || !modalBody) {
             console.error("Modal elements not found for displaying form details.");
             alert("Could not display form details. Modal components missing.");
@@ -100,7 +102,9 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         modalTitle.textContent = `Details for: ${form.form_title} (Mission: ${form.mission_id})`;
         modalBody.innerHTML = renderPicHandoffDetails(form, changedItemIds || [], currentUser);
-        formDetailsModal.show();
+        if (!refresh) {
+            formDetailsModal.show();
+        }
     }
 
     fetchMyPicHandoffs();

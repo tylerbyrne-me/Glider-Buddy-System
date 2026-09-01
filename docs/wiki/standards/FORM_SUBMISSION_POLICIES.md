@@ -90,7 +90,7 @@ Routers: [`app/routers/forms.py`](../../../app/routers/forms.py), [`app/routers/
 
 1. **List endpoints must not return `sections_data`.** Table UIs only need id, titles, submitter, timestamps.
 2. **Detail on demand.** Open View Details → fetch by id; do not embed full blobs in the list payload.
-3. Prefer opening the modal with the stored snapshot; call `/with-changes` only when change highlighting is needed (typically the latest PIC).
+3. Prefer opening the modal with the stored snapshot; call `/with-changes` only when change highlighting is needed (typically the latest PIC). Background refresh must not re-open a dismissed modal.
 4. Prefer column projection / summary selects over loading full ORM rows for lists.
 5. New form types that share `submitted_forms` must use the same list/detail split and a documented default window.
 

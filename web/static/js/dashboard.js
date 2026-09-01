@@ -8,7 +8,7 @@
 
 import { checkAuth, getUserProfile } from '/static/js/auth.js';
 import { apiRequest, fetchWithAuth, showToast } from '/static/js/api.js';
-import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot } from '/static/js/pic_handoff_details.js';
+import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot, invalidatePicHandoffDetailSession } from '/static/js/pic_handoff_details.js';
 import { initializeWgVm4OffloadSection } from '/static/js/wg_vm4.js';
 import { formatUtcDateTime, datetimeLocalToUtcIso, findNearestTimeIndexUtc, toUtcDate } from '/static/js/datetime_utils.js';
 import { registerForceUtcTimeDisplayPlugin } from '/static/js/chart_utc_utils.js';
@@ -182,6 +182,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     const dashboardPicModalTitle = document.getElementById('dashboardPicHandoffsFormDetailsModalLabel');
     const dashboardPicModalBody = document.getElementById('dashboardPicHandoffsFormDetailsContent');
     const dashboardPicDetailsModal = dashboardPicModalElement ? new bootstrap.Modal(dashboardPicModalElement) : null;
+    dashboardPicModalElement?.addEventListener('hidden.bs.modal', invalidatePicHandoffDetailSession);
 
     const escapeHtml = (value) => {
         if (value === null || value === undefined) return '';
@@ -395,7 +396,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         return formattedValue === '-' ? 'N/A' : formattedValue;
     };
 
-    const displayPicFormDetailsInModal = (form, changedItemIds = []) => {
+    const displayPicFormDetailsInModal = (form, changedItemIds = [], { refresh = false } = {}) => {
         if (!dashboardPicDetailsModal || !dashboardPicModalTitle || !dashboardPicModalBody) {
             console.error('PIC modal elements not found for displaying form details.');
             alert('Could not display form details. Modal components missing.');
@@ -403,7 +404,9 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
         dashboardPicModalTitle.textContent = `Details for: ${form.form_title} (Mission: ${form.mission_id})`;
         dashboardPicModalBody.innerHTML = renderPicHandoffDetails(form, changedItemIds || [], currentUser);
-        dashboardPicDetailsModal.show();
+        if (!refresh) {
+            dashboardPicDetailsModal.show();
+        }
     };
 
     /** @type {Array<object>} */
@@ -441,7 +444,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                 summary,
                 apiRequest,
                 withChanges,
-                render: (form, changedItemIds) => displayPicFormDetailsInModal(form, changedItemIds),
+                isOpen: () => Boolean(dashboardPicModalElement?.classList.contains('show')),
+                render: (form, changedItemIds, options) => displayPicFormDetailsInModal(form, changedItemIds, options),
             });
         } catch (e) {
             console.error('Failed to load PIC form details', e);

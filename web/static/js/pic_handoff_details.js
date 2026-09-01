@@ -286,19 +286,46 @@ export function renderPicHandoffDetails(form, changedItemIds = [], currentUser =
     return html;
 }
 
+/** Incremented on each open so stale `/with-changes` responses are ignored. */
+let picHandoffDetailSession = 0;
+
+/** Call when the details modal is dismissed to ignore in-flight fetches. */
+export function invalidatePicHandoffDetailSession() {
+    picHandoffDetailSession += 1;
+}
+
 /**
  * Show PIC handoff details: load stored snapshot first, then optional change badges.
- * @param {{ summary: object, apiRequest: Function, render: (form: object, changedItemIds: string[]) => void, withChanges?: boolean }} opts
+ * @param {{ summary: object, apiRequest: Function, render: (form: object, changedItemIds: string[], options?: { refresh?: boolean }) => void, withChanges?: boolean, isOpen?: () => boolean }} opts
  */
-export async function openPicHandoffDetailsWithSnapshot({ summary, apiRequest, render, withChanges = false }) {
+export async function openPicHandoffDetailsWithSnapshot({
+    summary,
+    apiRequest,
+    render,
+    withChanges = false,
+    isOpen,
+}) {
+    const session = ++picHandoffDetailSession;
+
     const form = await apiRequest(`/api/forms/id/${summary.id}`, 'GET');
-    render(form, []);
+    if (session !== picHandoffDetailSession) {
+        return;
+    }
+    render(form, [], { refresh: false });
+
     if (!withChanges) {
         return;
     }
+
     try {
         const result = await apiRequest(`/api/forms/id/${summary.id}/with-changes`, 'GET');
-        render(result.form, result.changed_item_ids || []);
+        if (session !== picHandoffDetailSession) {
+            return;
+        }
+        if (typeof isOpen === 'function' && !isOpen()) {
+            return;
+        }
+        render(result.form, result.changed_item_ids || [], { refresh: true });
     } catch (error) {
         console.warn('PIC change highlighting unavailable:', error);
     }
