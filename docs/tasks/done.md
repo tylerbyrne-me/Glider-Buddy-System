@@ -3,6 +3,7 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-08-31 — Form submission policies + retention: summary-only list APIs, 30-day mission PIC / Slocum checklist defaults, lazy detail fetch, composite index, wiki policy + ADR 0006 + BASELINE submitted_forms section — [FORM_SUBMISSION_POLICIES.md](../wiki/standards/FORM_SUBMISSION_POLICIES.md)
 - [x] 2026-08-28 — Production resource rollout **repo artifacts**: `ops/monitoring/` (Prometheus/Grafana/blackbox/process-exporter configs, alert rules, textfile + baseline + smoke scripts, systemd accounting/memory drop-ins, runbooks). Threshold summary in [AGENTS.md](../../AGENTS.md). Server-side staging/prod execution tracked in [in-progress.md](./in-progress.md).
 - [x] 2026-08-27 — Team Sensor Tracker Related lists climb **up**: loggers/instruments/sensors → platforms + overlapping deployments; instruments also list parent loggers. Reuses attach helpers (same overlap rule as components). How-to: [sensor_tracker_team_browser.md](../wiki/how-tos/sensor_tracker_team_browser.md)
 - [x] 2026-08-27 — Team **VMT log book** (`/team/vmt-logbook`): SQLite inventory + append-only battery/service history + readable field audit; manual Add VMT; Sync from Sensor Tracker (`identifier=vmt`); retain rows when ST link is lost; detail ST accounting reuses browser analytics/attachment helpers. Seed/sync CLIs; alembic `20260827_vmt_logbook`. How-to: [vmt_logbook.md](../wiki/how-tos/vmt_logbook.md)

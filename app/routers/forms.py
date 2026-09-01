@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Body
+from fastapi import APIRouter, Depends, HTTPException, Request, Body, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import List, Optional
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from sqlmodel import select, or_
 from ..core import models, utils
 from ..core.pic_handoff_optional_sensors import PIC_HANDOFF_OPTIONAL_SENSOR_REGISTRY
@@ -15,6 +15,16 @@ from ..forms.form_definitions import get_static_form_schema
 from ..core.templates import templates
 from ..core.template_context import get_template_context
 from ..core.platforms import PLATFORM_WAVE_GLIDER, html_path_for, platform_page_context
+from ..core.forms.submission_queries import (
+    DEFAULT_MISSION_LIST_DAYS,
+    DEFAULT_MY_PIC_DAYS,
+    PILOT_ALL_FORMS_HOURS,
+    RECENT_PIC_HOURS,
+    effective_days_window,
+    list_submitted_form_summaries,
+    submission_cutoff_for_days,
+    submission_cutoff_for_hours,
+)
 
 router = APIRouter(tags=["Forms"])
 logger = logging.getLogger(__name__)
@@ -45,20 +55,38 @@ def _save_forms_to_local_json():
         logger.warning(f"Unknown forms_storage_mode: {settings.forms_storage_mode}. Forms not saved to JSON.")
 
 # --- API Endpoints ---
-@router.get("/api/forms/all", response_model=List[models.SubmittedForm])
+@router.get("/api/forms/all", response_model=models.SubmittedFormListResponse)
 async def get_all_submitted_forms(
+    days: Optional[int] = Query(
+        None,
+        description="Day window for non-pilot roles (default 30). Ignored for pilots (fixed 72h). Use 0 for no time filter.",
+    ),
+    limit: Optional[int] = Query(None, description="Page size (default 100, max 500)."),
+    offset: Optional[int] = Query(None, description="Pagination offset."),
     session: SQLModelSession = Depends(get_db_session),
     current_user: models.User = Depends(get_current_active_user),
 ):
-    statement = select(models.SubmittedForm)
     if current_user.role == models.UserRoleEnum.pilot:
-        cutoff_time = datetime.now(timezone.utc) - timedelta(hours=72)
-        statement = statement.where(
-            models.SubmittedForm.submission_timestamp > cutoff_time
+        cutoff = submission_cutoff_for_hours(PILOT_ALL_FORMS_HOURS)
+        # Echo days≈3 for UI; pilot window is hour-based.
+        echo_days = max(1, PILOT_ALL_FORMS_HOURS // 24)
+        return list_submitted_form_summaries(
+            session,
+            cutoff=cutoff,
+            days=echo_days,
+            limit=limit if limit is not None else 100,
+            offset=offset if offset is not None else 0,
         )
-    statement = statement.order_by(models.SubmittedForm.submission_timestamp.desc())
-    forms = session.exec(statement).all()
-    return forms
+
+    resolved_days = effective_days_window(days, default_days=DEFAULT_MISSION_LIST_DAYS)
+    cutoff = submission_cutoff_for_days(resolved_days)
+    return list_submitted_form_summaries(
+        session,
+        cutoff=cutoff,
+        days=resolved_days,
+        limit=limit if limit is not None else 100,
+        offset=offset if offset is not None else 0,
+    )
 
 # Item IDs excluded from "changes since last PIC" highlighting (expected to change over time)
 PIC_HANDOFF_EXCLUDED_CHANGE_IDS = {
@@ -180,48 +208,74 @@ async def get_submitted_form_with_changes(
     return {"form": db_form, "changed_item_ids": changed_item_ids}
 
 
-@router.get("/api/forms/pic_handoffs/my", response_model=List[models.SubmittedForm])
+@router.get("/api/forms/pic_handoffs/my", response_model=models.SubmittedFormListResponse)
 async def get_my_pic_handoff_submissions(
-    current_user: models.User = Depends(get_current_active_user),
-    session: SQLModelSession = Depends(get_db_session)
-):
-    statement = select(models.SubmittedForm).where(
-        models.SubmittedForm.form_type == "pic_handoff_checklist",
-        models.SubmittedForm.submitted_by_username == current_user.username
-    ).order_by(models.SubmittedForm.submission_timestamp.desc())
-    forms = session.exec(statement).all()
-    return forms
-
-@router.get("/api/forms/pic_handoffs/recent", response_model=List[models.SubmittedForm])
-async def get_recent_pic_handoff_submissions(
-    current_user: models.User = Depends(get_current_active_user),
-    session: SQLModelSession = Depends(get_db_session)
-):
-    twenty_four_hours_ago = datetime.now(timezone.utc) - timedelta(hours=24)
-    statement = select(models.SubmittedForm).where(
-        models.SubmittedForm.form_type == "pic_handoff_checklist",
-        models.SubmittedForm.submission_timestamp >= twenty_four_hours_ago
-    ).order_by(models.SubmittedForm.submission_timestamp.desc())
-    forms = session.exec(statement).all()
-    return forms
-
-
-@router.get("/api/forms/pic_handoffs/mission/{mission_id}", response_model=List[models.SubmittedForm])
-async def get_pic_handoff_submissions_for_mission(
-    mission_id: str,
+    days: Optional[int] = Query(
+        None,
+        description="Day window (default 90). Use 0 for no time filter.",
+    ),
+    limit: Optional[int] = Query(None, description="Page size (default 100, max 500)."),
+    offset: Optional[int] = Query(None, description="Pagination offset."),
     current_user: models.User = Depends(get_current_active_user),
     session: SQLModelSession = Depends(get_db_session),
 ):
-    statement = (
-        select(models.SubmittedForm)
-        .where(
-            models.SubmittedForm.form_type == "pic_handoff_checklist",
-            models.SubmittedForm.mission_id == mission_id,
-        )
-        .order_by(models.SubmittedForm.submission_timestamp.desc())
+    resolved_days = effective_days_window(days, default_days=DEFAULT_MY_PIC_DAYS)
+    cutoff = submission_cutoff_for_days(resolved_days)
+    return list_submitted_form_summaries(
+        session,
+        form_type="pic_handoff_checklist",
+        submitted_by_username=current_user.username,
+        cutoff=cutoff,
+        days=resolved_days,
+        limit=limit if limit is not None else 100,
+        offset=offset if offset is not None else 0,
     )
-    forms = session.exec(statement).all()
-    return forms
+
+
+@router.get("/api/forms/pic_handoffs/recent", response_model=models.SubmittedFormListResponse)
+async def get_recent_pic_handoff_submissions(
+    limit: Optional[int] = Query(None, description="Page size (default 100, max 500)."),
+    offset: Optional[int] = Query(None, description="Pagination offset."),
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    cutoff = submission_cutoff_for_hours(RECENT_PIC_HOURS)
+    return list_submitted_form_summaries(
+        session,
+        form_type="pic_handoff_checklist",
+        cutoff=cutoff,
+        days=1,
+        limit=limit if limit is not None else 100,
+        offset=offset if offset is not None else 0,
+    )
+
+
+@router.get(
+    "/api/forms/pic_handoffs/mission/{mission_id}",
+    response_model=models.SubmittedFormListResponse,
+)
+async def get_pic_handoff_submissions_for_mission(
+    mission_id: str,
+    days: Optional[int] = Query(
+        None,
+        description="Day window (default 30). Use 0 for no time filter (still paginated).",
+    ),
+    limit: Optional[int] = Query(None, description="Page size (default 100, max 500)."),
+    offset: Optional[int] = Query(None, description="Pagination offset."),
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    resolved_days = effective_days_window(days, default_days=DEFAULT_MISSION_LIST_DAYS)
+    cutoff = submission_cutoff_for_days(resolved_days)
+    return list_submitted_form_summaries(
+        session,
+        form_type="pic_handoff_checklist",
+        mission_id=mission_id,
+        cutoff=cutoff,
+        days=resolved_days,
+        limit=limit if limit is not None else 100,
+        offset=offset if offset is not None else 0,
+    )
 
 @router.get("/api/forms/{mission_id}/template/{form_type}")
 async def get_form_template(

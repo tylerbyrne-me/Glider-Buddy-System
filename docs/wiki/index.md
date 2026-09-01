@@ -29,13 +29,13 @@ Operational and sensor guides: [how-tos/README.md](./how-tos/README.md).
 
 ## Standards
 
-Detailed coding and folder standards: [standards/README.md](./standards/README.md). Prefer [conventions.md](./conventions.md) first; open standards files for depth.
+Detailed coding and folder standards: [standards/README.md](./standards/README.md). Prefer [conventions.md](./conventions.md) first; open standards files for depth. Form list/detail and retention windows: [FORM_SUBMISSION_POLICIES.md](./standards/FORM_SUBMISSION_POLICIES.md).
 
 ## Tracking
 
 - [Backlog](../tasks/backlog.md) / [In progress](../tasks/in-progress.md) / [Done](../tasks/done.md)
 - [Bugs](../bugs/README.md)
-- [Decisions (ADRs)](../decisions/0000-template.md) — [0001 leader lock](../decisions/0001-gunicorn-leader-lock.md), [0002 no preload](../decisions/0002-no-gunicorn-preload.md), [0003 platform/brand naming](../decisions/0003-platform-brand-naming.md), [0004 DMON Robots4Whales cache](../decisions/0004-dmon-robots4whales-review-cache.md), [0005 mission catalog live keys](../decisions/0005-mission-catalog-live-keys.md)
+- [Decisions (ADRs)](../decisions/0000-template.md) — [0001 leader lock](../decisions/0001-gunicorn-leader-lock.md), [0002 no preload](../decisions/0002-no-gunicorn-preload.md), [0003 platform/brand naming](../decisions/0003-platform-brand-naming.md), [0004 DMON Robots4Whales cache](../decisions/0004-dmon-robots4whales-review-cache.md), [0005 mission catalog live keys](../decisions/0005-mission-catalog-live-keys.md), [0006 form submission retention windows](../decisions/0006-form-submission-retention-windows.md)
 
 ## Archive
 

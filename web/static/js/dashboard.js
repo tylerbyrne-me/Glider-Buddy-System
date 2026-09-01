@@ -406,6 +406,50 @@ document.addEventListener('DOMContentLoaded', async function() {
         dashboardPicDetailsModal.show();
     };
 
+    /** @type {Array<object>} */
+    let picHandoffListItems = [];
+    let picHandoffListMeta = { days: 30, total: 0, has_more: false, limit: 100, offset: 0, allHistory: false };
+    const dashboardPicHandoffsWindowHint = document.getElementById('dashboardPicHandoffsWindowHint');
+    const dashboardPicHandoffsLoadOlderWrap = document.getElementById('dashboardPicHandoffsLoadOlderWrap');
+    const dashboardPicHandoffsLoadOlderBtn = document.getElementById('dashboardPicHandoffsLoadOlderBtn');
+
+    const updatePicHandoffsWindowUi = () => {
+        if (dashboardPicHandoffsWindowHint) {
+            if (picHandoffListMeta.allHistory || picHandoffListMeta.days === 0) {
+                dashboardPicHandoffsWindowHint.textContent = `Showing all submissions (${picHandoffListItems.length} of ${picHandoffListMeta.total}).`;
+            } else {
+                dashboardPicHandoffsWindowHint.textContent = `Showing last ${picHandoffListMeta.days} days (${picHandoffListItems.length} of ${picHandoffListMeta.total}).`;
+            }
+            dashboardPicHandoffsWindowHint.style.display = 'block';
+        }
+        if (dashboardPicHandoffsLoadOlderWrap) {
+            const showOlder = picHandoffListMeta.has_more || (!picHandoffListMeta.allHistory && picHandoffListMeta.days > 0);
+            dashboardPicHandoffsLoadOlderWrap.style.display = showOlder ? 'block' : 'none';
+        }
+        if (dashboardPicHandoffsLoadOlderBtn) {
+            if (picHandoffListMeta.has_more) {
+                dashboardPicHandoffsLoadOlderBtn.textContent = 'Load more';
+            } else if (!picHandoffListMeta.allHistory && picHandoffListMeta.days > 0) {
+                dashboardPicHandoffsLoadOlderBtn.textContent = 'Load older submissions';
+            }
+        }
+    };
+
+    const openPicFormDetails = async (summary, { withChanges = false } = {}) => {
+        try {
+            if (withChanges) {
+                const r = await apiRequest(`/api/forms/id/${summary.id}/with-changes`, 'GET');
+                displayPicFormDetailsInModal(r.form, r.changed_item_ids || []);
+                return;
+            }
+            const form = await apiRequest(`/api/forms/id/${summary.id}`, 'GET');
+            displayPicFormDetailsInModal(form, []);
+        } catch (e) {
+            console.error('Failed to load PIC form details', e);
+            showToast(`Failed to load form details: ${e.message}`, 'danger');
+        }
+    };
+
     const renderPicHandoffs = (forms) => {
         if (!dashboardPicHandoffsLatest || !dashboardPicHandoffsTableBody || !dashboardPicHandoffsEmpty) return;
 
@@ -415,6 +459,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             dashboardPicHandoffsLatest.innerHTML = '<div class="text-muted small">No PIC Handoff submissions exist for this mission.</div>';
             dashboardPicHandoffsTableBody.innerHTML = '<tr><td colspan="5" class="text-muted small">No PIC Handoff submissions exist for this mission.</td></tr>';
             dashboardPicHandoffsEmpty.style.display = 'block';
+            updatePicHandoffsWindowUi();
             return;
         }
 
@@ -436,19 +481,11 @@ document.addEventListener('DOMContentLoaded', async function() {
         `;
         const viewLatestBtn = document.getElementById('dashboardPicHandoffsViewLatestBtn');
         if (viewLatestBtn) {
-            viewLatestBtn.addEventListener('click', async () => {
-                try {
-                    const r = await apiRequest(`/api/forms/id/${latest.id}/with-changes`, 'GET');
-                    displayPicFormDetailsInModal(r.form, r.changed_item_ids || []);
-                } catch (e) {
-                    console.error('Failed to load PIC form with changes', e);
-                    displayPicFormDetailsInModal(latest, []);
-                }
-            });
+            viewLatestBtn.addEventListener('click', () => openPicFormDetails(latest, { withChanges: true }));
         }
 
         dashboardPicHandoffsTableBody.innerHTML = '';
-        forms.forEach(form => {
+        forms.forEach((form, index) => {
             const row = dashboardPicHandoffsTableBody.insertRow();
             row.insertCell().textContent = form.mission_id || '';
             row.insertCell().textContent = form.form_title || '';
@@ -459,20 +496,13 @@ document.addEventListener('DOMContentLoaded', async function() {
             const viewButton = document.createElement('button');
             viewButton.classList.add('btn', 'btn-sm', 'btn-info');
             viewButton.textContent = 'View Details';
-            viewButton.addEventListener('click', async () => {
-                try {
-                    const r = await apiRequest(`/api/forms/id/${form.id}/with-changes`, 'GET');
-                    displayPicFormDetailsInModal(r.form, r.changed_item_ids || []);
-                } catch (e) {
-                    console.error('Failed to load PIC form with changes', e);
-                    displayPicFormDetailsInModal(form, []);
-                }
-            });
+            viewButton.addEventListener('click', () => openPicFormDetails(form, { withChanges: index === 0 }));
             actionsCell.appendChild(viewButton);
         });
+        updatePicHandoffsWindowUi();
     };
 
-    const loadPicHandoffsForMission = async () => {
+    const loadPicHandoffsForMission = async ({ days = 30, offset = 0, append = false, allHistory = false } = {}) => {
         if (!dashboardPicHandoffsSpinner || !dashboardPicHandoffsLatest || !dashboardPicHandoffsTableBody || !dashboardPicHandoffsEmpty) return;
 
         if (!missionId) {
@@ -486,8 +516,28 @@ document.addEventListener('DOMContentLoaded', async function() {
         dashboardPicHandoffsEmpty.style.display = 'none';
 
         try {
-            const forms = await apiRequest(`/api/forms/pic_handoffs/mission/${encodeURIComponent(missionId)}`, 'GET');
-            renderPicHandoffs(forms);
+            const params = new URLSearchParams();
+            params.set('days', String(allHistory ? 0 : days));
+            params.set('limit', '100');
+            params.set('offset', String(offset));
+            const payload = await apiRequest(
+                `/api/forms/pic_handoffs/mission/${encodeURIComponent(missionId)}?${params.toString()}`,
+                'GET'
+            );
+            const items = Array.isArray(payload) ? payload : (payload.items || []);
+            const meta = Array.isArray(payload)
+                ? { days: allHistory ? 0 : days, total: items.length, has_more: false, limit: 100, offset, allHistory }
+                : {
+                    days: payload.days ?? (allHistory ? 0 : days),
+                    total: payload.total ?? items.length,
+                    has_more: Boolean(payload.has_more),
+                    limit: payload.limit ?? 100,
+                    offset: payload.offset ?? offset,
+                    allHistory,
+                };
+            picHandoffListMeta = meta;
+            picHandoffListItems = append ? picHandoffListItems.concat(items) : items;
+            renderPicHandoffs(picHandoffListItems);
         } catch (error) {
             dashboardPicHandoffsLatest.innerHTML = `<div class="text-danger small">Failed to load PIC submissions: ${escapeHtml(error.message)}</div>`;
             dashboardPicHandoffsTableBody.innerHTML = `<tr><td colspan="5" class="text-danger small">Failed to load PIC submissions: ${escapeHtml(error.message)}</td></tr>`;
@@ -599,11 +649,32 @@ document.addEventListener('DOMContentLoaded', async function() {
     const picTabButton = document.getElementById('dashboard-pic-tab');
     if (picTabButton) {
         picTabButton.addEventListener('shown.bs.tab', () => {
-            loadPicHandoffsForMission();
+            loadPicHandoffsForMission({ days: 30, offset: 0, append: false, allHistory: false });
         });
     }
     if (dashboardPicHandoffsRefreshBtn) {
-        dashboardPicHandoffsRefreshBtn.addEventListener('click', () => loadPicHandoffsForMission());
+        dashboardPicHandoffsRefreshBtn.addEventListener('click', () => {
+            loadPicHandoffsForMission({
+                days: picHandoffListMeta.allHistory ? 0 : (picHandoffListMeta.days || 30),
+                offset: 0,
+                append: false,
+                allHistory: picHandoffListMeta.allHistory,
+            });
+        });
+    }
+    if (dashboardPicHandoffsLoadOlderBtn) {
+        dashboardPicHandoffsLoadOlderBtn.addEventListener('click', () => {
+            if (picHandoffListMeta.has_more) {
+                loadPicHandoffsForMission({
+                    days: picHandoffListMeta.allHistory ? 0 : (picHandoffListMeta.days || 30),
+                    offset: picHandoffListItems.length,
+                    append: true,
+                    allHistory: picHandoffListMeta.allHistory,
+                });
+                return;
+            }
+            loadPicHandoffsForMission({ days: 0, offset: 0, append: false, allHistory: true });
+        });
     }
 
     if (missionMediaGallery) {

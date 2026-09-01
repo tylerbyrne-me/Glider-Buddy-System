@@ -713,6 +713,30 @@ class MissionFormDataResponse(MissionFormDataCreate):
     submission_timestamp: datetime
 
 
+class SubmittedFormSummary(BaseModel):
+    """List-row metadata for a submitted form (no sections_data)."""
+
+    id: int
+    mission_id: str
+    form_type: str
+    form_title: str
+    submitted_by_username: str
+    submission_timestamp: datetime
+    edited_by_username: Optional[str] = None
+    last_edited_timestamp: Optional[datetime] = None
+
+
+class SubmittedFormListResponse(BaseModel):
+    """Paginated summary list for interactive form browsers."""
+
+    items: List[SubmittedFormSummary]
+    total: int
+    days: int = Field(description="Applied day window; 0 means no time filter.")
+    limit: int
+    offset: int
+    has_more: bool = False
+
+
 # ============================================================================
 # Mission Info Models
 # ============================================================================

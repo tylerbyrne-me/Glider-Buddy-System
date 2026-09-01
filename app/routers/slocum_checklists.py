@@ -22,6 +22,12 @@ from ..core.mission_aliases import resolved_slocum_mission_key
 from ..core.auth import get_current_active_user, get_optional_current_user, require_platform_access
 from ..core.infra.db import SQLModelSession, get_db_session
 from ..core.infra.feature_toggles import is_feature_enabled
+from ..core.forms.submission_queries import (
+    DEFAULT_MISSION_LIST_DAYS,
+    effective_days_window,
+    list_submitted_form_summaries,
+    submission_cutoff_for_days,
+)
 from app.platforms.slocum.checklist_autofill import (
     CHECKLIST_FORM_TITLE,
     CHECKLIST_FORM_TYPE,
@@ -283,11 +289,17 @@ def compare_checklists(
 
 @router.get(
     "/api/slocum/checklists/{dataset_id}",
-    response_model=List[models.SubmittedForm],
+    response_model=models.SubmittedFormListResponse,
     dependencies=[_slocum_access],
 )
 def list_checklists_for_dataset(
     dataset_id: str,
+    days: Optional[int] = Query(
+        None,
+        description="Day window (default 30). Use 0 for no time filter (still paginated).",
+    ),
+    limit: Optional[int] = Query(None, description="Page size (default 100, max 500)."),
+    offset: Optional[int] = Query(None, description="Pagination offset."),
     current_user: models.User = Depends(get_current_active_user),
     session: SQLModelSession = Depends(get_db_session),
 ):
@@ -307,17 +319,26 @@ def list_checklists_for_dataset(
         except Exception as exc:
             logger.warning("Checklist legacy rekey skipped for %s: %s", dataset_id, exc)
     if not mission_ids:
-        return []
-    statement = (
-        select(models.SubmittedForm)
-        .where(
-            models.SubmittedForm.form_type == CHECKLIST_FORM_TYPE,
-            models.SubmittedForm.mission_id.in_(mission_ids),
+        resolved_days = effective_days_window(days, default_days=DEFAULT_MISSION_LIST_DAYS)
+        return models.SubmittedFormListResponse(
+            items=[],
+            total=0,
+            days=resolved_days,
+            limit=limit if limit is not None else 100,
+            offset=offset if offset is not None else 0,
+            has_more=False,
         )
-        .order_by(models.SubmittedForm.submission_timestamp.desc())
+    resolved_days = effective_days_window(days, default_days=DEFAULT_MISSION_LIST_DAYS)
+    cutoff = submission_cutoff_for_days(resolved_days)
+    return list_submitted_form_summaries(
+        session,
+        form_type=CHECKLIST_FORM_TYPE,
+        mission_ids=mission_ids,
+        cutoff=cutoff,
+        days=resolved_days,
+        limit=limit if limit is not None else 100,
+        offset=offset if offset is not None else 0,
     )
-    forms = list(session.exec(statement).all())
-    return forms
 
 
 @router.post(

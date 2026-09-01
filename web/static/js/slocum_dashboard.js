@@ -68,6 +68,7 @@ const timeSeriesLoaded = new Set();
 const timeSeriesChartInstances = {};
 /** Cached checklist submissions for the Compare modal (newest first). */
 let lastSlocumChecklists = [];
+let slocumChecklistListMeta = { days: 30, total: 0, has_more: false, limit: 100, offset: 0, allHistory: false };
 
 let chartTextColor = '#212529';
 let chartGridColor = '#dee2e6';
@@ -2387,19 +2388,50 @@ function bindSlocumChecklistTab() {
     const checklistTab = document.getElementById('slocum-checklist-tab');
     if (checklistTab) {
         checklistTab.addEventListener('shown.bs.tab', () => {
-            loadSlocumChecklists();
+            loadSlocumChecklists({ days: 30, offset: 0, append: false, allHistory: false });
         });
     }
     const refreshBtn = document.getElementById('slocumChecklistsRefreshBtn');
     if (refreshBtn) {
-        refreshBtn.addEventListener('click', () => loadSlocumChecklists());
+        refreshBtn.addEventListener('click', () => {
+            loadSlocumChecklists({
+                days: slocumChecklistListMeta.allHistory ? 0 : (slocumChecklistListMeta.days || 30),
+                offset: 0,
+                append: false,
+                allHistory: slocumChecklistListMeta.allHistory,
+            });
+        });
+    }
+    const loadOlderBtn = document.getElementById('slocumChecklistsLoadOlderBtn');
+    if (loadOlderBtn) {
+        loadOlderBtn.addEventListener('click', () => {
+            if (slocumChecklistListMeta.has_more) {
+                loadSlocumChecklists({
+                    days: slocumChecklistListMeta.allHistory ? 0 : (slocumChecklistListMeta.days || 30),
+                    offset: lastSlocumChecklists.length,
+                    append: true,
+                    allHistory: slocumChecklistListMeta.allHistory,
+                });
+                return;
+            }
+            loadSlocumChecklists({ days: 0, offset: 0, append: false, allHistory: true });
+        });
     }
 }
 
-function displaySlocumChecklistDetails(form) {
+async function displaySlocumChecklistDetails(formOrSummary) {
     const content = document.getElementById('slocumChecklistsFormDetailsContent');
     const title = document.getElementById('slocumChecklistsFormDetailsModalLabel');
     if (!content) return;
+    let form = formOrSummary;
+    if (!form.sections_data && form.id != null) {
+        try {
+            form = await apiRequest(`/api/slocum/checklists/id/${form.id}`, 'GET');
+        } catch (error) {
+            showToast(`Failed to load checklist: ${error.message}`, 'danger');
+            return;
+        }
+    }
     if (title) {
         title.textContent = form.form_title || 'Daily Checklist';
     }
@@ -2431,6 +2463,32 @@ function displaySlocumChecklistDetails(form) {
     }
 }
 
+function updateSlocumChecklistsWindowUi() {
+    const hint = document.getElementById('slocumChecklistsWindowHint');
+    const wrap = document.getElementById('slocumChecklistsLoadOlderWrap');
+    const btn = document.getElementById('slocumChecklistsLoadOlderBtn');
+    if (hint) {
+        if (slocumChecklistListMeta.allHistory || slocumChecklistListMeta.days === 0) {
+            hint.textContent = `Showing all submissions (${lastSlocumChecklists.length} of ${slocumChecklistListMeta.total}).`;
+        } else {
+            hint.textContent = `Showing last ${slocumChecklistListMeta.days} days (${lastSlocumChecklists.length} of ${slocumChecklistListMeta.total}).`;
+        }
+        hint.style.display = 'block';
+    }
+    if (wrap) {
+        const showOlder = slocumChecklistListMeta.has_more
+            || (!slocumChecklistListMeta.allHistory && slocumChecklistListMeta.days > 0);
+        wrap.style.display = showOlder ? 'block' : 'none';
+    }
+    if (btn) {
+        if (slocumChecklistListMeta.has_more) {
+            btn.textContent = 'Load more';
+        } else if (!slocumChecklistListMeta.allHistory && slocumChecklistListMeta.days > 0) {
+            btn.textContent = 'Load older submissions';
+        }
+    }
+}
+
 function renderSlocumChecklists(forms) {
     const latestEl = document.getElementById('slocumChecklistsLatest');
     const tableBody = document.getElementById('slocumChecklistsTableBody');
@@ -2445,6 +2503,7 @@ function renderSlocumChecklists(forms) {
         latestEl.innerHTML = '<div class="text-muted small">No daily checklist submissions exist for this dataset.</div>';
         tableBody.innerHTML = '<tr><td colspan="4" class="text-muted small">No daily checklist submissions exist for this dataset.</td></tr>';
         if (emptyEl) emptyEl.style.display = 'block';
+        updateSlocumChecklistsWindowUi();
         return;
     }
     if (emptyEl) emptyEl.style.display = 'none';
@@ -2524,9 +2583,10 @@ function renderSlocumChecklists(forms) {
             actionsCell.appendChild(editLink);
         }
     });
+    updateSlocumChecklistsWindowUi();
 }
 
-async function loadSlocumChecklists() {
+async function loadSlocumChecklists({ days = 30, offset = 0, append = false, allHistory = false } = {}) {
     const datasetId = getDatasetId();
     const spinner = document.getElementById('slocumChecklistsSpinner');
     const latestEl = document.getElementById('slocumChecklistsLatest');
@@ -2537,7 +2597,27 @@ async function loadSlocumChecklists() {
     }
     if (spinner) spinner.style.display = 'block';
     try {
-        const forms = await apiRequest(`/api/slocum/checklists/${encodeURIComponent(datasetId)}`, 'GET');
+        const params = new URLSearchParams();
+        params.set('days', String(allHistory ? 0 : days));
+        params.set('limit', '100');
+        params.set('offset', String(offset));
+        const payload = await apiRequest(
+            `/api/slocum/checklists/${encodeURIComponent(datasetId)}?${params.toString()}`,
+            'GET'
+        );
+        const items = Array.isArray(payload) ? payload : (payload.items || []);
+        const meta = Array.isArray(payload)
+            ? { days: allHistory ? 0 : days, total: items.length, has_more: false, limit: 100, offset, allHistory }
+            : {
+                days: payload.days ?? (allHistory ? 0 : days),
+                total: payload.total ?? items.length,
+                has_more: Boolean(payload.has_more),
+                limit: payload.limit ?? 100,
+                offset: payload.offset ?? offset,
+                allHistory,
+            };
+        slocumChecklistListMeta = meta;
+        const forms = append ? lastSlocumChecklists.concat(items) : items;
         renderSlocumChecklists(forms);
     } catch (error) {
         if (latestEl) {

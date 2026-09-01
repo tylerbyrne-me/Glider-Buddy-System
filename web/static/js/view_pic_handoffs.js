@@ -38,7 +38,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                 const r = await apiRequest(`/api/forms/id/${formId}/with-changes`, 'GET');
                 displayFormDetailsInModal(r.form, r.changed_item_ids || []);
             } else {
-                const forms = await apiRequest('/api/forms/pic_handoffs/recent', 'GET');
+                const payload = await apiRequest('/api/forms/pic_handoffs/recent', 'GET');
+                const forms = Array.isArray(payload) ? payload : (payload.items || []);
                 renderFormsTable(forms);
             }
         } catch (error) {
@@ -61,7 +62,7 @@ document.addEventListener('DOMContentLoaded', async function () {
         }
         noFormsMessage.style.display = 'none';
 
-        forms.forEach(form => {
+        forms.forEach((form, index) => {
             const row = tableBody.insertRow();
             row.insertCell().textContent = form.mission_id;
             row.insertCell().textContent = form.form_title;
@@ -83,8 +84,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             viewButton.textContent = 'View Details';
             viewButton.addEventListener('click', async () => {
                 try {
-                    const r = await apiRequest(`/api/forms/id/${form.id}/with-changes`, 'GET');
-                    displayFormDetailsInModal(r.form, r.changed_item_ids || []);
+                    if (index === 0) {
+                        const r = await apiRequest(`/api/forms/id/${form.id}/with-changes`, 'GET');
+                        displayFormDetailsInModal(r.form, r.changed_item_ids || []);
+                    } else {
+                        const full = await apiRequest(`/api/forms/id/${form.id}`, 'GET');
+                        displayFormDetailsInModal(full, []);
+                    }
                 } catch (e) {
                     showToast(`Error loading form: ${e.message}`, 'danger');
                 }

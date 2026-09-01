@@ -4,6 +4,8 @@
 
 The `app/forms/` folder contains **form schema definitions** - the static structure and templates for mission forms. This folder is separate from form submission handling (which is in `app/routers/forms.py`) and form models (which are in `app/core/models/`).
 
+**Submission storage, list vs detail APIs, and interactive retention windows** are documented in [FORM_SUBMISSION_POLICIES.md](./FORM_SUBMISSION_POLICIES.md) (ADR [0006](../../decisions/0006-form-submission-retention-windows.md)). Do not put retention or list-payload rules in this folder-standards file.
+
 ## Current State Analysis
 
 ### ✅ Still Needed - YES
@@ -319,6 +321,7 @@ The `app/forms/` folder serves a clear purpose:
 
 ## Related Documentation
 
+- [FORM_SUBMISSION_POLICIES.md](./FORM_SUBMISSION_POLICIES.md) — submission retention and list/detail contract
 - `CODE_STANDARDS.md` - General coding standards
 - `SERVICE_STANDARDS.md` - Service layer guidelines
 - `MODULE_TEMPLATES_README.md` - Module templates

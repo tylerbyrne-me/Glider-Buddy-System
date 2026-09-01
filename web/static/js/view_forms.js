@@ -34,7 +34,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         noFormsMessage.style.display = 'none';
 
         try {
-            const forms = await apiRequest('/api/forms/all', 'GET');
+            const payload = await apiRequest('/api/forms/all', 'GET');
+            const forms = Array.isArray(payload) ? payload : (payload.items || []);
 
             formsTableBody.innerHTML = ''; // Clear existing rows
 
@@ -89,14 +90,33 @@ document.addEventListener('DOMContentLoaded', async function () {
                         if (form.form_type === 'pic_handoff_checklist') {
                             modalLabel.textContent = `Details for: ${form.form_title} (Mission: ${form.mission_id})`;
                             try {
-                                const r = await apiRequest(`/api/forms/id/${form.id}/with-changes`, 'GET');
-                                formDetailsContentElement.innerHTML = renderPicHandoffDetails(r.form, r.changed_item_ids || [], currentUser);
+                                const isLatestForMission = Boolean(picHandoffHighlightedForMission[form.mission_id])
+                                    && row.classList.contains('pic-handoff-highlight');
+                                if (isLatestForMission) {
+                                    const r = await apiRequest(`/api/forms/id/${form.id}/with-changes`, 'GET');
+                                    formDetailsContentElement.innerHTML = renderPicHandoffDetails(r.form, r.changed_item_ids || [], currentUser);
+                                } else {
+                                    const full = await apiRequest(`/api/forms/id/${form.id}`, 'GET');
+                                    formDetailsContentElement.innerHTML = renderPicHandoffDetails(full, [], currentUser);
+                                }
                             } catch (e) {
-                                formDetailsContentElement.innerHTML = renderPicHandoffDetails(form, [], currentUser);
+                                try {
+                                    const full = await apiRequest(`/api/forms/id/${form.id}`, 'GET');
+                                    formDetailsContentElement.innerHTML = renderPicHandoffDetails(full, [], currentUser);
+                                } catch (err) {
+                                    showToast(`Error loading form: ${err.message}`, 'danger');
+                                    return;
+                                }
                             }
                         } else {
                             modalLabel.textContent = `Details for: ${form.form_title} (${form.form_type})`;
-                            renderFormDetailsInModal(form, []);
+                            try {
+                                const full = await apiRequest(`/api/forms/id/${form.id}`, 'GET');
+                                renderFormDetailsInModal(full, []);
+                            } catch (err) {
+                                showToast(`Error loading form: ${err.message}`, 'danger');
+                                return;
+                            }
                         }
                         formDetailsModal.show();
                     };
