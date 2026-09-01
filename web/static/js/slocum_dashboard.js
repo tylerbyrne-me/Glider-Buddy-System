@@ -68,7 +68,7 @@ const timeSeriesLoaded = new Set();
 const timeSeriesChartInstances = {};
 /** Cached checklist submissions for the Compare modal (newest first). */
 let lastSlocumChecklists = [];
-let slocumChecklistListMeta = { days: 30, total: 0, has_more: false, limit: 100, offset: 0, allHistory: false };
+let slocumChecklistListMeta = { days: 7, total: 0, has_more: false, limit: 100, offset: 0, allHistory: false };
 
 let chartTextColor = '#212529';
 let chartGridColor = '#dee2e6';
@@ -2388,14 +2388,14 @@ function bindSlocumChecklistTab() {
     const checklistTab = document.getElementById('slocum-checklist-tab');
     if (checklistTab) {
         checklistTab.addEventListener('shown.bs.tab', () => {
-            loadSlocumChecklists({ days: 30, offset: 0, append: false, allHistory: false });
+            loadSlocumChecklists({ days: 7, offset: 0, append: false, allHistory: false });
         });
     }
     const refreshBtn = document.getElementById('slocumChecklistsRefreshBtn');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
             loadSlocumChecklists({
-                days: slocumChecklistListMeta.allHistory ? 0 : (slocumChecklistListMeta.days || 30),
+                days: slocumChecklistListMeta.allHistory ? 0 : (slocumChecklistListMeta.days || 7),
                 offset: 0,
                 append: false,
                 allHistory: slocumChecklistListMeta.allHistory,
@@ -2407,7 +2407,7 @@ function bindSlocumChecklistTab() {
         loadOlderBtn.addEventListener('click', () => {
             if (slocumChecklistListMeta.has_more) {
                 loadSlocumChecklists({
-                    days: slocumChecklistListMeta.allHistory ? 0 : (slocumChecklistListMeta.days || 30),
+                    days: slocumChecklistListMeta.allHistory ? 0 : (slocumChecklistListMeta.days || 7),
                     offset: lastSlocumChecklists.length,
                     append: true,
                     allHistory: slocumChecklistListMeta.allHistory,

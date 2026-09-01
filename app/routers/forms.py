@@ -59,7 +59,7 @@ def _save_forms_to_local_json():
 async def get_all_submitted_forms(
     days: Optional[int] = Query(
         None,
-        description="Day window for non-pilot roles (default 30). Ignored for pilots (fixed 72h). Use 0 for no time filter.",
+        description="Day window for non-pilot roles (default 7). Ignored for pilots (fixed 72h). Use 0 for no time filter.",
     ),
     limit: Optional[int] = Query(None, description="Page size (default 100, max 500)."),
     offset: Optional[int] = Query(None, description="Pagination offset."),
@@ -258,7 +258,7 @@ async def get_pic_handoff_submissions_for_mission(
     mission_id: str,
     days: Optional[int] = Query(
         None,
-        description="Day window (default 30). Use 0 for no time filter (still paginated).",
+        description="Day window (default 7). Use 0 for no time filter (still paginated).",
     ),
     limit: Optional[int] = Query(None, description="Page size (default 100, max 500)."),
     offset: Optional[int] = Query(None, description="Pagination offset."),

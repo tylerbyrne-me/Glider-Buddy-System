@@ -89,7 +89,7 @@ def test_mission_pic_list_returns_summaries_without_sections_data():
         offset=0,
     )
 
-    assert result.days == 30
+    assert result.days == DEFAULT_MISSION_LIST_DAYS
     assert result.total == 1
     assert len(result.items) == 1
     assert result.items[0].id == recent.id
@@ -166,8 +166,8 @@ def test_slocum_checklist_list_parity():
         session,
         form_type="slocum_daily_checklist",
         mission_ids=["peggy_20250522_206"],
-        cutoff=submission_cutoff_for_days(30),
-        days=30,
+        cutoff=submission_cutoff_for_days(DEFAULT_MISSION_LIST_DAYS),
+        days=DEFAULT_MISSION_LIST_DAYS,
     )
     assert result.total == 1
     assert result.items[0].id == recent.id

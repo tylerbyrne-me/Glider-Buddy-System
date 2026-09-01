@@ -296,7 +296,7 @@ def list_checklists_for_dataset(
     dataset_id: str,
     days: Optional[int] = Query(
         None,
-        description="Day window (default 30). Use 0 for no time filter (still paginated).",
+        description="Day window (default 7). Use 0 for no time filter (still paginated).",
     ),
     limit: Optional[int] = Query(None, description="Page size (default 100, max 500)."),
     offset: Optional[int] = Query(None, description="Pagination offset."),

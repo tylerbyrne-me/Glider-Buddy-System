@@ -37,11 +37,11 @@ Related but **out of scope** for this policy: WG-VM4 `offload_logs` (separate ta
 
 | Surface | Default window | Payload | Expand older history |
 |---------|----------------|---------|----------------------|
-| WG mission PIC tab | 30 days | Summary only | `days=0` + pagination |
-| WG view all forms | Pilot: 72 hours; Admin/MOS: 30 days | Summary only | Widen `days` / paginate |
+| WG mission PIC tab | 7 days | Summary only | `days=0` + pagination |
+| WG view all forms | Pilot: 72 hours; Admin/MOS: 7 days | Summary only | Widen `days` / paginate |
 | WG recent PIC page | 24 hours | Summary only | N/A |
 | WG my PIC handoffs | 90 days | Summary only | Paginate / widen `days` |
-| Slocum checklist tab | 30 days | Summary only | `days=0` + pagination |
+| Slocum checklist tab | 7 days | Summary only | `days=0` + pagination |
 
 ### Full-record access (never windowed by list defaults)
 
@@ -120,7 +120,7 @@ SELECT form_type,
 
 (Postgres equivalent: `pg_column_size(sections_data)`.)
 
-Expect KB-scale mission list responses after the summary + 30-day default; multi-MB responses indicate a client still requesting `days=0` without pagination or a regression to full blobs.
+Expect KB-scale mission list responses after the summary + 7-day default; multi-MB responses indicate a client still requesting `days=0` without pagination or a regression to full blobs.
 
 ## Future policy (not implemented)
 

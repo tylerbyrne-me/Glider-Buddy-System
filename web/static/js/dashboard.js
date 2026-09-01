@@ -408,7 +408,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     /** @type {Array<object>} */
     let picHandoffListItems = [];
-    let picHandoffListMeta = { days: 30, total: 0, has_more: false, limit: 100, offset: 0, allHistory: false };
+    let picHandoffListMeta = { days: 7, total: 0, has_more: false, limit: 100, offset: 0, allHistory: false };
     const dashboardPicHandoffsWindowHint = document.getElementById('dashboardPicHandoffsWindowHint');
     const dashboardPicHandoffsLoadOlderWrap = document.getElementById('dashboardPicHandoffsLoadOlderWrap');
     const dashboardPicHandoffsLoadOlderBtn = document.getElementById('dashboardPicHandoffsLoadOlderBtn');
@@ -649,13 +649,13 @@ document.addEventListener('DOMContentLoaded', async function() {
     const picTabButton = document.getElementById('dashboard-pic-tab');
     if (picTabButton) {
         picTabButton.addEventListener('shown.bs.tab', () => {
-            loadPicHandoffsForMission({ days: 30, offset: 0, append: false, allHistory: false });
+            loadPicHandoffsForMission({ days: 7, offset: 0, append: false, allHistory: false });
         });
     }
     if (dashboardPicHandoffsRefreshBtn) {
         dashboardPicHandoffsRefreshBtn.addEventListener('click', () => {
             loadPicHandoffsForMission({
-                days: picHandoffListMeta.allHistory ? 0 : (picHandoffListMeta.days || 30),
+                days: picHandoffListMeta.allHistory ? 0 : (picHandoffListMeta.days || 7),
                 offset: 0,
                 append: false,
                 allHistory: picHandoffListMeta.allHistory,
@@ -666,7 +666,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         dashboardPicHandoffsLoadOlderBtn.addEventListener('click', () => {
             if (picHandoffListMeta.has_more) {
                 loadPicHandoffsForMission({
-                    days: picHandoffListMeta.allHistory ? 0 : (picHandoffListMeta.days || 30),
+                    days: picHandoffListMeta.allHistory ? 0 : (picHandoffListMeta.days || 7),
                     offset: picHandoffListItems.length,
                     append: true,
                     allHistory: picHandoffListMeta.allHistory,

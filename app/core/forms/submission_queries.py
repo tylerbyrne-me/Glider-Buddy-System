@@ -15,7 +15,7 @@ from sqlmodel import Session, col, select
 from app.core import models
 from app.core.models.schemas import SubmittedFormListResponse, SubmittedFormSummary
 
-DEFAULT_MISSION_LIST_DAYS = 30
+DEFAULT_MISSION_LIST_DAYS = 7
 DEFAULT_MY_PIC_DAYS = 90
 DEFAULT_LIST_LIMIT = 100
 MAX_LIST_LIMIT = 500
