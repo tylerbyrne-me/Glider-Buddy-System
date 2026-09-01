@@ -285,3 +285,21 @@ export function renderPicHandoffDetails(form, changedItemIds = [], currentUser =
 
     return html;
 }
+
+/**
+ * Show PIC handoff details: load stored snapshot first, then optional change badges.
+ * @param {{ summary: object, apiRequest: Function, render: (form: object, changedItemIds: string[]) => void, withChanges?: boolean }} opts
+ */
+export async function openPicHandoffDetailsWithSnapshot({ summary, apiRequest, render, withChanges = false }) {
+    const form = await apiRequest(`/api/forms/id/${summary.id}`, 'GET');
+    render(form, []);
+    if (!withChanges) {
+        return;
+    }
+    try {
+        const result = await apiRequest(`/api/forms/id/${summary.id}/with-changes`, 'GET');
+        render(result.form, result.changed_item_ids || []);
+    } catch (error) {
+        console.warn('PIC change highlighting unavailable:', error);
+    }
+}

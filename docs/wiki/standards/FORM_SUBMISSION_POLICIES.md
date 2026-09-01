@@ -46,7 +46,7 @@ Related but **out of scope** for this policy: WG-VM4 `offload_logs` (separate ta
 ### Full-record access (never windowed by list defaults)
 
 - **View Details / Edit** — fetch one row by id (`GET /api/forms/id/{id}` or `GET /api/slocum/checklists/id/{id}`).
-- **PIC “changes since last”** — `GET /api/forms/id/{id}/with-changes` (rebuilds live template for the **latest** PIC of a mission; expensive; do not call for every list row).
+- **PIC “changes since last”** — `GET /api/forms/id/{id}/with-changes` uses bounded mission data loads (8–48h windows, parallel) for the **latest** PIC of a mission only; do not call for every list row. The UI loads the stored snapshot first, then fetches change badges in the background.
 - **Slocum compare** — picker uses summary metadata (id, timestamp, submitter); compare payload loads two full forms by id.
 
 ## API contract

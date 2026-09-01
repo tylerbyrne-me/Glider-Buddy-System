@@ -5,7 +5,7 @@
 
 import { checkAuth, logout, getUserProfile } from '/static/js/auth.js';
 import { apiRequest, showToast } from '/static/js/api.js';
-import { renderPicHandoffDetails } from '/static/js/pic_handoff_details.js';
+import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot } from '/static/js/pic_handoff_details.js';
 
 document.addEventListener('DOMContentLoaded', async function () {
     if (!await checkAuth()) {
@@ -89,25 +89,30 @@ document.addEventListener('DOMContentLoaded', async function () {
                         const modalLabel = document.getElementById('formDetailsModalLabel');
                         if (form.form_type === 'pic_handoff_checklist') {
                             modalLabel.textContent = `Details for: ${form.form_title} (Mission: ${form.mission_id})`;
+                            const isLatestForMission = Boolean(picHandoffHighlightedForMission[form.mission_id])
+                                && row.classList.contains('pic-handoff-highlight');
                             try {
-                                const isLatestForMission = Boolean(picHandoffHighlightedForMission[form.mission_id])
-                                    && row.classList.contains('pic-handoff-highlight');
-                                if (isLatestForMission) {
-                                    const r = await apiRequest(`/api/forms/id/${form.id}/with-changes`, 'GET');
-                                    formDetailsContentElement.innerHTML = renderPicHandoffDetails(r.form, r.changed_item_ids || [], currentUser);
-                                } else {
-                                    const full = await apiRequest(`/api/forms/id/${form.id}`, 'GET');
-                                    formDetailsContentElement.innerHTML = renderPicHandoffDetails(full, [], currentUser);
-                                }
-                            } catch (e) {
-                                try {
-                                    const full = await apiRequest(`/api/forms/id/${form.id}`, 'GET');
-                                    formDetailsContentElement.innerHTML = renderPicHandoffDetails(full, [], currentUser);
-                                } catch (err) {
-                                    showToast(`Error loading form: ${err.message}`, 'danger');
-                                    return;
-                                }
+                                let modalShown = false;
+                                await openPicHandoffDetailsWithSnapshot({
+                                    summary: form,
+                                    apiRequest,
+                                    withChanges: isLatestForMission,
+                                    render: (fullForm, changedItemIds) => {
+                                        formDetailsContentElement.innerHTML = renderPicHandoffDetails(
+                                            fullForm,
+                                            changedItemIds || [],
+                                            currentUser
+                                        );
+                                        if (!modalShown) {
+                                            formDetailsModal.show();
+                                            modalShown = true;
+                                        }
+                                    },
+                                });
+                            } catch (err) {
+                                showToast(`Error loading form: ${err.message}`, 'danger');
                             }
+                            return;
                         } else {
                             modalLabel.textContent = `Details for: ${form.form_title} (${form.form_type})`;
                             try {

@@ -25,6 +25,7 @@ from ..core.forms.submission_queries import (
     submission_cutoff_for_days,
     submission_cutoff_for_hours,
 )
+from ..core.forms.pic_handoff_compare import build_pic_handoff_compare_current_values
 
 router = APIRouter(tags=["Forms"])
 logger = logging.getLogger(__name__)
@@ -177,16 +178,9 @@ async def get_submitted_form_with_changes(
     if not latest or latest.id != db_form.id:
         return {"form": db_form, "changed_item_ids": []}
 
-    template = await get_form_template(
-        db_form.mission_id, "pic_handoff_checklist", session, current_user
+    current_values = await build_pic_handoff_compare_current_values(
+        db_form.mission_id, session, current_user
     )
-    current_values: dict = {}
-    for section in template.get("sections") or []:
-        for item in section.get("items") or []:
-            iid = item.get("id")
-            if not iid:
-                continue
-            current_values[iid] = _current_value_from_template_item(item)
 
     changed_item_ids: List[str] = []
     for section in db_form.sections_data or []:

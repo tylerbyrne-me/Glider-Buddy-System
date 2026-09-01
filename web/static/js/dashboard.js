@@ -8,7 +8,7 @@
 
 import { checkAuth, getUserProfile } from '/static/js/auth.js';
 import { apiRequest, fetchWithAuth, showToast } from '/static/js/api.js';
-import { renderPicHandoffDetails } from '/static/js/pic_handoff_details.js';
+import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot } from '/static/js/pic_handoff_details.js';
 import { initializeWgVm4OffloadSection } from '/static/js/wg_vm4.js';
 import { formatUtcDateTime, datetimeLocalToUtcIso, findNearestTimeIndexUtc, toUtcDate } from '/static/js/datetime_utils.js';
 import { registerForceUtcTimeDisplayPlugin } from '/static/js/chart_utc_utils.js';
@@ -437,13 +437,12 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     const openPicFormDetails = async (summary, { withChanges = false } = {}) => {
         try {
-            if (withChanges) {
-                const r = await apiRequest(`/api/forms/id/${summary.id}/with-changes`, 'GET');
-                displayPicFormDetailsInModal(r.form, r.changed_item_ids || []);
-                return;
-            }
-            const form = await apiRequest(`/api/forms/id/${summary.id}`, 'GET');
-            displayPicFormDetailsInModal(form, []);
+            await openPicHandoffDetailsWithSnapshot({
+                summary,
+                apiRequest,
+                withChanges,
+                render: (form, changedItemIds) => displayPicFormDetailsInModal(form, changedItemIds),
+            });
         } catch (e) {
             console.error('Failed to load PIC form details', e);
             showToast(`Failed to load form details: ${e.message}`, 'danger');

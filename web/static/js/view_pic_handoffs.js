@@ -5,7 +5,7 @@
 
 import { checkAuth, logout, getUserProfile } from "/static/js/auth.js";
 import { apiRequest, showToast } from "/static/js/api.js";
-import { renderPicHandoffDetails } from "/static/js/pic_handoff_details.js";
+import { renderPicHandoffDetails, openPicHandoffDetailsWithSnapshot } from "/static/js/pic_handoff_details.js";
 
 document.addEventListener('DOMContentLoaded', async function () {
     if (!await checkAuth()) {
@@ -84,13 +84,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             viewButton.textContent = 'View Details';
             viewButton.addEventListener('click', async () => {
                 try {
-                    if (index === 0) {
-                        const r = await apiRequest(`/api/forms/id/${form.id}/with-changes`, 'GET');
-                        displayFormDetailsInModal(r.form, r.changed_item_ids || []);
-                    } else {
-                        const full = await apiRequest(`/api/forms/id/${form.id}`, 'GET');
-                        displayFormDetailsInModal(full, []);
-                    }
+                    await openPicHandoffDetailsWithSnapshot({
+                        summary: form,
+                        apiRequest,
+                        withChanges: index === 0,
+                        render: (fullForm, changedItemIds) => displayFormDetailsInModal(fullForm, changedItemIds),
+                    });
                 } catch (e) {
                     showToast(`Error loading form: ${e.message}`, 'danger');
                 }
