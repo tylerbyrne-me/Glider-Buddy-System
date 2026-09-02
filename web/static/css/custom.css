@@ -175,10 +175,17 @@ h5.mt-3 {
 .gbs-navbar .navbar-top-row {
     height: var(--banner-top-row-height);
     min-height: var(--banner-top-row-height);
+    flex-shrink: 0;
 }
 
 .gbs-navbar .navbar-brand-wrap {
     padding-left: 0;
+    min-width: 0;
+}
+
+.gbs-navbar .navbar-brand {
+    min-width: 0;
+    overflow: hidden;
 }
 
 @media (max-width: 991.98px) {
@@ -189,6 +196,7 @@ h5.mt-3 {
 
 .gbs-navbar .navbar-title {
     white-space: nowrap;
+    max-width: 100%;
 }
 
 @media (max-width: 991.98px) {
@@ -205,10 +213,30 @@ h5.mt-3 {
 
 /* Mobile: collapsed vertical menu */
 @media (max-width: 991.98px) {
+    .gbs-navbar.menu-open {
+        min-height: auto;
+    }
+
+    .gbs-navbar.menu-open::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.35);
+        z-index: -1;
+    }
+
     .gbs-navbar .navbar-collapse {
         max-height: calc(100vh - var(--banner-top-row-height));
         overflow-y: auto;
+        overscroll-behavior: contain;
         padding-bottom: 0.75rem;
+    }
+
+    .gbs-navbar .navbar-collapse.show {
+        position: relative;
+        z-index: 1;
+        background-color: var(--navbar-bg);
+        box-shadow: 0 0.25rem 0.5rem var(--app-shadow-medium, rgba(0, 0, 0, 0.25));
     }
 
     .gbs-navbar .navbar-user-nav {
@@ -217,6 +245,19 @@ h5.mt-3 {
         border-bottom: 1px solid rgba(255, 255, 255, 0.15);
         margin-bottom: 0.5rem;
         padding-bottom: 0.25rem;
+    }
+
+    .gbs-navbar .navbar-bottom-row {
+        height: auto !important;
+        min-height: 0;
+        display: block;
+        width: 100%;
+    }
+
+    .gbs-navbar .navbar-main-nav {
+        flex-direction: column !important;
+        align-items: stretch;
+        width: 100%;
     }
 
     .gbs-navbar .navbar-main-nav .nav-link {
@@ -389,6 +430,17 @@ h6 { font-weight: 500; }
 .card-header h2, .card-header h5 {
   margin-bottom: 0; /* Remove default bottom margin from headings in card headers */
   font-size: 1.25rem; /* Will scale with html font-size. Original: 20px, New: ~13.4px */
+  word-break: break-word;
+}
+
+.card-header.d-flex {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.card-header.d-flex > :first-child {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .card-body ul {
@@ -524,6 +576,7 @@ footer .text-muted {
 
 .summary-card-text-content {
   flex-grow: 1; /* Allow text content to take remaining space */
+  min-width: 0;
   padding-left: 7px; /* Scaled: 10px * 0.67 = 6.7px, rounded */
   position: relative; /* Establish positioning context for absolute children like the error icon */
 }
@@ -537,6 +590,8 @@ footer .text-muted {
   margin-bottom: 3px; /* Scaled: 5px * 0.67 = 3.35px, rounded */
   font-size: 1.25rem; /* Will scale with html font-size */
   font-weight: 500;
+  min-width: 0;
+  word-break: break-word;
 }
 
 .mini-summary {
@@ -547,11 +602,12 @@ footer .text-muted {
 
 .mini-chart-container {
   height: 47px; /* Scaled: 70px * 0.67 = 46.9px, rounded */
-  width: 80%;  /* Chart takes about 35% of the main content width - adjust as needed */
+  width: 35%;
+  flex-shrink: 0;
 }
 
 .mini-chart-placeholder {
-  width: 80%; /* Match the width of .mini-chart-container */
+  width: 35%; /* Match the width of .mini-chart-container */
   height: 47px; /* Match .mini-chart-container height */
   flex-shrink: 0; /* Prevent it from shrinking */
   display: flex;
@@ -601,6 +657,10 @@ footer .text-muted {
   border-top: 1px solid var(--card-border); /* Kept at 1px */
   padding-top: 3px; /* Scaled: 5px * 0.67 = 3.35px, rounded */
   margin-top: 5px; /* Scaled: 8px * 0.67 = 5.36px, rounded */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  word-break: break-word;
 }
 
 #main-display-area {
@@ -725,8 +785,8 @@ footer .text-muted {
     padding: 0.2em 0.4em; /* Adjust as needed */
 }
 
-/* Responsive adjustments for smaller screens */
-@media (max-width: 768px) {
+/* Responsive: stack dashboard when navbar collapses (align with 992px banner breakpoint) */
+@media (max-width: 991.98px) {
   #dashboard-main-content {
     flex-direction: column;
   }
@@ -759,6 +819,38 @@ footer .text-muted {
   #main-display-area .d-flex.flex-wrap .input-group {
     flex: 1 1 100%;
   }
+
+  .home-page-header,
+  .page-header-row {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.5rem;
+  }
+
+  .home-page-header .btn,
+  .page-header-row .btn {
+    width: 100%;
+  }
+
+  .mission-briefing-tabs,
+  .gbs-nav-tabs-scroll,
+  #dashboardOverviewTabs,
+  #slocumOverviewTabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mission-briefing-tabs .nav-item,
+  .gbs-nav-tabs-scroll .nav-item,
+  #dashboardOverviewTabs .nav-item,
+  #slocumOverviewTabs .nav-item {
+    flex-shrink: 0;
+  }
+
+  .table-responsive {
+    -webkit-overflow-scrolling: touch;
+  }
 }
 
 /* Mobile touch targets and readable controls */
@@ -785,28 +877,6 @@ footer .text-muted {
     min-height: auto;
     padding: 0.5rem 0.75rem;
     font-size: 0.9rem;
-  }
-
-  .home-page-header,
-  .page-header-row {
-    flex-direction: column;
-    align-items: flex-start !important;
-    gap: 0.5rem;
-  }
-
-  .home-page-header .btn,
-  .page-header-row .btn {
-    width: 100%;
-  }
-
-  .mission-briefing-tabs {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .mission-briefing-tabs .nav-item {
-    flex-shrink: 0;
   }
 
   #seasonManagementSection .btn-group,
