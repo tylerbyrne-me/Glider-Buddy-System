@@ -3,6 +3,11 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-09-03 — CLS Argos live verify on prod: M2M credentials in `.env`, checklist Argos–GPS check active (`argos_gps_check_val` / `argos_monitor_val`); admin `argos_id` = CLS `deviceRef` — [slocum.md](../wiki/how-tos/slocum.md#daily-pilot-checklist)
+- [x] 2026-09-03 — Prod `data/` + `data_store/` ownership (`cove:cove`) and stranded `*.tmp` reclaim — AGENTS.md NFS/`os.replace` notes
+- [x] 2026-09-03 — Theme + chart hover/crosshair UI batch QA’d and deployed (`1ea370c` hover/theme, `80ec539` mobile banner) — [Theme consistency](80b24643-2d50-47fd-96bb-2731d082fd3b), [Chart hover fix](c7ac3551-0b33-4987-a8c6-4d2e34e41304)
+- [x] 2026-09-03 — Prod verify (ops sign-off): auto-checklist path, Iridium map toggle, UTC sensor-card timestamps, DMON card (byte-count + ASC 48h + gap status + gated Science items; current mirror schema **14**), Robots4Whales review UI/cache. Optional tomorrow: journal `AUTOMATED: Slocum auto checklist` after 23:30 UTC if the job was newly enabled today.
+
 - [x] 2026-08-31 — Form submission policies + retention: summary-only list APIs, 30-day mission PIC / Slocum checklist defaults, lazy detail fetch, composite index, wiki policy + ADR 0006 + BASELINE submitted_forms section — [FORM_SUBMISSION_POLICIES.md](../wiki/standards/FORM_SUBMISSION_POLICIES.md)
 - [x] 2026-08-28 — Production resource rollout **repo artifacts**: `ops/monitoring/` (Prometheus/Grafana/blackbox/process-exporter configs, alert rules, textfile + baseline + smoke scripts, systemd accounting/memory drop-ins, runbooks). Threshold summary in [AGENTS.md](../../AGENTS.md). Server-side staging/prod execution tracked in [in-progress.md](./in-progress.md).
 - [x] 2026-08-27 — Team Sensor Tracker Related lists climb **up**: loggers/instruments/sensors → platforms + overlapping deployments; instruments also list parent loggers. Reuses attach helpers (same overlap rule as components). How-to: [sensor_tracker_team_browser.md](../wiki/how-tos/sensor_tracker_team_browser.md)
