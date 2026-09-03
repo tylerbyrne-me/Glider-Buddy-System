@@ -1304,7 +1304,9 @@ def build_dmon_review_section(
                 Paragraph(
                     _escape_xml_text(
                         f"{file_count} *.asc file{'s' if file_count != 1 else ''} "
-                        "in the report window. Gaps greater than 16 hours are highlighted."
+                        "in the report window. Gaps greater than 16 hours are highlighted. "
+                        "Thruster Yes ignores surface bursts (≤3 m) and shows estimated "
+                        "on-time and depth range when thruster ran deeper than 3 m."
                     ),
                     styles["Caption"],
                 )
@@ -1335,7 +1337,7 @@ def build_dmon_review_section(
                     return f"{n / 1024:.1f} KB"
                 return f"{n / (1024 * 1024):.1f} MB"
 
-            from app.platforms.slocum.dmon_asc_thruster import format_thruster_since_prev
+            from app.platforms.slocum.dmon_asc_thruster import format_thruster_since_prev_detail
 
             for idx, row in enumerate(display_files):
                 if not isinstance(row, dict):
@@ -1356,8 +1358,8 @@ def build_dmon_review_section(
                         gap_row_indices.append(idx + 1)  # +1 for header row
                     else:
                         gap_cell = Paragraph(_escape_xml_text(gap_label), styles["TableCell"])
-                thruster_label = format_thruster_since_prev(
-                    row.get("thruster_since_prev"),
+                thruster_label = format_thruster_since_prev_detail(
+                    row,
                     has_previous="gap_after_prev_hours" in row,
                 )
                 thruster_cell = Paragraph(
@@ -1381,10 +1383,10 @@ def build_dmon_review_section(
                 )
 
             if asc_rows:
-                name_w = pw * 0.30
-                mod_w = pw * 0.24
-                size_w = pw * 0.10
-                gap_w = pw * 0.18
+                name_w = pw * 0.26
+                mod_w = pw * 0.20
+                size_w = pw * 0.09
+                gap_w = pw * 0.15
                 thruster_w = pw - name_w - mod_w - size_w - gap_w
                 asc_table = styled_data_table(
                     asc_headers,

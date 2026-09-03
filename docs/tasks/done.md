@@ -3,7 +3,10 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
-- [x] 2026-09-03 — CLS Argos live verify on prod: M2M credentials in `.env`, checklist Argos–GPS check active (`argos_gps_check_val` / `argos_monitor_val`); admin `argos_id` = CLS `deviceRef` — [slocum.md](../wiki/how-tos/slocum.md#daily-pilot-checklist)
+- [x] 2026-09-03 — DMON ASC thruster: ignore ≤3 m surface bursts (nearest `MDepth` within 60 s); Yes shows subsurface on-time minutes + depth range in dashboard + weekly PDF — `dmon_asc_thruster.py`
+
+- [x] 2026-09-03 — Slocum weekly reports fetch full-window dashboard telemetry: `context="report"` skips the interactive 72h partial-mirror shortcut so DMON **Thruster since prev** (and other report dashboard sections) cover the full week — `overage_cache.py`
+
 - [x] 2026-09-03 — Prod `data/` + `data_store/` ownership (`cove:cove`) and stranded `*.tmp` reclaim — AGENTS.md NFS/`os.replace` notes
 - [x] 2026-09-03 — Theme + chart hover/crosshair UI batch QA’d and deployed (`1ea370c` hover/theme, `80ec539` mobile banner) — [Theme consistency](80b24643-2d50-47fd-96bb-2731d082fd3b), [Chart hover fix](c7ac3551-0b33-4987-a8c6-4d2e34e41304)
 - [x] 2026-09-03 — Prod verify (ops sign-off): auto-checklist path, Iridium map toggle, UTC sensor-card timestamps, DMON card (byte-count + ASC 48h + gap status + gated Science items; current mirror schema **14**), Robots4Whales review UI/cache. Optional tomorrow: journal `AUTOMATED: Slocum auto checklist` after 23:30 UTC if the job was newly enabled today.

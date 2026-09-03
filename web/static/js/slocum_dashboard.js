@@ -1172,6 +1172,33 @@ function formatAscFileSize(size) {
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+/** Subsurface thruster Yes/No with minutes + depth range (surface bursts ≤3 m excluded). */
+function formatDmonAscThrusterLabel(row, hasPrevious) {
+    if (!hasPrevious) return '—';
+    if (!row || typeof row !== 'object') return 'No data';
+    if (row.thruster_since_prev === true) {
+        const parts = ['Yes'];
+        const minutes = row.thruster_on_minutes_gt3m;
+        if (minutes != null && !Number.isNaN(Number(minutes))) {
+            parts.push(`${Number(minutes).toFixed(1)} min`);
+        }
+        const dMin = row.thruster_depth_min_m;
+        const dMax = row.thruster_depth_max_m;
+        if (dMin != null && dMax != null && !Number.isNaN(Number(dMin)) && !Number.isNaN(Number(dMax))) {
+            const lo = Number(dMin);
+            const hi = Number(dMax);
+            if (Math.abs(lo - hi) < 0.05) {
+                parts.push(hi >= 10 ? `${hi.toFixed(0)} m` : `${hi.toFixed(1)} m`);
+            } else {
+                parts.push(hi >= 10 ? `${lo.toFixed(0)}–${hi.toFixed(0)} m` : `${lo.toFixed(1)}–${hi.toFixed(1)} m`);
+            }
+        }
+        return parts.join(' · ');
+    }
+    if (row.thruster_since_prev === false) return 'No';
+    return 'No data';
+}
+
 function updateDmonAscGapIndicator(payload) {
     const indicator = document.getElementById('dmonAscGapIndicator');
     const card = document.querySelector('#left-nav-panel .summary-card[data-category="dmon"]');
@@ -1255,18 +1282,13 @@ function renderDmonAscPanel(payload) {
         const gapText = gap != null ? `${Number(gap).toFixed(1)}h` : '—';
         const rowClass = gapOver ? 'table-warning' : '';
         const hasPrevious = Object.prototype.hasOwnProperty.call(row, 'gap_after_prev_hours');
-        let thrusterText = '—';
-        if (hasPrevious) {
-            if (row.thruster_since_prev === true) thrusterText = 'Yes';
-            else if (row.thruster_since_prev === false) thrusterText = 'No';
-            else thrusterText = 'No data';
-        }
+        const thrusterText = formatDmonAscThrusterLabel(row, hasPrevious);
         return `<tr class="${rowClass}">
             <td class="small font-monospace">${row.fileName || '—'}</td>
             <td class="small">${row.dateTimeModified || '—'}</td>
             <td class="small">${formatAscFileSize(row.fileSize)}</td>
             <td class="small${gapOver ? ' fw-semibold text-danger' : ''}">${gapText}</td>
-            <td class="small" title="Telemetry interval since previous *.asc offload">${thrusterText}</td>
+            <td class="small" title="Subsurface thruster (>3 m) since previous *.asc; surface bursts ≤3 m excluded">${thrusterText}</td>
         </tr>`;
     }).join('');
 }

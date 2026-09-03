@@ -708,6 +708,17 @@ footer .text-muted {
   font-size: 100%;
 }
 
+/* Shared chart toolbar sits above category detail cards; dropdown must not clip behind them */
+#slocumSharedChartToolbar {
+  position: relative;
+  z-index: 20;
+  overflow: visible;
+}
+
+#slocumSharedChartToolbar .card-body {
+  overflow: visible;
+}
+
 /* Power Task Manager Summary Styles - reserved for future styling */
 
 /* New style for the bordered/shaded summary box inside detail views */

@@ -33,7 +33,7 @@ Left-nav summary cards soft-refresh via `GET /api/slocum/sensor-summaries/{datas
 | Navigation | Heading, depth rate, depth/altimeter, speed, depth-averaged currents |
 | Vehicle Health | Vacuum; leak detect channels (main / forward / science) with **digifin** on a secondary Y axis; SFMC call length |
 | Dissolved Oxygen | Placeholder charts (data wiring TBD) |
-| DMON | `sci_dmon_msg_byte_count` over time; SFMC `from-glider` `*.asc` files (last 48h) with >16h gap highlight and **Thruster since prev** Yes/No from dashboard `m_thruster_power` / `c_thruster_on` over each `[prev_mtime, this_mtime)` interval; left-nav green/red status dot (same style as Wave Glider Waves ESS); **Robots4Whales daily analyst review** (last 48h table + full-history collapse) when `robots4whales_url` is set on the deployment |
+| DMON | `sci_dmon_msg_byte_count` over time; SFMC `from-glider` `*.asc` files (last 48h) with >16h gap highlight and **Thruster since prev** Yes/No (plus on-time and depth range when Yes) from dashboard `m_thruster_power` / `c_thruster_on` over each `[prev_mtime, this_mtime)` interval — surface bursts at ≤3 m ignored via nearest `m_depth` within 60 s; left-nav green/red status dot (same style as Wave Glider Waves ESS); **Robots4Whales daily analyst review** (last 48h table + full-history collapse) when `robots4whales_url` is set on the deployment |
 
 ### Data path
 
@@ -81,7 +81,7 @@ Generated via [`app/platforms/slocum/reports.py`](../../app/platforms/slocum/rep
 | Mission notes | Letter-keyed notes matched to the telemetry track (immediately after Telemetry) |
 | Battery | Daily Ah bars from `m_coulomb_amphr_total` (partial days rate-normalized / hatched); projections to 50/75/90/100% of checklist pack endurance |
 | CTD | Depth-vs-time cmocean profiles; optional filtered water-depth overlay |
-| DMON | Analyst-review table + ASC offloads for the **full report window** (SFMC listings paginated; inter-file gaps >16h highlighted; thruster Yes/No per interval since previous `*.asc`; no live “hours since last” banner — [BUG-002](../../bugs/BUG-002-dmon-asc-gap-hours-since-last.md)) |
+| DMON | Analyst-review table + ASC offloads for the **full report window** (SFMC listings paginated; inter-file gaps >16h highlighted; thruster Yes/No per interval since previous `*.asc` using report-window dashboard telemetry from overage/ERDDAP — not the 48h dashboard mirror; Yes ignores ≤3 m surface bursts and shows estimated on-time + depth range when thruster ran deeper than 3 m; no live “hours since last” banner — [BUG-002](../../bugs/BUG-002-dmon-asc-gap-hours-since-last.md)) |
 
 Helpers: [`battery_report.py`](../../app/platforms/slocum/battery_report.py), [`sfmc_client.fetch_dmon_asc_files`](../../app/core/sfmc_client.py).
 
@@ -96,7 +96,7 @@ All Slocum endpoints require authentication (same as Wave Glider). When `slocum_
 | `GET /api/slocum/chart-data-bulk/{dataset_id}?variables=...` | Multi-variable dashboard chart series (mirror / overage). |
 | `GET /api/slocum/profile-data/{dataset_id}` | CTD depth-vs-time profile points (+ optional `depth_overlay` from dashboard `m_depth`). |
 | `GET /api/slocum/sfmc/connection-durations/{dataset_id}` | Cached SFMC surface-call durations (Vehicle Health). |
-| `GET /api/slocum/sfmc/dmon-asc-files/{dataset_id}` | Cached SFMC `from-glider` `*.asc` listing + gap flags; enriches each file with `thruster_since_prev` from the 48h dashboard mirror (DMON card). |
+| `GET /api/slocum/sfmc/dmon-asc-files/{dataset_id}` | Cached SFMC `from-glider` `*.asc` listing + gap flags; enriches each file with subsurface `thruster_since_prev` (+ minutes / depth range) from the 48h dashboard mirror (DMON card; ≤3 m surface bursts excluded). |
 | `GET /api/slocum/dmon/review/{dataset_id}?recent_hours=48` | Cached Robots4Whales daily analyst-review detections (`recent` / `all`, site attribution; optional `start_date`/`end_date` ISO for reports). |
 | `PUT /api/slocum/deployments/{id}/robots4whales-url` | Admin: set/clear deployment page URL (`dcs.whoi.edu` `*.shtml`). |
 | `GET /api/slocum/checklists/{dataset_id}/series?item_id=...` | Checklist Plot-it time series (depth + value / multi-series). |

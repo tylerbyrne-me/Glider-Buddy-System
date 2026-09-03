@@ -429,7 +429,7 @@
               <label class="form-check-label small" for="slocumOutlierSuppress" title="Hide chart points with |z-score| &gt; 2.5 (display only).">Hide outliers</label>
             </div>
             <div class="dropdown">
-              <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-bs-popper-config='{"strategy":"fixed"}'>
                 <i class="fas fa-download me-1"></i> Download
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
@@ -635,7 +635,7 @@
                     <th scope="col">Modified (UTC)</th>
                     <th scope="col">Size</th>
                     <th scope="col">Gap after prev</th>
-                    <th scope="col" title="Telemetry interval since previous *.asc offload">Thruster since prev</th>
+                    <th scope="col" title="Subsurface thruster (&gt;3 m) since previous *.asc; surface bursts ≤3 m excluded">Thruster since prev</th>
                   </tr>
                 </thead>
                 <tbody id="slocumDmonAscTableBody">

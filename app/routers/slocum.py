@@ -893,8 +893,9 @@ async def get_slocum_sfmc_dmon_asc_files(
     Cached SFMC ``from-glider`` ``*.asc`` listing for DMON sensor card / checklist.
 
     Reads the SFMC snapshot only (no live SFMC HTTP). Enriches each file with
-    ``thruster_since_prev`` from the dashboard mirror over the interval since
-    the previous ``*.asc`` (when telemetry is available).
+    ``thruster_since_prev`` (subsurface thruster >3 m; surface bursts excluded)
+    plus on-time / depth-range fields from the dashboard mirror over the interval
+    since the previous ``*.asc``.
     """
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")

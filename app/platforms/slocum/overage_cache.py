@@ -550,8 +550,12 @@ async def get_bundle_dataframe(
     Return a DataFrame covering the requested window using:
     1) rolling mirror when it fully covers the window
     2) shared 24h overage cache for normalized windows
-    3) partial mirror overlap when ERDDAP is unreachable / not needed for interactive freshness
+    3) interactive: partial mirror overlap when ERDDAP is not needed for freshness
     4) bounded ERDDAP fetch written into the overage cache (windows outside mirror)
+
+    Report context (``context="report"``) skips step 3 so weekly PDFs fetch the
+    full requested window via overage/ERDDAP instead of clipping to the rolling
+    mirror (typically 72h). Interactive still uses the overlap shortcut.
     """
     requested_start = _ensure_utc(request.start_utc)
     requested_end = _ensure_utc(request.end_utc)
@@ -656,11 +660,13 @@ async def get_bundle_dataframe(
             },
         )
 
-    # Prefer partial mirror over a live ERDDAP round-trip when the mirror already
-    # overlaps the requested window (typical realtime case: last sample minutes
-    # behind wall-clock "now"). ``stale=True`` here is expected, not an outage —
-    # set ``fallback_error`` only when a live ERDDAP fetch actually failed.
-    if not overlap.empty:
+    # Interactive only: prefer partial mirror over a live ERDDAP round-trip when
+    # the mirror already overlaps the requested window (typical realtime case:
+    # last sample minutes behind wall-clock "now"). ``stale=True`` here is
+    # expected, not an outage — set ``fallback_error`` only when a live ERDDAP
+    # fetch actually failed. Report jobs skip this shortcut so 7-day (and
+    # longer) windows are filled from overage/ERDDAP rather than the 72h mirror.
+    if request.context == "interactive" and not overlap.empty:
         return OverageResult(
             df=overlap,
             metadata=_mirror_result_metadata(
