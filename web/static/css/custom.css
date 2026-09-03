@@ -572,12 +572,13 @@ footer .text-muted {
   flex-direction: row; /* Chart and text side-by-side */
   align-items: center; /* Vertically align chart and text block */
   margin-bottom: 5px; /* Scaled: 8px * 0.67 = 5.36px, rounded */
+  gap: 7px;
 }
 
 .summary-card-text-content {
-  flex-grow: 1; /* Allow text content to take remaining space */
+  flex: 2 1 0;
   min-width: 0;
-  padding-left: 7px; /* Scaled: 10px * 0.67 = 6.7px, rounded */
+  padding-left: 0;
   position: relative; /* Establish positioning context for absolute children like the error icon */
 }
 
@@ -602,14 +603,14 @@ footer .text-muted {
 
 .mini-chart-container {
   height: 47px; /* Scaled: 70px * 0.67 = 46.9px, rounded */
-  width: 35%;
-  flex-shrink: 0;
+  flex: 3 1 0;
+  min-width: 0;
 }
 
 .mini-chart-placeholder {
-  width: 35%; /* Match the width of .mini-chart-container */
+  flex: 3 1 0;
+  min-width: 0;
   height: 47px; /* Match .mini-chart-container height */
-  flex-shrink: 0; /* Prevent it from shrinking */
   display: flex;
   flex-direction: column; /* Stack items vertically */
   justify-content: center; /* Center "No errors" message / align list */
