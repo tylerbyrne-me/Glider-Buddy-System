@@ -279,6 +279,16 @@ def _mirror_max_utc(mirror_df: pd.DataFrame) -> Optional[datetime]:
     return pd.Timestamp(mirror_max).to_pydatetime()
 
 
+def _mirror_min_utc(mirror_df: pd.DataFrame) -> Optional[datetime]:
+    if mirror_df is None or mirror_df.empty or "Timestamp" not in mirror_df.columns:
+        return None
+    ts = pd.to_datetime(mirror_df["Timestamp"], utc=True)
+    mirror_min = ts.min()
+    if pd.isna(mirror_min):
+        return None
+    return pd.Timestamp(mirror_min).to_pydatetime()
+
+
 def _mirror_overlap_slice(
     mirror_df: pd.DataFrame,
     requested_start: datetime,
@@ -602,8 +612,13 @@ async def get_bundle_dataframe(
         )
 
     overlap = _mirror_overlap_slice(mirror_df, requested_start, requested_end)
+    mirror_min = _mirror_min_utc(mirror_df)
     mirror_max = _mirror_max_utc(mirror_df)
     is_stale_tail = mirror_max is not None and mirror_max < requested_end
+    has_missing_older_head = (
+        mirror_min is None
+        or mirror_min > requested_start + timedelta(minutes=1)
+    )
 
     decimation = _decimation_for_request(bundle, norm_start, norm_end)
     cache_key = build_overage_cache_key(
@@ -660,13 +675,14 @@ async def get_bundle_dataframe(
             },
         )
 
-    # Interactive only: prefer partial mirror over a live ERDDAP round-trip when
-    # the mirror already overlaps the requested window (typical realtime case:
-    # last sample minutes behind wall-clock "now"). ``stale=True`` here is
-    # expected, not an outage — set ``fallback_error`` only when a live ERDDAP
-    # fetch actually failed. Report jobs skip this shortcut so 7-day (and
-    # longer) windows are filled from overage/ERDDAP rather than the 72h mirror.
-    if request.context == "interactive" and not overlap.empty:
+    # Interactive only: prefer partial mirror when it covers the requested start
+    # and only the recent tail is stale. A missing older head must populate the
+    # overage cache; fetch failures still fall back to the available overlap.
+    if (
+        request.context == "interactive"
+        and not overlap.empty
+        and not has_missing_older_head
+    ):
         return OverageResult(
             df=overlap,
             metadata=_mirror_result_metadata(

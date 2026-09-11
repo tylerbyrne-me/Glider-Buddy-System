@@ -173,6 +173,46 @@ async def sync_mission_catalog(
                 result.summary = (
                     f"{result.summary}; ambiguous={link_report.skipped_ambiguous}"
                 )
+            try:
+                from app.core.mission_catalog.provisioning import (
+                    provision_enrolled_missions,
+                )
+
+                provision_results = provision_enrolled_missions(db, dry_run=False)
+                acted = sum(1 for r in provision_results if r.actions)
+                errors = sum(1 for r in provision_results if r.errors)
+                result.summary = (
+                    f"{result.summary}; provision_acted={acted} "
+                    f"provision_errors={errors}"
+                )
+                # Deep ST sync for newly provisioned / linked live rows (bounded).
+                try:
+                    from app.services.sensor_tracker_sync_service import (
+                        SensorTrackerSyncService,
+                    )
+
+                    sync_service = SensorTrackerSyncService()
+                    st_synced = 0
+                    for prow in provision_results:
+                        if not prow.actions or prow.readiness not in (
+                            "ready",
+                            "completed",
+                        ):
+                            continue
+                        st_row = await sync_service.get_or_sync_catalog_mission(
+                            prow.mission_id,
+                            force_refresh=False,
+                            session=db,
+                        )
+                        if st_row is not None:
+                            st_synced += 1
+                    result.summary = f"{result.summary}; deep_st_synced={st_synced}"
+                except Exception as st_exc:
+                    logger.warning("Post-provision ST deep sync failed: %s", st_exc)
+                    result.summary = f"{result.summary}; deep_st_error={st_exc}"
+            except Exception as exc:
+                logger.warning("Post-reconcile provisioning failed: %s", exc)
+                result.summary = f"{result.summary}; provision_error={exc}"
 
         if not dry_run and result.counts.failed == 0:
             _mark_success()

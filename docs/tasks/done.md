@@ -3,6 +3,11 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-09-10 — Mission catalog **finalize cutover UI + diagnostics**: Team interactive catalog (readiness/health/enrollment/provision), `/status` + expanded health issues, Slocum reopen reactivation, source-late/idempotency/override tests (93 app tests), cutover acceptance checklist — [mission_catalog_cutover.md](../wiki/how-tos/mission_catalog_cutover.md)
+- [x] 2026-09-09 — Mission catalog **automatic lifecycle**: ST start-time ACTIVE auto-enrollment (`enrollment_authority`), `enrollment_override` tri-state + Alembic, shadow mode, platform provisioning handlers (WG overview / Slocum deployment + completion archive), Team workspace/health/enroll/provision APIs, ST deep-sync dual-key + form catalog UUID support, Slocum Archive UI button, 30m reconcile interval, catalog-backed historical lists, ADR 0005 + [0007 ERDDAP deferred](../decisions/0007-erddap-metadata-only-deferred.md) + cutover/ENV/architecture docs — [mission_catalog_cutover.md](../wiki/how-tos/mission_catalog_cutover.md)
+- [x] 2026-09-09 — DMON ASC thruster events finalized: per-ASC expandable UTC timing on dashboard; weekly PDF compact summary + separate paginating event-timing table; `thruster_event_count` on enrich payload — `dmon_asc_thruster.py`, `sections.py`, `slocum_dashboard.js`
+- [x] 2026-09-08 — DMON ASC thruster timed events: per-cluster UTC HH:MM + depth + hours after previous ASC; `thruster_events` on ASC enrich payload — `dmon_asc_thruster.py`
+
 - [x] 2026-09-03 — DMON ASC thruster: ignore ≤3 m surface bursts (nearest `MDepth` within 60 s); Yes shows subsurface on-time minutes + depth range in dashboard + weekly PDF — `dmon_asc_thruster.py`
 
 - [x] 2026-09-03 — Slocum weekly reports fetch full-window dashboard telemetry: `context="report"` skips the interactive 72h partial-mirror shortcut so DMON **Thruster since prev** (and other report dashboard sections) cover the full week — `overage_cache.py`

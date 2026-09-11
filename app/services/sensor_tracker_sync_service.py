@@ -160,22 +160,44 @@ class SensorTrackerSyncService:
             
             # Extract deployment number and mission ID from parsed data
             deployment_number = parsed_deployment.get("deployment_number")
-            parsed_mission_id = parsed_deployment.get("mission_id")  # e.g., "m216"
-            
-            if not parsed_mission_id:
-                logger.error(f"Parsed deployment missing mission_id for '{mission_id}'")
-                return None
-            
+            parsed_mission_id = parsed_deployment.get("mission_id")  # e.g., "m216"; may be None (planned)
+            st_deployment_id = parsed_deployment.get("sensor_tracker_deployment_id")
+
+            # Prefer ST deployment id as the durable key when mission_id is not yet assigned.
+            if existing_deployment is None and st_deployment_id is not None:
+                existing_deployment = session.exec(
+                    select(models.SensorTrackerDeployment).where(
+                        models.SensorTrackerDeployment.sensor_tracker_deployment_id
+                        == int(st_deployment_id)
+                    )
+                ).first()
+
             # Create or update deployment record
             if existing_deployment:
                 deployment = existing_deployment
                 logger.info(f"Updating existing Sensor Tracker deployment record for mission '{mission_id}'")
             else:
-                deployment = models.SensorTrackerDeployment(mission_id=parsed_mission_id)
-                logger.info(f"Creating new Sensor Tracker deployment record for mission '{mission_id}'")
-            
+                if st_deployment_id is None:
+                    logger.error(
+                        "Parsed deployment missing sensor_tracker_deployment_id for '%s'",
+                        mission_id,
+                    )
+                    return None
+                deployment = models.SensorTrackerDeployment(
+                    mission_id=parsed_mission_id,
+                    sensor_tracker_deployment_id=int(st_deployment_id),
+                )
+                logger.info(
+                    "Creating new Sensor Tracker deployment record for '%s' (st_id=%s)",
+                    mission_id,
+                    st_deployment_id,
+                )
+
             # Update deployment fields
-            deployment.sensor_tracker_deployment_id = parsed_deployment.get("sensor_tracker_deployment_id")
+            if st_deployment_id is not None:
+                deployment.sensor_tracker_deployment_id = int(st_deployment_id)
+            if parsed_mission_id:
+                deployment.mission_id = parsed_mission_id
             deployment.deployment_number = deployment_number
             deployment.title = parsed_deployment.get("title")
             
@@ -276,19 +298,39 @@ class SensorTrackerSyncService:
             deployment.sync_status = "synced"
             deployment.sync_error = None
             
+            catalog_mission_id = self._resolve_catalog_mission_id(
+                session,
+                mission_id=deployment.mission_id,
+                st_deployment_id=deployment.sensor_tracker_deployment_id,
+            )
+            if catalog_mission_id:
+                deployment.catalog_mission_id = catalog_mission_id
+
             session.add(deployment)
             session.commit()
             session.refresh(deployment)
-            
-            # Sync instruments and sensors (using mission_id, not deployment_id)
-            await self._sync_instruments_and_sensors(deployment.mission_id, parsed_deployment, session)
 
-            # Sync deployment images from Sensor Tracker
-            await self._sync_deployment_images(deployment, session)
-            
-            logger.info(f"Successfully synced Sensor Tracker data for mission '{mission_id}' (deployment ID: {deployment.sensor_tracker_deployment_id})")
+            # Sync instruments and sensors (legacy mission_id and/or catalog UUID)
+            await self._sync_instruments_and_sensors(
+                deployment.mission_id,
+                parsed_deployment,
+                session,
+                catalog_mission_id=deployment.catalog_mission_id,
+            )
+
+            # Sync deployment images from Sensor Tracker (needs a legacy mission_id for disk path)
+            if deployment.mission_id:
+                await self._sync_deployment_images(deployment, session)
+
+            logger.info(
+                "Successfully synced Sensor Tracker data for mission '%s' "
+                "(deployment ID: %s, catalog=%s)",
+                mission_id,
+                deployment.sensor_tracker_deployment_id,
+                deployment.catalog_mission_id,
+            )
             return deployment
-            
+
         except Exception as e:
             logger.error(f"Error syncing Sensor Tracker data for mission '{mission_id}': {e}", exc_info=True)
             # Rollback the session to clear any pending transactions
@@ -313,27 +355,289 @@ class SensorTrackerSyncService:
             if should_close:
                 session.close()
     
+    async def get_or_sync_by_st_deployment_id(
+        self,
+        st_deployment_id: int,
+        *,
+        catalog_mission_id: Optional[str] = None,
+        force_refresh: bool = False,
+        session: Optional[SQLModelSession] = None,
+    ) -> Optional[models.SensorTrackerDeployment]:
+        """Sync a Sensor Tracker deployment by durable ST deployment id (planned-safe)."""
+        if not SENSOR_TRACKER_AVAILABLE or not self.sensor_tracker_service:
+            logger.warning("Sensor Tracker service not available. Cannot sync.")
+            return None
+
+        if session is None:
+            session_gen = get_db_session()
+            session = next(session_gen)
+            should_close = True
+        else:
+            should_close = False
+
+        try:
+            existing = session.exec(
+                select(models.SensorTrackerDeployment).where(
+                    models.SensorTrackerDeployment.sensor_tracker_deployment_id
+                    == int(st_deployment_id)
+                )
+            ).first()
+            if existing and not force_refresh:
+                if catalog_mission_id and existing.catalog_mission_id != catalog_mission_id:
+                    existing.catalog_mission_id = catalog_mission_id
+                    session.add(existing)
+                    session.commit()
+                    session.refresh(existing)
+                return existing
+
+            deployment_data = await self.sensor_tracker_service.fetch_deployment(
+                int(st_deployment_id)
+            )
+            if not deployment_data:
+                logger.warning("No Sensor Tracker deployment found for st_id=%s", st_deployment_id)
+                return None
+
+            parsed = await self.sensor_tracker_service.parse_deployment(deployment_data)
+            if not parsed:
+                return None
+            parsed = await self.sensor_tracker_service.enrich_deployment_with_data_loggers(
+                parsed
+            )
+            parsed["fluorometer_channel_map"] = None
+
+            mission_code = parsed.get("mission_id")
+            if existing:
+                deployment = existing
+            else:
+                deployment = models.SensorTrackerDeployment(
+                    mission_id=mission_code,
+                    sensor_tracker_deployment_id=int(st_deployment_id),
+                )
+
+            deployment.sensor_tracker_deployment_id = int(st_deployment_id)
+            if mission_code:
+                deployment.mission_id = mission_code
+            deployment.deployment_number = parsed.get("deployment_number")
+            deployment.title = parsed.get("title")
+
+            start_time_raw = parsed.get("start_time")
+            if start_time_raw:
+                deployment.start_time = (
+                    pd.to_datetime(start_time_raw, utc=True).to_pydatetime()
+                    if isinstance(start_time_raw, str)
+                    else start_time_raw
+                )
+            else:
+                deployment.start_time = None
+            end_time_raw = parsed.get("end_time")
+            if end_time_raw:
+                deployment.end_time = (
+                    pd.to_datetime(end_time_raw, utc=True).to_pydatetime()
+                    if isinstance(end_time_raw, str)
+                    else end_time_raw
+                )
+            else:
+                deployment.end_time = None
+
+            platform = parsed.get("platform", {}) or {}
+            if isinstance(platform, dict):
+                deployment.platform_id = platform.get("platform_id")
+                deployment.platform_name = platform.get("platform_name")
+                deployment.platform_type = platform.get("platform_type")
+
+            deployment.full_metadata = parsed
+            deployment.last_synced_at = datetime.now(timezone.utc)
+            deployment.sync_status = "synced"
+            deployment.sync_error = None
+
+            resolved_catalog = catalog_mission_id or self._resolve_catalog_mission_id(
+                session,
+                mission_id=deployment.mission_id,
+                st_deployment_id=deployment.sensor_tracker_deployment_id,
+            )
+            if resolved_catalog:
+                deployment.catalog_mission_id = resolved_catalog
+
+            session.add(deployment)
+            session.commit()
+            session.refresh(deployment)
+
+            await self._sync_instruments_and_sensors(
+                deployment.mission_id,
+                parsed,
+                session,
+                catalog_mission_id=deployment.catalog_mission_id,
+            )
+            if deployment.mission_id:
+                await self._sync_deployment_images(deployment, session)
+            return deployment
+        except Exception as exc:
+            logger.error(
+                "Error syncing ST deployment %s: %s", st_deployment_id, exc, exc_info=True
+            )
+            try:
+                session.rollback()
+            except Exception:
+                pass
+            return None
+        finally:
+            if should_close:
+                session.close()
+
+    async def get_or_sync_catalog_mission(
+        self,
+        catalog_mission_id: str,
+        *,
+        force_refresh: bool = False,
+        session: Optional[SQLModelSession] = None,
+    ) -> Optional[models.SensorTrackerDeployment]:
+        """Deep-sync ST metadata for a catalog mission (planned or numbered)."""
+        if session is None:
+            session_gen = get_db_session()
+            session = next(session_gen)
+            should_close = True
+        else:
+            should_close = False
+
+        try:
+            from app.core.models.database import CatalogExternalIdentity
+            from app.core.models.enums import CatalogIdentityKind
+
+            st_id: Optional[int] = None
+            identity = session.exec(
+                select(CatalogExternalIdentity).where(
+                    CatalogExternalIdentity.mission_id == catalog_mission_id,
+                    CatalogExternalIdentity.identity_kind
+                    == CatalogIdentityKind.SENSOR_TRACKER_DEPLOYMENT_ID.value,
+                )
+            ).first()
+            if identity and identity.external_id:
+                try:
+                    st_id = int(str(identity.external_id).strip())
+                except ValueError:
+                    st_id = None
+
+            if st_id is None:
+                existing = session.exec(
+                    select(models.SensorTrackerDeployment).where(
+                        models.SensorTrackerDeployment.catalog_mission_id
+                        == catalog_mission_id
+                    )
+                ).first()
+                if existing and existing.sensor_tracker_deployment_id:
+                    st_id = int(existing.sensor_tracker_deployment_id)
+
+            if st_id is None:
+                mission = session.get(models.CatalogMission, catalog_mission_id)
+                if mission and mission.deployment_number is not None:
+                    return await self.get_or_sync_mission(
+                        f"m{int(mission.deployment_number)}",
+                        force_refresh=force_refresh,
+                        session=session,
+                    )
+                logger.info(
+                    "No ST deployment id for catalog mission %s; skip deep sync",
+                    catalog_mission_id,
+                )
+                return None
+
+            return await self.get_or_sync_by_st_deployment_id(
+                st_id,
+                catalog_mission_id=catalog_mission_id,
+                force_refresh=force_refresh,
+                session=session,
+            )
+        finally:
+            if should_close:
+                session.close()
+
+    def _resolve_catalog_mission_id(
+        self,
+        session: SQLModelSession,
+        *,
+        mission_id: Optional[str],
+        st_deployment_id: Optional[int],
+    ) -> Optional[str]:
+        from app.core.models.database import CatalogExternalIdentity, CatalogMission
+        from app.core.models.enums import CatalogIdentityKind
+
+        if st_deployment_id is not None:
+            identity = session.exec(
+                select(CatalogExternalIdentity).where(
+                    CatalogExternalIdentity.identity_kind
+                    == CatalogIdentityKind.SENSOR_TRACKER_DEPLOYMENT_ID.value,
+                    CatalogExternalIdentity.external_id == str(int(st_deployment_id)),
+                )
+            ).first()
+            if identity and identity.mission_id:
+                return identity.mission_id
+
+        if mission_id:
+            code = utils.deployment_mission_code_from_mission_id(mission_id) or mission_id
+            if code.lower().startswith("m"):
+                try:
+                    number = int(code[1:])
+                except ValueError:
+                    number = None
+                if number is not None:
+                    catalog = session.exec(
+                        select(CatalogMission).where(
+                            CatalogMission.deployment_number == number
+                        )
+                    ).first()
+                    if catalog:
+                        return catalog.id
+            overview = self._load_mission_overview(session, mission_id)
+            if overview and overview.catalog_mission_id:
+                return overview.catalog_mission_id
+        return None
+
     async def _sync_instruments_and_sensors(
         self,
-        mission_id: str,
+        mission_id: Optional[str],
         parsed_deployment: Dict[str, Any],
-        session: SQLModelSession
+        session: SQLModelSession,
+        *,
+        catalog_mission_id: Optional[str] = None,
     ):
         """
         Sync instruments and sensors for a mission.
         
         Args:
-            mission_id: Mission ID (e.g., "m216")
+            mission_id: Mission ID (e.g., "m216"); may be None for planned rows
             parsed_deployment: The parsed deployment data dictionary
             session: Database session
+            catalog_mission_id: Optional catalog UUID for dual-key writes
         """
+        if not mission_id and not catalog_mission_id:
+            logger.warning("Instrument sync skipped: no mission_id or catalog_mission_id")
+            return
+
         try:
-            # Delete existing instruments and sensors for this mission
-            existing_instruments = session.exec(
-                select(models.MissionInstrument).where(
-                    models.MissionInstrument.mission_id == mission_id
-                )
-            ).all()
+            # Delete existing instruments and sensors for this mission / catalog key
+            if catalog_mission_id:
+                existing_instruments = session.exec(
+                    select(models.MissionInstrument).where(
+                        models.MissionInstrument.catalog_mission_id == catalog_mission_id
+                    )
+                ).all()
+            else:
+                existing_instruments = session.exec(
+                    select(models.MissionInstrument).where(
+                        models.MissionInstrument.mission_id == mission_id
+                    )
+                ).all()
+            if mission_id and catalog_mission_id:
+                by_mission = session.exec(
+                    select(models.MissionInstrument).where(
+                        models.MissionInstrument.mission_id == mission_id
+                    )
+                ).all()
+                seen = {i.id for i in existing_instruments}
+                for row in by_mission:
+                    if row.id not in seen:
+                        existing_instruments.append(row)
+                        seen.add(row.id)
             
             instrument_count = len(existing_instruments)
             sensor_count = 0
@@ -379,6 +683,7 @@ class SensorTrackerSyncService:
                         data_logger_serial=logger_serial,
                         is_platform_direct=False,
                         manufacturers_map=manufacturers_map,
+                        catalog_mission_id=catalog_mission_id,
                     )
             
             # Process instruments directly on platform (not via data logger)
@@ -388,16 +693,24 @@ class SensorTrackerSyncService:
                     mission_id, inst_data, session,
                     is_platform_direct=True,
                     manufacturers_map=manufacturers_map,
+                    catalog_mission_id=catalog_mission_id,
                 )
             
             session.commit()
             
             # Count newly created instruments
-            new_instruments = session.exec(
-                select(models.MissionInstrument).where(
-                    models.MissionInstrument.mission_id == mission_id
-                )
-            ).all()
+            if catalog_mission_id:
+                new_instruments = session.exec(
+                    select(models.MissionInstrument).where(
+                        models.MissionInstrument.catalog_mission_id == catalog_mission_id
+                    )
+                ).all()
+            else:
+                new_instruments = session.exec(
+                    select(models.MissionInstrument).where(
+                        models.MissionInstrument.mission_id == mission_id
+                    )
+                ).all()
             new_sensors_count = 0
             for inst in new_instruments:
                 sensors = session.exec(
@@ -408,21 +721,35 @@ class SensorTrackerSyncService:
                 new_sensors_count += len(sensors)
             
             logger.info(
-                f"Synced instruments and sensors for mission '{mission_id}': "
-                f"removed {instrument_count} old instruments ({sensor_count} sensors), "
-                f"created {len(new_instruments)} new instruments ({new_sensors_count} sensors)"
+                "Synced instruments and sensors for mission '%s' catalog='%s': "
+                "removed %s old instruments (%s sensors), "
+                "created %s new instruments (%s sensors)",
+                mission_id,
+                catalog_mission_id,
+                instrument_count,
+                sensor_count,
+                len(new_instruments),
+                new_sensors_count,
             )
             
         except Exception as e:
-            logger.error(f"Error syncing instruments and sensors for mission '{mission_id}': {e}", exc_info=True)
+            logger.error(
+                "Error syncing instruments and sensors for mission '%s': %s",
+                mission_id,
+                e,
+                exc_info=True,
+            )
             session.rollback()
             # Don't raise - allow deployment to be saved even if instruments fail
             # This way we at least have deployment metadata
-            logger.warning(f"Instrument sync failed for mission '{mission_id}', but deployment was saved")
+            logger.warning(
+                "Instrument sync failed for mission '%s', but deployment was saved",
+                mission_id,
+            )
     
     async def _create_instrument_record(
         self,
-        mission_id: str,
+        mission_id: Optional[str],
         inst_data: Dict[str, Any],
         session: SQLModelSession,
         data_logger_type: Optional[str] = None,
@@ -432,12 +759,13 @@ class SensorTrackerSyncService:
         data_logger_serial: Optional[str] = None,
         is_platform_direct: bool = False,
         manufacturers_map: Optional[Dict[int, str]] = None,
+        catalog_mission_id: Optional[str] = None,
     ):
         """
         Create an instrument record and its associated sensors.
 
         Args:
-            mission_id: Mission ID (e.g., "m216")
+            mission_id: Mission ID (e.g., "m216"); may be None for planned catalog rows
             inst_data: Instrument data dictionary
             session: Database session
             data_logger_type: Type of data logger ("flight" or "science")
@@ -446,6 +774,7 @@ class SensorTrackerSyncService:
             data_logger_identifier: Data logger identifier
             data_logger_serial: Serial number of the data logger (e.g. Science Computer)
             is_platform_direct: True if instrument is directly on platform
+            catalog_mission_id: Optional catalog UUID dual-key
         """
         mfr_id = inst_data.get("instrument_manufacturer_id")
         manufacturer_name: Optional[str] = None
@@ -454,6 +783,7 @@ class SensorTrackerSyncService:
 
         instrument = models.MissionInstrument(
             mission_id=mission_id,
+            catalog_mission_id=catalog_mission_id,
             sensor_tracker_instrument_id=inst_data.get("instrument_id"),
             instrument_identifier=inst_data.get("instrument_identifier") or "unknown",
             instrument_short_name=inst_data.get("instrument_short_name"),
@@ -483,6 +813,7 @@ class SensorTrackerSyncService:
                 sensor_manufacturer_name = manufacturers_map.get(int(sensor_mfr_id))
             sensor = models.MissionSensor(
                 mission_id=mission_id,
+                catalog_mission_id=catalog_mission_id,
                 instrument_id=instrument.id,
                 sensor_tracker_sensor_id=sensor_data.get("sensor_id"),
                 sensor_identifier=sensor_data.get("sensor_identifier") or "unknown",

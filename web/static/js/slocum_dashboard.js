@@ -1172,12 +1172,22 @@ function formatAscFileSize(size) {
     return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Subsurface thruster Yes/No with minutes + depth range (surface bursts ≤3 m excluded). */
+/** Subsurface thruster Yes/No with event count, minutes, and depth range (surface bursts ≤3 m excluded). */
 function formatDmonAscThrusterLabel(row, hasPrevious) {
     if (!hasPrevious) return '—';
     if (!row || typeof row !== 'object') return 'No data';
     if (row.thruster_since_prev === true) {
         const parts = ['Yes'];
+        const events = Array.isArray(row.thruster_events) ? row.thruster_events : [];
+        let eventCount = row.thruster_event_count;
+        if (eventCount == null || Number.isNaN(Number(eventCount))) {
+            eventCount = events.length;
+        } else {
+            eventCount = Number(eventCount);
+        }
+        if (eventCount > 0) {
+            parts.push(`${eventCount} event${eventCount === 1 ? '' : 's'}`);
+        }
         const minutes = row.thruster_on_minutes_gt3m;
         if (minutes != null && !Number.isNaN(Number(minutes))) {
             parts.push(`${Number(minutes).toFixed(1)} min`);
@@ -1197,6 +1207,55 @@ function formatDmonAscThrusterLabel(row, hasPrevious) {
     }
     if (row.thruster_since_prev === false) return 'No';
     return 'No data';
+}
+
+/** Compact HH:MMZ · depth · +Nh after previous ASC. */
+function formatDmonAscThrusterEventHhmm(event) {
+    if (!event || typeof event !== 'object') return '—';
+    const startRaw = String(event.start_utc || '');
+    const endRaw = String(event.end_utc || '');
+    const startHm = startRaw.length >= 16 ? startRaw.slice(11, 16) : null;
+    const endHm = endRaw.length >= 16 ? endRaw.slice(11, 16) : null;
+    if (!startHm) return '—';
+    const when = endHm && endHm !== startHm ? `${startHm}–${endHm}Z` : `${startHm}Z`;
+    const parts = [when];
+    const dMin = event.depth_min_m;
+    const dMax = event.depth_max_m;
+    if (dMin != null && dMax != null && !Number.isNaN(Number(dMin)) && !Number.isNaN(Number(dMax))) {
+        const lo = Number(dMin);
+        const hi = Number(dMax);
+        if (Math.abs(lo - hi) < 0.05) {
+            parts.push(hi >= 10 ? `${hi.toFixed(0)} m` : `${hi.toFixed(1)} m`);
+        } else {
+            parts.push(hi >= 10 ? `${lo.toFixed(0)}–${hi.toFixed(0)} m` : `${lo.toFixed(1)}–${hi.toFixed(1)} m`);
+        }
+    }
+    if (event.hours_after_prev_asc != null && !Number.isNaN(Number(event.hours_after_prev_asc))) {
+        parts.push(`+${Number(event.hours_after_prev_asc).toFixed(1)}h`);
+    }
+    return parts.join(' · ');
+}
+
+function renderDmonAscThrusterCell(row, hasPrevious) {
+    const summary = formatDmonAscThrusterLabel(row, hasPrevious);
+    if (!hasPrevious || row?.thruster_since_prev !== true) {
+        return escapeHtml(summary);
+    }
+    const events = Array.isArray(row.thruster_events) ? row.thruster_events : [];
+    if (!events.length) {
+        return escapeHtml(summary);
+    }
+    const items = events.map((ev) => (
+        `<li class="font-monospace text-break">${escapeHtml(formatDmonAscThrusterEventHhmm(ev))}</li>`
+    )).join('');
+    const count = events.length;
+    return `<div class="dmon-asc-thruster-cell">
+        <div>${escapeHtml(summary)}</div>
+        <details class="mt-1">
+            <summary class="small text-muted user-select-none">Show ${count} UTC event${count === 1 ? '' : 's'}</summary>
+            <ul class="mb-0 ps-3 dmon-asc-thruster-events-list" style="max-height: 8rem; overflow-y: auto;">${items}</ul>
+        </details>
+    </div>`;
 }
 
 function updateDmonAscGapIndicator(payload) {
@@ -1282,13 +1341,13 @@ function renderDmonAscPanel(payload) {
         const gapText = gap != null ? `${Number(gap).toFixed(1)}h` : '—';
         const rowClass = gapOver ? 'table-warning' : '';
         const hasPrevious = Object.prototype.hasOwnProperty.call(row, 'gap_after_prev_hours');
-        const thrusterText = formatDmonAscThrusterLabel(row, hasPrevious);
+        const thrusterHtml = renderDmonAscThrusterCell(row, hasPrevious);
         return `<tr class="${rowClass}">
-            <td class="small font-monospace">${row.fileName || '—'}</td>
-            <td class="small">${row.dateTimeModified || '—'}</td>
-            <td class="small">${formatAscFileSize(row.fileSize)}</td>
-            <td class="small${gapOver ? ' fw-semibold text-danger' : ''}">${gapText}</td>
-            <td class="small" title="Subsurface thruster (>3 m) since previous *.asc; surface bursts ≤3 m excluded">${thrusterText}</td>
+            <td class="small font-monospace">${escapeHtml(row.fileName || '—')}</td>
+            <td class="small">${escapeHtml(row.dateTimeModified || '—')}</td>
+            <td class="small">${escapeHtml(formatAscFileSize(row.fileSize))}</td>
+            <td class="small${gapOver ? ' fw-semibold text-danger' : ''}">${escapeHtml(gapText)}</td>
+            <td class="small" title="Subsurface thruster (>3 m) since previous *.asc; surface bursts ≤3 m excluded">${thrusterHtml}</td>
         </tr>`;
     }).join('');
 }

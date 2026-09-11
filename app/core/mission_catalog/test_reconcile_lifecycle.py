@@ -15,6 +15,7 @@ from app.core.mission_catalog.reconcile import (
 from app.core.mission_catalog.schemas import DiscoveredMission
 from app.core.models.database import CatalogMission
 from app.core.models.enums import (
+    CatalogEnrollmentOverride,
     CatalogOperationalState,
     CatalogSyncPolicy,
 )
@@ -28,6 +29,7 @@ def _manifest() -> ProvidersManifest:
                 connector="sensor_tracker",
                 organization="ceotr",
                 lifecycle_authority=True,
+                enrollment_authority=True,
             ),
             ProviderSpec(
                 key="ceotr_wgms_remote",
@@ -38,6 +40,7 @@ def _manifest() -> ProvidersManifest:
                 key="legacy_env",
                 connector="legacy_env",
                 organization="ceotr",
+                enrollment_authority=True,
             ),
         ],
         wave_glider_prefixes=["SV3"],
@@ -124,6 +127,7 @@ def test_st_observation_can_clear_end_date_when_reopened() -> None:
     session.refresh(mission)
     assert mission.end_time is None
     assert mission.operational_state == CatalogOperationalState.ACTIVE.value
+    assert mission.sync_policy == CatalogSyncPolicy.CONTINUOUS.value
 
 
 def test_legacy_env_seeds_continuous_without_touching_dates() -> None:
@@ -199,6 +203,87 @@ def test_continuous_preserved_on_st_refresh_while_active() -> None:
     assert mission.sync_policy == CatalogSyncPolicy.CONTINUOUS.value
 
 
+def test_st_active_auto_enrolls_continuous() -> None:
+    session = _session()
+    mission = CatalogMission(
+        id="cat-st-enroll",
+        title="m230",
+        deployment_number=230,
+        start_time=datetime(2026, 8, 21, tzinfo=timezone.utc),
+        end_time=None,
+        operational_state=CatalogOperationalState.ACTIVE.value,
+        sync_policy=CatalogSyncPolicy.CATALOG_ONLY.value,
+    )
+    session.add(mission)
+    session.commit()
+
+    discovered = DiscoveredMission(
+        provider_key="ceotr_sensor_tracker",
+        title="m230-SV3-1070",
+        deployment_number=230,
+        start_time=datetime(2026, 8, 21, tzinfo=timezone.utc),
+        end_time=None,
+    )
+    _update_mission_from_discovery(
+        session,
+        mission,
+        discovered,
+        platform=None,
+        dry_run=False,
+        manifest=_manifest(),
+    )
+    session.commit()
+    session.refresh(mission)
+    assert mission.sync_policy == CatalogSyncPolicy.CONTINUOUS.value
+
+
+def test_forced_off_blocks_st_auto_enrollment() -> None:
+    session = _session()
+    mission = CatalogMission(
+        id="cat-forced-off",
+        title="m230",
+        deployment_number=230,
+        start_time=datetime(2026, 8, 21, tzinfo=timezone.utc),
+        end_time=None,
+        operational_state=CatalogOperationalState.ACTIVE.value,
+        sync_policy=CatalogSyncPolicy.CATALOG_ONLY.value,
+        enrollment_override=CatalogEnrollmentOverride.FORCED_OFF.value,
+    )
+    session.add(mission)
+    session.commit()
+
+    discovered = DiscoveredMission(
+        provider_key="ceotr_sensor_tracker",
+        title="m230-SV3-1070",
+        deployment_number=230,
+        start_time=datetime(2026, 8, 21, tzinfo=timezone.utc),
+        end_time=None,
+    )
+    _update_mission_from_discovery(
+        session,
+        mission,
+        discovered,
+        platform=None,
+        dry_run=False,
+        manifest=_manifest(),
+    )
+    session.commit()
+    session.refresh(mission)
+    assert mission.sync_policy == CatalogSyncPolicy.CATALOG_ONLY.value
+
+
+def test_completion_wins_over_forced_on() -> None:
+    assert (
+        _resolve_sync_policy(
+            operational_state=CatalogOperationalState.COMPLETED.value,
+            derived_policy=CatalogSyncPolicy.CATALOG_ONLY.value,
+            existing_policy=CatalogSyncPolicy.CONTINUOUS.value,
+            enrollment_override=CatalogEnrollmentOverride.FORCED_ON.value,
+        )
+        == CatalogSyncPolicy.ON_DEMAND.value
+    )
+
+
 def test_continuous_drops_to_on_demand_when_completed() -> None:
     assert (
         _resolve_sync_policy(
@@ -211,11 +296,7 @@ def test_continuous_drops_to_on_demand_when_completed() -> None:
 
 
 def test_wgms_realtime_continuous_does_not_enroll() -> None:
-    """WGMS emits CONTINUOUS for realtime folders, but only legacy_env may enroll.
-
-    m230-style: in the water (ACTIVE) with a WGMS realtime folder, deliberately
-    not in the env lists — must stay unenrolled (catalog_only).
-    """
+    """WGMS emits CONTINUOUS for realtime folders, but cannot enroll."""
     session = _session()
     mission = CatalogMission(
         id="cat-m230",

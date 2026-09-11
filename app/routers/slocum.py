@@ -190,13 +190,28 @@ async def get_available_datasets(
 async def get_available_historical_datasets(
     current_user: models.User = Depends(get_current_active_user),
 ):
-    """Get list of historical Slocum dataset IDs (from config). Mirrors /api/available_historical_missions."""
+    """Historical Slocum dataset IDs: env override, else catalog COMPLETED membership."""
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
         )
-    return configured_slocum_dataset_keys(settings.historical_slocum_datasets)
+    env_keys = configured_slocum_dataset_keys(settings.historical_slocum_datasets)
+    if env_keys:
+        return env_keys
+    try:
+        from app.core.infra.db import SQLModelSession, sqlite_engine
+        from app.core.mission_catalog.enablement import list_catalog_sync_targets
+
+        with SQLModelSession(sqlite_engine) as session:
+            return list(
+                list_catalog_sync_targets(
+                    "slocum", session, operational_state="completed"
+                )
+            )
+    except Exception as exc:
+        logger.warning("Catalog historical Slocum keys failed: %s", exc)
+        return env_keys
 
 
 @router.get("/datasets/search")

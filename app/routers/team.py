@@ -122,17 +122,134 @@ async def get_visualizations_page(
 async def get_mission_catalog_page(
     request: Request,
     current_user: models.User = Depends(get_current_admin_user),
-    session: SQLModelSession = Depends(get_db_session),
 ):
-    unmatched = list_unmatched_sources(session, source_kind="erddap")
     context = get_template_context(
         request=request,
         current_user=current_user,
         show_banner_nav=True,
-        unmatched_sources=unmatched,
-        unmatched_count=len(unmatched),
     )
     return templates.TemplateResponse("team/mission_catalog.html", context)
+
+
+@router.get("/api/team/mission-catalog/status")
+async def get_catalog_status_report():
+    from app.core.mission_catalog.status import build_catalog_status_report
+
+    return build_catalog_status_report()
+
+
+@router.get("/api/team/mission-catalog/missions")
+async def list_catalog_workspace_missions(
+    operational_state: Optional[str] = Query(None),
+    limit: int = Query(100, ge=1, le=500),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    from app.core.mission_catalog.workspace import (
+        build_mission_list_item,
+        list_workspace_missions,
+    )
+
+    missions = list_workspace_missions(
+        session, operational_state=operational_state, limit=limit
+    )
+    return [build_mission_list_item(session, m) for m in missions]
+
+
+@router.get("/api/team/mission-catalog/missions/{catalog_mission_id}")
+async def get_catalog_workspace_mission(
+    catalog_mission_id: str,
+    session: SQLModelSession = Depends(get_db_session),
+):
+    from app.core.mission_catalog.workspace import (
+        build_workspace_payload,
+        get_catalog_mission,
+    )
+
+    mission = get_catalog_mission(session, catalog_mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Catalog mission not found")
+    return build_workspace_payload(session, mission)
+
+
+@router.post("/api/team/mission-catalog/missions/{catalog_mission_id}/enrollment")
+async def set_catalog_enrollment_override(
+    catalog_mission_id: str,
+    override: str = Query(..., description="automatic | forced_on | forced_off"),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    from app.core.mission_catalog.workspace import (
+        get_catalog_mission,
+        set_enrollment_override,
+    )
+
+    mission = get_catalog_mission(session, catalog_mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Catalog mission not found")
+    try:
+        updated = set_enrollment_override(session, mission, override)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {
+        "id": updated.id,
+        "enrollment_override": updated.enrollment_override,
+        "sync_policy": updated.sync_policy,
+        "operational_state": updated.operational_state,
+    }
+
+
+@router.post("/api/team/mission-catalog/missions/{catalog_mission_id}/provision")
+async def retry_catalog_provisioning(
+    catalog_mission_id: str,
+    session: SQLModelSession = Depends(get_db_session),
+):
+    from app.core.mission_catalog.provisioning import provision_mission
+    from app.core.mission_catalog.workspace import get_catalog_mission
+    from app.services.sensor_tracker_sync_service import SensorTrackerSyncService
+
+    mission = get_catalog_mission(session, catalog_mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Catalog mission not found")
+    result = provision_mission(session, mission, dry_run=False)
+    st_synced = False
+    try:
+        sync_service = SensorTrackerSyncService()
+        st_row = await sync_service.get_or_sync_catalog_mission(
+            catalog_mission_id,
+            force_refresh=True,
+            session=session,
+        )
+        st_synced = st_row is not None
+        if st_synced:
+            result.actions.append("deep_st_sync")
+    except Exception as exc:
+        result.errors.append(f"deep_st_sync:{exc}")
+    return {
+        "mission_id": result.mission_id,
+        "platform_family": result.platform_family,
+        "readiness": result.readiness,
+        "reasons": result.reasons,
+        "actions": result.actions,
+        "errors": result.errors,
+        "st_synced": st_synced,
+    }
+
+
+@router.get("/api/team/mission-catalog/health")
+async def get_catalog_health_report(
+    session: SQLModelSession = Depends(get_db_session),
+):
+    from app.core.mission_catalog.health import build_catalog_health_report
+
+    return build_catalog_health_report(session)
+
+
+@router.get("/api/team/mission-catalog/unmatched-sources")
+async def get_catalog_unmatched_sources(
+    source_kind: Optional[str] = Query("erddap"),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    rows = list_unmatched_sources(session, source_kind=source_kind or "")
+    return [row.model_dump(mode="json") for row in rows]
 
 
 @router.get("/team/vmt-logbook", response_class=HTMLResponse, include_in_schema=False)

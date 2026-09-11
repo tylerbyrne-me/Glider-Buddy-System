@@ -878,13 +878,32 @@ async def submit_form(
     Accepts a submitted form for a mission and saves it to the SQL database.
     Assumes form_data matches the structure of models.SubmittedForm (or can be adapted).
     Persists vessel_standoff_m to MissionOverview when present in PIC handoff form.
+    Supports catalog UUID mission_id / catalog_mission_id dual-key writes.
     """
     try:
         sections_data = form_data.get("sections_data")
+        catalog_mission_id = form_data.get("catalog_mission_id")
+        legacy_mission_id = mission_id
+        # Allow catalog UUID as the path key for planned workspaces.
+        if len(mission_id) >= 32 and "-" in mission_id and not catalog_mission_id:
+            if session.get(models.CatalogMission, mission_id) is not None:
+                catalog_mission_id = mission_id
+                legacy_mission_id = None
+
+        from app.core.mission_catalog.workspace import resolve_form_mission_keys
+
+        keys = resolve_form_mission_keys(
+            session,
+            mission_id=legacy_mission_id,
+            catalog_mission_id=catalog_mission_id,
+        )
+        legacy_mission_id = keys.get("mission_id") or legacy_mission_id
+        catalog_mission_id = keys.get("catalog_mission_id") or catalog_mission_id
 
         # Build the SubmittedForm object
         submitted_form = models.SubmittedForm(
-            mission_id=mission_id,
+            mission_id=legacy_mission_id,
+            catalog_mission_id=catalog_mission_id,
             form_type=form_data.get("form_type"),
             form_title=form_data.get("form_title"),
             submitted_by_username=current_user.username,
@@ -893,13 +912,15 @@ async def submit_form(
         )
         session.add(submitted_form)
 
-        _persist_mission_overview_side_effects(session, mission_id, sections_data)
+        if legacy_mission_id:
+            _persist_mission_overview_side_effects(session, legacy_mission_id, sections_data)
 
         session.commit()
         session.refresh(submitted_form)
         return {
             "message": "Form submitted successfully",
-            "mission_id": mission_id,
+            "mission_id": legacy_mission_id,
+            "catalog_mission_id": catalog_mission_id,
             "submitted_by_username": current_user.username,
             "submission_timestamp": submitted_form.submission_timestamp.isoformat()
         }

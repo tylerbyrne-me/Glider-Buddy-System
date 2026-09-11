@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     # When true, public login map allowlist reads keys via catalog enablement
     # (still exact ACTIVE_* / alias strings ∩ public_map_enabled). Default false.
     mission_catalog_public_map_from_catalog: bool = False
+    # When true, ST ACTIVE missions would enroll CONTINUOUS but writes are skipped;
+    # reconcile logs a shadow report of would-enroll / would-complete rows.
+    mission_catalog_enrollment_shadow: bool = False
+    # Catalog reconcile cadence in minutes (leader job). 0 keeps daily cron only.
+    mission_catalog_sync_interval_minutes: int = 30
 
     # --- Slocum ERDDAP Settings ---
     # Ocean Track Slocum glider ERDDAP server; override in .env if needed

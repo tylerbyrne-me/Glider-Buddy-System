@@ -56,6 +56,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     const publicWeeklyReportEnabledInput = document.getElementById('publicWeeklyReportEnabled');
     const savePublicVisibilityBtn = document.getElementById('savePublicVisibilityBtn');
     const publicVisibilityStatus = document.getElementById('publicVisibilityStatus');
+    const archiveDeploymentBtn = document.getElementById('archiveDeploymentBtn');
+    const archiveDeploymentStatus = document.getElementById('archiveDeploymentStatus');
     const uploadPlanBtn = document.getElementById('uploadPlanBtn');
     const planUploadStatus = document.getElementById('planUploadStatus');
     const saveSensorCardsBtn = document.getElementById('saveSensorCardsBtn');
@@ -231,6 +233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (saveRobots4WhalesUrlBtn) saveRobots4WhalesUrlBtn.disabled = !isEnabled;
         if (publicMapEnabledInput) publicMapEnabledInput.disabled = !isEnabled;
         if (savePublicVisibilityBtn) savePublicVisibilityBtn.disabled = !isEnabled;
+        if (archiveDeploymentBtn) archiveDeploymentBtn.disabled = !isEnabled;
         document.querySelectorAll('.checklist-ref-input').forEach((input) => {
             input.disabled = !isEnabled;
         });
@@ -658,6 +661,39 @@ document.addEventListener('DOMContentLoaded', async () => {
                 showToast(`Failed to save public visibility: ${error.message}`, 'danger');
                 if (publicVisibilityStatus) {
                     publicVisibilityStatus.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(error.message)}</div>`;
+                }
+            } finally {
+                setPlanActionsEnabled(Boolean(currentInfo?.deployment));
+            }
+        });
+    }
+
+    if (archiveDeploymentBtn) {
+        archiveDeploymentBtn.addEventListener('click', async () => {
+            const deploymentId = currentInfo?.deployment?.id;
+            if (!deploymentId) {
+                showToast('Deployment metadata unavailable for this dataset.', 'warning');
+                return;
+            }
+            if (!window.confirm('Archive this Slocum deployment? It will leave active lists but keep briefing history.')) {
+                return;
+            }
+            archiveDeploymentBtn.disabled = true;
+            if (archiveDeploymentStatus) {
+                archiveDeploymentStatus.innerHTML = '<div class="alert alert-info py-2 mb-0">Archiving...</div>';
+            }
+            try {
+                await apiRequest(`/api/slocum/deployments/${deploymentId}`, 'DELETE');
+                showToast('Deployment archived.', 'success');
+                if (archiveDeploymentStatus) {
+                    archiveDeploymentStatus.innerHTML = '<div class="alert alert-success py-2 mb-0">Archived.</div>';
+                }
+                await populateMissionSelect();
+                setOverviewVisibility(false);
+            } catch (error) {
+                showToast(`Failed to archive deployment: ${error.message}`, 'danger');
+                if (archiveDeploymentStatus) {
+                    archiveDeploymentStatus.innerHTML = `<div class="alert alert-danger py-2 mb-0">${escapeHtml(error.message)}</div>`;
                 }
             } finally {
                 setPlanActionsEnabled(Boolean(currentInfo?.deployment));

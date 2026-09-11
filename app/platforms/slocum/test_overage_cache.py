@@ -22,12 +22,18 @@ def _hourly_df(start: datetime, end: datetime, *, power: float) -> pd.DataFrame:
     return pd.DataFrame({"Timestamp": times, "MThrusterPower": power})
 
 
-def _run_partial_mirror_request(*, context: str):
+def _run_partial_mirror_request(
+    *,
+    context: str,
+    requested_days: int = 7,
+    requested_end_offset_hours: int = 0,
+):
     """7-day request against a 72h rolling mirror; overage populate is mocked."""
-    end = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
-    start = end - timedelta(days=7)
-    mirror_start = end - timedelta(hours=72)
-    mirror_df = _hourly_df(mirror_start, end, power=0.0)
+    mirror_end = datetime(2026, 9, 3, 12, 0, tzinfo=timezone.utc)
+    end = mirror_end + timedelta(hours=requested_end_offset_hours)
+    start = end - timedelta(days=requested_days)
+    mirror_start = mirror_end - timedelta(hours=72)
+    mirror_df = _hourly_df(mirror_start, mirror_end, power=0.0)
     overage_df = _hourly_df(start, end, power=1.0)
     populate_calls: list[dict] = []
 
@@ -73,18 +79,32 @@ def _run_partial_mirror_request(*, context: str):
     return result, populate_calls, start, end, mirror_start
 
 
-def test_interactive_context_returns_partial_mirror_without_erddap():
-    result, populate_calls, _start, end, mirror_start = _run_partial_mirror_request(
+def test_interactive_context_fetches_missing_older_head_via_overage():
+    result, populate_calls, start, end, _mirror_start = _run_partial_mirror_request(
         context="interactive"
+    )
+    assert len(populate_calls) == 1
+    assert result.metadata.get("data_source") == "erddap_overage"
+    assert not result.df.empty
+    ts = pd.to_datetime(result.df["Timestamp"], utc=True)
+    assert ts.min() <= start + timedelta(hours=1)
+    span_hours = (ts.max() - ts.min()).total_seconds() / 3600.0
+    assert span_hours >= 7 * 24 - 1
+    assert ts.max() <= end
+
+
+def test_interactive_context_uses_mirror_when_only_recent_tail_is_stale():
+    result, populate_calls, start, end, _mirror_start = _run_partial_mirror_request(
+        context="interactive",
+        requested_days=3,
+        requested_end_offset_hours=1,
     )
     assert populate_calls == []
     assert result.metadata.get("data_source") == "mirror"
     assert not result.df.empty
     ts = pd.to_datetime(result.df["Timestamp"], utc=True)
-    assert ts.min() >= mirror_start
-    span_hours = (ts.max() - ts.min()).total_seconds() / 3600.0
-    assert span_hours <= 72.0 + 1e-6
-    assert ts.max() <= end
+    assert ts.min() <= start + timedelta(hours=1)
+    assert ts.max() < end
 
 
 def test_report_context_fetches_full_window_via_overage():

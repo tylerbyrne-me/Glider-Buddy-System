@@ -1306,7 +1306,8 @@ def build_dmon_review_section(
                         f"{file_count} *.asc file{'s' if file_count != 1 else ''} "
                         "in the report window. Gaps greater than 16 hours are highlighted. "
                         "Thruster Yes ignores surface bursts (≤3 m) and shows estimated "
-                        "on-time and depth range when thruster ran deeper than 3 m."
+                        "on-time, event count, and depth range when thruster ran deeper than 3 m. "
+                        "Timed UTC events appear in a separate table below."
                     ),
                     styles["Caption"],
                 )
@@ -1337,7 +1338,10 @@ def build_dmon_review_section(
                     return f"{n / 1024:.1f} KB"
                 return f"{n / (1024 * 1024):.1f} MB"
 
-            from app.platforms.slocum.dmon_asc_thruster import format_thruster_since_prev_detail
+            from app.platforms.slocum.dmon_asc_thruster import (
+                build_thruster_event_pdf_rows,
+                format_thruster_since_prev_summary,
+            )
 
             for idx, row in enumerate(display_files):
                 if not isinstance(row, dict):
@@ -1358,7 +1362,7 @@ def build_dmon_review_section(
                         gap_row_indices.append(idx + 1)  # +1 for header row
                     else:
                         gap_cell = Paragraph(_escape_xml_text(gap_label), styles["TableCell"])
-                thruster_label = format_thruster_since_prev_detail(
+                thruster_label = format_thruster_since_prev_summary(
                     row,
                     has_previous="gap_after_prev_hours" in row,
                 )
@@ -1404,6 +1408,56 @@ def build_dmon_review_section(
                         )
                     )
                 out.append(asc_table)
+
+                event_rows_data = build_thruster_event_pdf_rows(files, newest_first=True)
+                if event_rows_data:
+                    out.append(Spacer(1, 8))
+                    out.append(
+                        Paragraph("Thruster event timing (UTC)", styles["Heading3"])
+                    )
+                    out.append(
+                        Paragraph(
+                            _escape_xml_text(
+                                "Each row is one subsurface thruster cluster (>3 m depth) "
+                                "between consecutive *.asc offloads. Times are UTC hour:minute."
+                            ),
+                            styles["Caption"],
+                        )
+                    )
+                    out.append(Spacer(1, 4))
+                    event_headers = [
+                        "ASC file",
+                        "Event #",
+                        "Time (UTC)",
+                        "Duration",
+                        "Depth (m)",
+                        "Hours after prev ASC",
+                    ]
+                    event_table_rows = [
+                        [
+                            r["file"],
+                            str(r["event_num"]),
+                            r["time_utc"],
+                            r["duration"],
+                            r["depth"],
+                            r["hours_after_prev_asc"],
+                        ]
+                        for r in event_rows_data
+                    ]
+                    file_w = pw * 0.24
+                    num_w = pw * 0.08
+                    time_w = pw * 0.14
+                    dur_w = pw * 0.12
+                    depth_w = pw * 0.14
+                    offset_w = pw - file_w - num_w - time_w - dur_w - depth_w
+                    out.append(
+                        styled_data_table(
+                            event_headers,
+                            event_table_rows,
+                            styles=styles,
+                            col_widths=[file_w, num_w, time_w, dur_w, depth_w, offset_w],
+                        )
+                    )
         else:
             fetch_note = str(asc.get("summary") or "").strip()
             # Avoid cached age/GAP summary strings; keep only availability notes.

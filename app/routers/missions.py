@@ -1660,12 +1660,69 @@ async def get_available_historical_missions(
     session: SQLModelSession = Depends(get_db_session)
 ):
     """
-    Get list of historical/past missions by checking the remote server.
+    Get list of historical/past missions.
+
+    Prefer catalog COMPLETED wave-glider keys with linked overviews when the
+    catalog is populated; fall back to WGMS remote directory scrape.
     """
     from ..core import models
     from ..config import settings
     import httpx
-    
+
+    # Catalog-backed historical keys (empty-env / enrollment era).
+    try:
+        from app.core.mission_catalog.enablement import _live_wave_glider_keys
+        from app.core.models.database import CatalogMission, MissionOverview
+        from app.core.models.enums import CatalogOperationalState
+        from sqlmodel import select as _select
+
+        completed = list(
+            session.exec(
+                _select(CatalogMission).where(
+                    CatalogMission.operational_state
+                    == CatalogOperationalState.COMPLETED.value
+                )
+            ).all()
+        )
+        if completed:
+            from app.core.mission_catalog.live_link import prefer_wave_glider_overview
+            from app.core.utils import deployment_mission_code_from_mission_id
+
+            catalog_ids = {m.id for m in completed if m.id}
+            by_catalog: dict[str, list] = {}
+            for overview in session.exec(_select(MissionOverview)).all():
+                cid = getattr(overview, "catalog_mission_id", None)
+                if cid and cid in catalog_ids:
+                    by_catalog.setdefault(cid, []).append(overview)
+            catalog_keys: list[str] = []
+            for cid, siblings in by_catalog.items():
+                preferred = prefer_wave_glider_overview(siblings)
+                if preferred and preferred.mission_id:
+                    catalog_keys.append(str(preferred.mission_id).strip())
+            if catalog_keys:
+                catalog_keys = sorted({k for k in catalog_keys if k})
+                logger.info(
+                    "Historical missions from catalog COMPLETED overviews: %s",
+                    catalog_keys[:20],
+                )
+                # Still merge remote scrape below when available; prefer union.
+                remote_keys = await _scrape_wgms_historical_missions()
+                if remote_keys:
+                    merged = sorted(set(catalog_keys) | set(remote_keys))
+                    return merged
+                return catalog_keys
+    except Exception as exc:
+        logger.debug("Catalog historical WG lookup failed: %s", exc)
+
+    return await _scrape_wgms_historical_missions()
+
+
+async def _scrape_wgms_historical_missions() -> list[str]:
+    """Legacy WGMS output_past_missions scrape (fallback)."""
+    from ..config import settings
+    import httpx
+    import re
+
     # Check remote server for available past missions
     base_remote_url = settings.remote_data_url.rstrip("/")
     past_missions_url = f"{base_remote_url}/output_past_missions/"

@@ -32,6 +32,7 @@ from app.core.models.database import (
     CatalogPlatform,
 )
 from app.core.models.enums import (
+    CatalogEnrollmentOverride,
     CatalogIdentityKind,
     CatalogMatchStatus,
     CatalogOperationalState,
@@ -420,15 +421,91 @@ def _may_seed_enrollment(
     discovered: DiscoveredMission,
     manifest: ProvidersManifest,
 ) -> bool:
-    """Only the env lists (legacy_env) may seed CONTINUOUS enrollment.
+    """True when this provider may seed CONTINUOUS enrollment.
 
-    WGMS also emits CONTINUOUS for realtime folders, but a folder existing is
-    data location — not GBS operating the mission (e.g. m230 stays unenrolled).
+    Explicit ``enrollment_authority`` on the provider wins. Defaults:
+    Sensor Tracker and legacy_env may enroll; WGMS/ERDDAP may not (folder /
+    dataset existence is data location, not GBS operating the mission).
     """
     provider = manifest.get(discovered.provider_key)
     if provider is None:
         return False
-    return provider.connector == "legacy_env"
+    if provider.enrollment_authority:
+        return True
+    return provider.connector in ("sensor_tracker", "legacy_env")
+
+
+def _enrollment_override_value(mission: Optional[CatalogMission]) -> str:
+    if mission is None:
+        return CatalogEnrollmentOverride.AUTOMATIC.value
+    raw = getattr(mission, "enrollment_override", None) or CatalogEnrollmentOverride.AUTOMATIC.value
+    return str(raw).strip().lower() or CatalogEnrollmentOverride.AUTOMATIC.value
+
+
+def _apply_enrollment_override(
+    *,
+    operational_state: str,
+    candidate_policy: str,
+    enrollment_override: str,
+) -> str:
+    """Apply forced_on / forced_off; completion and archived always win."""
+    if operational_state == CatalogOperationalState.COMPLETED.value:
+        return CatalogSyncPolicy.ON_DEMAND.value
+    if operational_state == CatalogOperationalState.ARCHIVED.value:
+        return CatalogSyncPolicy.CATALOG_ONLY.value
+    override = (enrollment_override or "").strip().lower()
+    if override == CatalogEnrollmentOverride.FORCED_OFF.value:
+        if operational_state == CatalogOperationalState.ACTIVE.value:
+            return CatalogSyncPolicy.CATALOG_ONLY.value
+        return candidate_policy
+    if override == CatalogEnrollmentOverride.FORCED_ON.value:
+        if operational_state in (
+            CatalogOperationalState.ACTIVE.value,
+            CatalogOperationalState.PLANNED.value,
+        ):
+            return CatalogSyncPolicy.CONTINUOUS.value
+    return candidate_policy
+
+
+def _shadow_enrollment_enabled() -> bool:
+    try:
+        from app.config import settings
+
+        return bool(getattr(settings, "mission_catalog_enrollment_shadow", False))
+    except Exception:
+        return False
+
+
+def _log_enrollment_shadow(
+    *,
+    mission_id: str,
+    title: Optional[str],
+    previous_policy: Optional[str],
+    next_policy: str,
+    operational_state: str,
+    enrollment_override: str,
+) -> None:
+    if previous_policy == next_policy:
+        return
+    action = "would-change"
+    if next_policy == CatalogSyncPolicy.CONTINUOUS.value:
+        action = "would-enroll"
+    elif previous_policy == CatalogSyncPolicy.CONTINUOUS.value:
+        if next_policy == CatalogSyncPolicy.ON_DEMAND.value:
+            action = "would-complete"
+        else:
+            action = "would-unenroll"
+    logger.info(
+        "CATALOG ENROLLMENT SHADOW: action=%s mission_id=%s title=%s "
+        "state=%s override=%s policy %s -> %s",
+        action,
+        mission_id,
+        title,
+        operational_state,
+        enrollment_override,
+        previous_policy,
+        next_policy,
+    )
 
 
 def _apply_lifecycle_fields(
@@ -477,18 +554,38 @@ def _resolve_sync_policy(
     derived_policy: str,
     existing_policy: Optional[str] = None,
     discovered_policy: Optional[str] = None,
+    may_seed: bool = False,
+    enrollment_override: str = CatalogEnrollmentOverride.AUTOMATIC.value,
 ) -> str:
-    """Preserve CONTINUOUS enrollment while ACTIVE; drop to ON_DEMAND when done."""
+    """Resolve enrollment policy with ST/legacy seed + override guards.
+
+    - COMPLETED → ON_DEMAND (wins over forced_on)
+    - ARCHIVED → CATALOG_ONLY
+    - forced_off keeps ACTIVE missions out of CONTINUOUS
+    - forced_on enrolls ACTIVE (and PLANNED staging if requested)
+    - While ACTIVE: preserve CONTINUOUS; enrollment-authority auto-enrolls
+    - PLANNED stays CATALOG_ONLY unless forced_on
+    """
     if operational_state == CatalogOperationalState.COMPLETED.value:
         return CatalogSyncPolicy.ON_DEMAND.value
     if operational_state == CatalogOperationalState.ARCHIVED.value:
         return CatalogSyncPolicy.CATALOG_ONLY.value
-    # Seed or preserve enrollment for active (and planned) missions.
-    if existing_policy == CatalogSyncPolicy.CONTINUOUS.value:
-        return CatalogSyncPolicy.CONTINUOUS.value
-    if discovered_policy == CatalogSyncPolicy.CONTINUOUS.value:
-        return CatalogSyncPolicy.CONTINUOUS.value
-    return derived_policy
+
+    candidate = derived_policy
+    if operational_state == CatalogOperationalState.ACTIVE.value:
+        if existing_policy == CatalogSyncPolicy.CONTINUOUS.value:
+            candidate = CatalogSyncPolicy.CONTINUOUS.value
+        elif may_seed:
+            # ST / legacy_env enrollment authority: ACTIVE → CONTINUOUS.
+            candidate = CatalogSyncPolicy.CONTINUOUS.value
+        elif discovered_policy == CatalogSyncPolicy.CONTINUOUS.value:
+            candidate = CatalogSyncPolicy.CONTINUOUS.value
+
+    return _apply_enrollment_override(
+        operational_state=operational_state,
+        candidate_policy=candidate,
+        enrollment_override=enrollment_override,
+    )
 
 
 def _create_mission(
@@ -521,11 +618,26 @@ def _create_mission(
     state_value, derived_policy = _apply_lifecycle_fields(
         discovered, allow_continuous=may_seed
     )
+    override = CatalogEnrollmentOverride.AUTOMATIC.value
     policy_value = _resolve_sync_policy(
         operational_state=state_value,
         derived_policy=derived_policy,
         discovered_policy=discovered_policy,
+        may_seed=may_seed,
+        enrollment_override=override,
     )
+    if _shadow_enrollment_enabled():
+        _log_enrollment_shadow(
+            mission_id="(new)",
+            title=discovered.title,
+            previous_policy=None,
+            next_policy=policy_value,
+            operational_state=state_value,
+            enrollment_override=override,
+        )
+        # Shadow: do not write CONTINUOUS enrollments yet.
+        if policy_value == CatalogSyncPolicy.CONTINUOUS.value:
+            policy_value = CatalogSyncPolicy.CATALOG_ONLY.value
 
     mission = CatalogMission(
         id=str(uuid.uuid4()),
@@ -536,6 +648,7 @@ def _create_mission(
         end_time=discovered.end_time,
         operational_state=state_value,
         sync_policy=policy_value,
+        enrollment_override=override,
         provenance=discovered.provider_key,
         first_seen_at=now,
         last_seen_at=now,
@@ -580,6 +693,8 @@ def _update_mission_from_discovery(
     if discovered_policy == CatalogSyncPolicy.CONTINUOUS.value and not may_seed:
         # WGMS realtime folders emit CONTINUOUS but are data location only.
         discovered_policy = None
+    override = _enrollment_override_value(mission)
+    previous_policy = mission.sync_policy
 
     if is_authority:
         # ST dates win, including None when ST reopens a deployment.
@@ -590,12 +705,25 @@ def _update_mission_from_discovery(
             discovered, allow_continuous=may_seed
         )
         mission.operational_state = state_value
-        mission.sync_policy = _resolve_sync_policy(
+        next_policy = _resolve_sync_policy(
             operational_state=state_value,
             derived_policy=derived_policy,
             existing_policy=mission.sync_policy,
             discovered_policy=discovered_policy,
+            may_seed=may_seed,
+            enrollment_override=override,
         )
+        if _shadow_enrollment_enabled():
+            _log_enrollment_shadow(
+                mission_id=mission.id,
+                title=mission.title,
+                previous_policy=previous_policy,
+                next_policy=next_policy,
+                operational_state=state_value,
+                enrollment_override=override,
+            )
+        else:
+            mission.sync_policy = next_policy
         if discovered.deployment_number is not None:
             mission.deployment_number = discovered.deployment_number
     else:
@@ -604,10 +732,40 @@ def _update_mission_from_discovery(
             mission.deployment_number = discovered.deployment_number
         # Enrollment seed: legacy_env CONTINUOUS only, while mission stays ACTIVE.
         if (
-            discovered_policy == CatalogSyncPolicy.CONTINUOUS.value
+            may_seed
+            and discovered_policy == CatalogSyncPolicy.CONTINUOUS.value
             and mission.operational_state == CatalogOperationalState.ACTIVE.value
         ):
-            mission.sync_policy = CatalogSyncPolicy.CONTINUOUS.value
+            next_policy = _resolve_sync_policy(
+                operational_state=mission.operational_state,
+                derived_policy=CatalogSyncPolicy.CATALOG_ONLY.value,
+                existing_policy=mission.sync_policy,
+                discovered_policy=discovered_policy,
+                may_seed=True,
+                enrollment_override=override,
+            )
+            if _shadow_enrollment_enabled():
+                _log_enrollment_shadow(
+                    mission_id=mission.id,
+                    title=mission.title,
+                    previous_policy=previous_policy,
+                    next_policy=next_policy,
+                    operational_state=mission.operational_state,
+                    enrollment_override=override,
+                )
+            else:
+                mission.sync_policy = next_policy
+        elif override != CatalogEnrollmentOverride.AUTOMATIC.value:
+            # Re-apply forced_on / forced_off without changing lifecycle.
+            next_policy = _resolve_sync_policy(
+                operational_state=mission.operational_state,
+                derived_policy=mission.sync_policy or CatalogSyncPolicy.CATALOG_ONLY.value,
+                existing_policy=mission.sync_policy,
+                may_seed=False,
+                enrollment_override=override,
+            )
+            if not _shadow_enrollment_enabled():
+                mission.sync_policy = next_policy
 
     if not mission.has_manual_overrides:
         mission.title = discovered.title or mission.title

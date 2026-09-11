@@ -79,10 +79,11 @@ OPS_SCRIPTS: Dict[str, OpsScriptSpec] = {
     ),
     "mission_catalog": OpsScriptSpec(
         id="mission_catalog",
-        label="Mission catalog (unmatched ERDDAP)",
+        label="Mission catalog (lifecycle ops)",
         description=(
-            "Read-only review of unmatched ERDDAP datasets in the mission "
-            "catalog (does not create missions)."
+            "Team workspace for planned/active/completed catalog missions: "
+            "readiness, enrollment overrides, provision retry, health, and "
+            "unmatched ERDDAP inventory. Catalog apply remains CLI-only."
         ),
         kind="page",
         href="/team/mission-catalog",

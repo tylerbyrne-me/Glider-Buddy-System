@@ -87,6 +87,14 @@ class CatalogSyncPolicy(str, Enum):
     CONTINUOUS = "continuous"
 
 
+class CatalogEnrollmentOverride(str, Enum):
+    """Manual enrollment override; lifecycle completion still wins over forced_on."""
+
+    AUTOMATIC = "automatic"
+    FORCED_ON = "forced_on"
+    FORCED_OFF = "forced_off"
+
+
 class CatalogSourceKind(str, Enum):
     """Concrete telemetry/data location kinds."""
 

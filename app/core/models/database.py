@@ -442,7 +442,17 @@ class SubmittedForm(SQLModel, table=True):
     __tablename__ = "submitted_forms"
 
     id: Optional[int] = SQLModelField(default=None, primary_key=True, description="Unique database ID for the submitted form.")
-    mission_id: str = SQLModelField(index=True, description="Identifier of the mission this form pertains to.")
+    mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="Legacy mission identifier; may be null when catalog_mission_id is set",
+    )
+    catalog_mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        foreign_key="catalog_missions.id",
+        description="Catalog UUID for planned / numbered mission forms",
+    )
     form_type: str = SQLModelField(index=True, description="Type of the form submitted.")
     form_title: str = SQLModelField(description="Title of this specific form instance.")
 
@@ -624,9 +634,22 @@ class SensorTrackerDeployment(SQLModel, table=True):
     __tablename__ = "sensor_tracker_deployments"
     
     id: Optional[int] = SQLModelField(default=None, primary_key=True)
-    mission_id: str = SQLModelField(index=True, unique=True, description="Mission ID (e.g., 'm216')")
-    sensor_tracker_deployment_id: int = SQLModelField(index=True, description="Sensor Tracker internal ID")
-    deployment_number: int = SQLModelField(index=True, description="Mission/deployment number")
+    mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        unique=True,
+        description="Mission ID (e.g., 'm216'); null for preemptive ST staging without deployment_number",
+    )
+    sensor_tracker_deployment_id: int = SQLModelField(
+        index=True,
+        unique=True,
+        description="Sensor Tracker internal ID (stable key for planned + numbered rows)",
+    )
+    deployment_number: Optional[int] = SQLModelField(
+        default=None,
+        index=True,
+        description="Mission/deployment number; null until ST assigns m{n}",
+    )
     
     # Deployment metadata
     title: Optional[str] = None
@@ -720,7 +743,17 @@ class MissionInstrument(SQLModel, table=True):
     __tablename__ = "mission_instruments"
     
     id: Optional[int] = SQLModelField(default=None, primary_key=True)
-    mission_id: str = SQLModelField(index=True, description="Mission ID")
+    mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="Legacy mission ID (e.g. m216); may be null for planned catalog-only rows",
+    )
+    catalog_mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        foreign_key="catalog_missions.id",
+        description="Catalog UUID anchor for planned and numbered missions",
+    )
     sensor_tracker_instrument_id: Optional[int] = SQLModelField(index=True, description="Sensor Tracker instrument ID")
     
     # Instrument details
@@ -763,7 +796,17 @@ class MissionSensor(SQLModel, table=True):
     __tablename__ = "mission_sensors"
     
     id: Optional[int] = SQLModelField(default=None, primary_key=True)
-    mission_id: str = SQLModelField(index=True, description="Mission ID")
+    mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        description="Legacy mission ID; may be null for planned catalog-only rows",
+    )
+    catalog_mission_id: Optional[str] = SQLModelField(
+        default=None,
+        index=True,
+        foreign_key="catalog_missions.id",
+        description="Catalog UUID anchor for planned and numbered missions",
+    )
     instrument_id: int = SQLModelField(foreign_key="mission_instruments.id", description="Parent instrument")
     sensor_tracker_sensor_id: Optional[int] = SQLModelField(index=True, description="Sensor Tracker sensor ID")
     
@@ -1303,6 +1346,11 @@ class CatalogMission(SQLModel, table=True):
         default=CatalogSyncPolicy.CATALOG_ONLY.value,
         index=True,
         description="catalog_only | on_demand | warm | continuous",
+    )
+    enrollment_override: str = SQLModelField(
+        default="automatic",
+        index=True,
+        description="automatic | forced_on | forced_off (completion still wins over forced_on)",
     )
     visibility: str = SQLModelField(
         default="internal",

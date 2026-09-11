@@ -5,15 +5,24 @@ from ..core import models
 
 logger = logging.getLogger(__name__)
 
-def get_static_form_schema(form_type: str) -> models.MissionFormSchema:
+def get_static_form_schema(form_type: str, *, platform: str | None = None) -> models.MissionFormSchema:
     """
     Returns the static structure of a form schema, without auto-filled data.
+
+    ``platform`` may be ``wave_glider``, ``slocum``, or None (generic label).
     """
+    platform_label = {
+        "wave_glider": "Wave Glider",
+        "slocum": "Slocum",
+    }.get((platform or "").strip().lower(), "platform")
+
     if form_type == "pre_deployment_checklist":
         return models.MissionFormSchema(
             form_type=form_type,
             title="Pre-Deployment Checklist",
-            description="Complete this checklist before deploying the Wave Glider.",
+            description=(
+                f"Complete this checklist before deploying the {platform_label}."
+            ),
             sections=[
                 models.FormSection(
                     id="general_checks",

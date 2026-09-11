@@ -24,6 +24,9 @@ class ProviderSpec:
     # When true, this provider alone may set/clear catalog mission dates and
     # drive operational_state re-derive (Sensor Tracker).
     lifecycle_authority: bool = False
+    # When true, this provider may seed sync_policy=CONTINUOUS enrollment
+    # (Sensor Tracker when ACTIVE; legacy_env cutover seed).
+    enrollment_authority: bool = False
     base_url_setting: Optional[str] = None
     dataset_id_filter: Optional[str] = None
     collections: List[str] = field(default_factory=list)
@@ -79,6 +82,7 @@ def load_providers_manifest(path: Optional[Path] = None) -> ProvidersManifest:
                     connector="sensor_tracker",
                     organization="ceotr",
                     lifecycle_authority=True,
+                    enrollment_authority=True,
                     base_url_setting="sensor_tracker_host",
                 ),
                 ProviderSpec(
@@ -103,6 +107,7 @@ def load_providers_manifest(path: Optional[Path] = None) -> ProvidersManifest:
                     key="legacy_env",
                     connector="legacy_env",
                     organization="ceotr",
+                    enrollment_authority=True,
                 ),
             ],
             wave_glider_prefixes=["SV3", "DL", "SV2"],
@@ -135,6 +140,13 @@ def load_providers_manifest(path: Optional[Path] = None) -> ProvidersManifest:
                     item.get(
                         "lifecycle_authority",
                         str(item.get("connector") or "").strip() == "sensor_tracker",
+                    )
+                ),
+                enrollment_authority=bool(
+                    item.get(
+                        "enrollment_authority",
+                        str(item.get("connector") or "").strip()
+                        in ("sensor_tracker", "legacy_env"),
                     )
                 ),
                 base_url_setting=(

@@ -2284,20 +2284,37 @@ async def startup_event():
             sfmc_refresh_minutes,
         )
         catalog_sync_hour = int(getattr(settings, "mission_catalog_sync_cron_hour", 6))
-        scheduler.add_job(
-            run_mission_catalog_sync_job,
-            "cron",
-            hour=catalog_sync_hour,
-            minute=10,
-            timezone="UTC",
-            id="system_mission_catalog_sync_job",
-            max_instances=1,
-            replace_existing=True,
+        catalog_interval = int(
+            getattr(settings, "mission_catalog_sync_interval_minutes", 30) or 0
         )
-        logger.info(
-            "Mission catalog sync scheduled daily at %02d:10 UTC",
-            catalog_sync_hour,
-        )
+        if catalog_interval > 0:
+            scheduler.add_job(
+                run_mission_catalog_sync_job,
+                "interval",
+                minutes=catalog_interval,
+                id="system_mission_catalog_sync_job",
+                max_instances=1,
+                replace_existing=True,
+            )
+            logger.info(
+                "Mission catalog sync scheduled every %s minutes",
+                catalog_interval,
+            )
+        else:
+            scheduler.add_job(
+                run_mission_catalog_sync_job,
+                "cron",
+                hour=catalog_sync_hour,
+                minute=10,
+                timezone="UTC",
+                id="system_mission_catalog_sync_job",
+                max_instances=1,
+                replace_existing=True,
+            )
+            logger.info(
+                "Mission catalog sync scheduled daily at %02d:10 UTC",
+                catalog_sync_hour,
+            )
         auto_checklist_hour = int(getattr(settings, "slocum_auto_checklist_cron_hour", 23))
         auto_checklist_minute = int(getattr(settings, "slocum_auto_checklist_cron_minute", 30))
         scheduler.add_job(

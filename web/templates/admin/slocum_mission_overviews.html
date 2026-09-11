@@ -202,6 +202,19 @@
                     <div id="publicVisibilityStatus" class="mt-2"></div>
                 </div>
 
+                <div class="mb-4" id="archiveDeploymentSection">
+                    <label class="form-label">Archive deployment</label>
+                    <p class="text-muted small mb-2">
+                        Soft-archive this briefing row (<code>is_active=false</code>, status archived).
+                        Does not delete notes, goals, media, or mirrors. Catalog completion also
+                        archives linked deployments automatically.
+                    </p>
+                    <button type="button" class="btn btn-sm btn-outline-danger" id="archiveDeploymentBtn" disabled>
+                        <i class="fas fa-archive"></i> Archive Deployment
+                    </button>
+                    <div id="archiveDeploymentStatus" class="mt-2"></div>
+                </div>
+
                 <!-- Robots4Whales DMON review page -->
                 <div class="mb-4" id="robots4whalesSection">
                     <label class="form-label" for="robots4whalesUrlInput">Robots4Whales page (DMON detections)</label>
