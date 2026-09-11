@@ -219,6 +219,58 @@ def test_slocum_provision_links_when_erddap_arrives() -> None:
     assert len(list(session.exec(select(SlocumDeployment)).all())) == 1
 
 
+def test_slocum_completion_archives_unlinked_by_erddap_key() -> None:
+    """ST completed before catalog link still archives the matching live row."""
+    session = _session()
+    platform = CatalogPlatform(canonical_name="fundy", platform_family="slocum")
+    session.add(platform)
+    session.commit()
+    session.refresh(platform)
+    mission = CatalogMission(
+        id="cat-sl-late-link",
+        title="m229-Fundy",
+        deployment_number=229,
+        start_time=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        end_time=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        operational_state=CatalogOperationalState.COMPLETED.value,
+        sync_policy=CatalogSyncPolicy.ON_DEMAND.value,
+        platform_id=platform.id,
+    )
+    session.add(mission)
+    session.add(
+        CatalogMissionSource(
+            mission_id=mission.id,
+            provider_key="ceotr_erddap",
+            source_kind="erddap",
+            collection="tabledap",
+            external_ref="fundy_20260724_229_realtime",
+            source_variant="realtime",
+            enabled=True,
+            match_status="linked",
+        )
+    )
+    session.add(
+        SlocumDeployment(
+            name="Fundy",
+            glider_name="fundy",
+            mission_key="fundy_20260724_229",
+            erddap_dataset_id="fundy_20260724_229_realtime",
+            is_active=True,
+            status="active",
+            created_by_username="test",
+            catalog_mission_id=None,
+        )
+    )
+    session.commit()
+    result = SlocumHandler().on_completed(session, mission, dry_run=False)
+    dep = session.exec(select(SlocumDeployment)).first()
+    assert dep is not None
+    assert dep.is_active is False
+    assert dep.status == "completed"
+    assert dep.catalog_mission_id == mission.id
+    assert any(a.startswith("archived_slocum:") for a in result.actions)
+
+
 def test_slocum_reopen_reactivates_same_deployment() -> None:
     session = _session()
     platform = CatalogPlatform(canonical_name="fundy", platform_family="slocum")

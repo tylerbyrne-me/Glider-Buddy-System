@@ -399,6 +399,37 @@ class SlocumHandler:
                 )
             ).all()
         )
+        # Also catch unlinked live rows that match this mission's ERDDAP keys /
+        # deployment number (common when ST completed before live-link ran).
+        if not deployments:
+            for key in self._erddap_keys(session, mission):
+                mkey = slocum_mission_key(key) or key
+                rows = list(
+                    session.exec(
+                        select(SlocumDeployment).where(
+                            SlocumDeployment.mission_key == mkey
+                        )
+                    ).all()
+                )
+                deployments.extend(rows)
+                rows_by_dataset = list(
+                    session.exec(
+                        select(SlocumDeployment).where(
+                            SlocumDeployment.erddap_dataset_id == key
+                        )
+                    ).all()
+                )
+                deployments.extend(rows_by_dataset)
+            # Deduplicate by id
+            seen: set[int] = set()
+            unique: List[SlocumDeployment] = []
+            for dep in deployments:
+                if dep.id is None or dep.id in seen:
+                    continue
+                seen.add(dep.id)
+                unique.append(dep)
+            deployments = unique
+
         if not deployments:
             result.actions.append("no_slocum_deployment")
             return result
@@ -406,6 +437,9 @@ class SlocumHandler:
             if dry_run:
                 result.actions.append(f"would_archive_slocum:{dep.id}")
                 continue
+            if dep.catalog_mission_id != mission.id:
+                dep.catalog_mission_id = mission.id
+                result.actions.append(f"linked_slocum_on_complete:{dep.id}")
             dep.is_active = False
             dep.status = "completed"
             dep.updated_at_utc = _utcnow()

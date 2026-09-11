@@ -304,7 +304,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const loadStatus = async () => {
         try {
-            const status = await apiRequest('/api/team/mission-catalog/status');
+            const status = await apiRequest('/api/team/mission-catalog/status', 'GET');
             renderStatus(status);
         } catch (err) {
             renderStatus(null);
@@ -317,7 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
         listInfo.textContent = 'Loading…';
         try {
             const rows = await apiRequest(
-                `/api/team/mission-catalog/missions?operational_state=${encodeURIComponent(state.tab)}&limit=200`
+                `/api/team/mission-catalog/missions?operational_state=${encodeURIComponent(state.tab)}&limit=200`,
+                'GET'
             );
             state.missions = Array.isArray(rows) ? rows : [];
             if (state.selectedId && !state.missions.some((m) => m.id === state.selectedId)) {
@@ -336,7 +337,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         detailBody.innerHTML = '<p class="text-muted mb-0">Loading detail…</p>';
         try {
-            const detail = await apiRequest(`/api/team/mission-catalog/missions/${encodeURIComponent(state.selectedId)}`);
+            const detail = await apiRequest(
+                `/api/team/mission-catalog/missions/${encodeURIComponent(state.selectedId)}`,
+                'GET'
+            );
             renderDetail(detail);
         } catch (err) {
             detailBody.innerHTML = `<p class="text-danger mb-0">${escapeHtml(err.message || 'Failed to load detail')}</p>`;
@@ -346,7 +350,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadHealth = async () => {
         healthBody.textContent = 'Loading health…';
         try {
-            const health = await apiRequest('/api/team/mission-catalog/health');
+            const health = await apiRequest('/api/team/mission-catalog/health', 'GET');
             renderHealth(health);
             if (health && health.status) renderStatus(health.status);
         } catch (err) {
@@ -357,7 +361,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const loadUnmatched = async () => {
         unmatchedBody.innerHTML = '<tr><td colspan="5" class="text-muted">Loading…</td></tr>';
         try {
-            const rows = await apiRequest('/api/team/mission-catalog/unmatched-sources?source_kind=erddap');
+            const rows = await apiRequest(
+                '/api/team/mission-catalog/unmatched-sources?source_kind=erddap',
+                'GET'
+            );
             renderUnmatched(rows);
         } catch (err) {
             unmatchedBody.innerHTML = `<tr><td colspan="5" class="text-danger">${escapeHtml(err.message || 'Failed')}</td></tr>`;
@@ -370,7 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const result = await apiRequest(
                 `/api/team/mission-catalog/missions/${encodeURIComponent(missionId)}/enrollment?override=${encodeURIComponent(override)}`,
-                { method: 'POST' }
+                'POST'
             );
             out.classList.remove('d-none');
             out.textContent = JSON.stringify(result, null, 2);
@@ -387,7 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const result = await apiRequest(
                 `/api/team/mission-catalog/missions/${encodeURIComponent(missionId)}/provision`,
-                { method: 'POST' }
+                'POST'
             );
             out.classList.remove('d-none');
             out.textContent = JSON.stringify(result, null, 2);
