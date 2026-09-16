@@ -4,12 +4,20 @@ Live-key-safe catalog (ADR [0005](../../decisions/0005-mission-catalog-live-keys
 [0008](../../decisions/0008-catalog-durable-ops-state.md)) stays an **index**. Catalog
 UUIDs never replace `mission_id`, Slocum `mission_key`, routes, or disk folders.
 
-**Status (2026-09-15):** Historical identity repair landed (ADR 0009) — display-only
-labels, Slocum inactive resolve + no historical GET create, safe mission_key orphan
-repair, unique non-null `mission_key` migration `20260915_slocum_mk`. Verification:
-`python -m pytest app/ -v` → 124 passed; isolated migration upgrade/downgrade +
-duplicate preflight smoke OK. Browser smoke of label-aware dropdowns remains ops-side
-after deploy.
+**Status (2026-09-16): CLOSED — production rollover complete.** Historical identity
+(ADR 0009) + Slocum `mission_key` uniqueness deployed on prod: repair CLI / manual
+orphan cleanup (no duplicates), `alembic` head including `20260915_slocum_mk`,
+metadata still linked, active Slocum set verified (m224 / m226 / m228 / m231),
+label-aware nav + historical notes/reports/briefings smoke OK. Remaining ops
+follow-up (not blocking): many COMPLETED missions show expected
+`completed_final_sync_pending` while the batch final-sync queue drains — high-priority
+backlog check-in. Env `ACTIVE_*` remain break-glass for one compatibility release.
+
+**Status (2026-09-15):** Historical identity repair landed in repo (ADR 0009) —
+display-only labels, Slocum inactive resolve + no historical GET create, safe
+mission_key orphan repair, unique non-null `mission_key` migration
+`20260915_slocum_mk`. Local verification: `pytest app/` 124 passed; migration
+preflight/upgrade/downgrade smoke OK.
 
 **Status (2026-09-11):** Complete crossover ops state landed — durable audit/runs,
 write lock, truthful success markers, bounded final-sync work items, catalog-backed
@@ -122,9 +130,12 @@ Slocum briefing identity: one `SlocumDeployment` per suffix-neutral `mission_key
 
 ### Identity repair rollout
 
+**Prod (2026-09-16): complete** (resolver deployed; orphans repaired; migration applied;
+label UI + historical metadata verified).
+
 1. Deploy resolver / read-path fix (stops new empty orphans).
 2. `python -m app.cli.mission_catalog_repair_duplicates` (report) — archive output.
-3. `--apply` only for `safe_auto` empty active orphans; resolve `ambiguous_metadata` manually.
+3. `--apply` only for `safe_auto` empty active orphans; resolve `ambiguous_metadata` / empty inactive twins manually (delete `slocum_sfmc_snapshots` for the orphan first if `--apply` hits IntegrityError).
 4. `alembic upgrade head` (includes `20260915_slocum_mk` unique non-null `mission_key`).
 5. Enable label-aware UI (auth.js / admin selectors already prefer `/detail`).
 6. Smoke: active + historical WG/Slocum dropdowns (label ≠ key OK), historical notes/reports/media, final sync, reopen, rollback.
@@ -147,16 +158,21 @@ Rollback for labels: clients fall back to List[str] endpoints; no PK renames to 
 
 ## Acceptance checklist (crossover soak)
 
+**Prod close-out (2026-09-16):** items 9–10 + identity smoke signed off (no mission_key
+duplicates; metadata retained; active/historical membership + labels OK). Item 4
+final-sync **drain** still in progress as expected pending backlog — treat
+`completed_final_sync_pending` as healthy until failed/exhausted appear.
+
 1. **Status** — Banner: auto-apply + three `*_FROM_CATALOG` true; cadence ~30m; last success advances only on clean runs; partial runs visible separately; write lock idle between jobs.
 2. **m231 source-late** — `waiting_for_source` (expected severity) until ERDDAP → `ready`, one live row.
 3. **Forced_off** — Audit event with admin actor; public map drops within one job cycle after invalidate.
-4. **Completion + final sync** — One WG and one Slocum: COMPLETED, work item → done (or retryable failed without reactivation); history catalog-backed; reopen restores same live row.
+4. **Completion + final sync** — One WG and one Slocum: COMPLETED, work item → done (or retryable failed without reactivation); history catalog-backed; reopen restores same live row. **Post-rollover:** bulk COMPLETED queue may show many `completed_final_sync_pending` (expected) until batched drain finishes.
 5. **Unnumbered planned→active** — ST id only → numbered → start → enroll → source → one live row; forms/instruments stay attached.
 6. **Concurrency** — Two applies / provision retries / restart: stable UUIDs; lock prevents double live rows; Team provision returns 409 when busy.
 7. **Outage recovery** — Simulated provider failure recovers; failed work item manual retry works.
 8. **Rollback** — Export → disable flags → restore env → verify → return to catalog.
-9. **Migrations** — Alembic head includes `20260911_catalog_ops` and `20260915_slocum_mk` after duplicate + mission_key orphan repair.
-10. **Historical identity** — Completed Slocum info returns original deployment id; repeated historical loads do not grow row count; labels show in dropdowns while hrefs use storage keys.
+9. **Migrations** — Alembic head includes `20260911_catalog_ops` and `20260915_slocum_mk` after duplicate + mission_key orphan repair. ✅ prod 2026-09-16
+10. **Historical identity** — Completed Slocum info returns original deployment id; repeated historical loads do not grow row count; labels show in dropdowns while hrefs use storage keys. ✅ prod 2026-09-16
 
 ## Leave deferred (compatibility release)
 

@@ -25,5 +25,6 @@ One `SlocumDeployment` owns briefing metadata per suffix-neutral `mission_key`. 
 ## Consequences
 
 - UI shows `m###-SV3-<hull>` / `m###-<GliderName>` while navigating with unchanged keys.
-- Repair CLI removes only empty active orphans when a single inactive catalog-linked owner exists; ambiguous metadata groups stay manual.
+- Repair CLI removes only empty active orphans when a single inactive catalog-linked owner exists; ambiguous metadata groups stay manual. Orphans with `slocum_sfmc_snapshots` need snapshot delete first (CLI follow-up on backlog).
 - Rollout order: resolver first → repair report/apply → unique index → label-aware UI.
+- **Prod (2026-09-16):** Rollover closed; identity smoke signed off. Bulk `completed_final_sync_pending` on COMPLETED missions remains an expected drain, tracked as high-priority backlog check-in.

@@ -13,7 +13,7 @@ Start here. This folder is the source of truth for "how does this work."
 - [AIS vessel density map layer](./how-tos/vessel_density_map_layer.md) — DFO NW Atlantic AIS density rasters (2025 monthly) on home maps
 - [CIOPS-East ice forecast map layer](./how-tos/ciops_ice_map_layer.md) — MSC GeoMet sea ice concentration WMS on home maps
 - [NAVWARN map layer](./how-tos/navwarn_map_layer.md) — CCG navigational warnings on home maps (HTML scrape + cache)
-- [Mission catalog cutover](./how-tos/mission_catalog_cutover.md) — complete crossover (audit/lock/final-sync/history/TTL); empty env normal; env break-glass one release; display labels vs stable keys (ADR 0005 / 0008 / 0009)
+- [Mission catalog cutover](./how-tos/mission_catalog_cutover.md) — **CLOSED on prod 2026-09-16** (crossover + historical identity / mission_key uniqueness); empty env normal; env break-glass one release; display labels vs stable keys (ADR 0005 / 0008 / 0009); final-sync drain check-in on backlog
 
 - [Sensor Tracker Team browser](./how-tos/sensor_tracker_team_browser.md) — admin Team hub live inventory search
 - [Team Visualizations gallery](./how-tos/team_visualizations.md) — static fleet charts from Sensor Tracker

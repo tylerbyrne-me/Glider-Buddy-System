@@ -11,9 +11,11 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 ## High priority
 
-*(empty — 2026-09-03 walkthrough closed the prior four items; see [done.md](./done.md))*
+- [ ] **Catalog final-sync drain check-in (prod):** After 2026-09-16 historical-identity + mission_key rollover, Team Mission Catalog Health correctly shows many COMPLETED missions as `completed_final_sync_pending` (severity **expected**). Revisit in a few days: pending count should trend down (batch limit default 5/cycle). Escalate only `completed_final_sync_failed` / `completed_final_sync_exhausted`. UI: `/team/mission-catalog` Health + work items; knobs `MISSION_CATALOG_FINAL_SYNC_*` — [mission_catalog_cutover.md](../wiki/how-tos/mission_catalog_cutover.md) — opened 2026-09-16
 
 ## Medium priority
+
+- [ ] Repair CLI: `mission_catalog_repair_duplicates --apply` must delete (or clear) `slocum_sfmc_snapshots` before removing an orphan `SlocumDeployment` — ORM nulls `deployment_id` and hits NOT NULL (`IntegrityError` on prod 2026-09-16). Workaround: raw SQL delete snapshot then deployment — `app/cli/mission_catalog_repair_duplicates.py` — idea inbox 2026-09-16
 
 - [ ] Map vector layers — remaining follow-ups (home overlays + catalog toggles + DFO FMA set shipped; how-to [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md)): (0) commit/deploy feature + enable `map_vector_layers` on staging/prod when ready; (1) optional manifest `default_on` and/or per-mission/deployment layer id list (“always show”); (2) generalize `scripts/convert_map_layer_kml.py` beyond DSZ/safe-zone name splits; (3) wire selected layers onto public login map (`public_visible` + unauth routes); (4) further simplify large `dfo_fma_*` GeoJSON (~2–4 MB each) and/or re-fetch northern shrimp `OBJECTID` 19 when egisp stops 500ing — idea inbox 2026-08-08
 - [ ] In-app map layer uploader (admin): accept defined document types (e.g. KML/KMZ/GeoJSON — whitelist explicitly) and/or ArcGIS/ESRI REST links; ingest into `config/map_layers/` catalog (reuse `convert_map_layer_kml.py` / `fetch_map_layer_arcgis.py` logic); today is offline script + commit — [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md) — idea inbox 2026-08-09
