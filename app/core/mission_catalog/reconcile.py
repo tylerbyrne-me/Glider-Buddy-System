@@ -695,6 +695,7 @@ def _update_mission_from_discovery(
         discovered_policy = None
     override = _enrollment_override_value(mission)
     previous_policy = mission.sync_policy
+    previous_state = mission.operational_state
 
     if is_authority:
         # ST dates win, including None when ST reopens a deployment.
@@ -766,6 +767,45 @@ def _update_mission_from_discovery(
             )
             if not _shadow_enrollment_enabled():
                 mission.sync_policy = next_policy
+
+    # Append-only audit for automatic state / policy transitions.
+    if not dry_run and (
+        previous_state != mission.operational_state
+        or previous_policy != mission.sync_policy
+    ):
+        try:
+            from app.core.mission_catalog.audit import (
+                EVENT_STATE,
+                EVENT_SYNC_POLICY,
+                record_mission_event,
+            )
+
+            if previous_state != mission.operational_state:
+                record_mission_event(
+                    session,
+                    catalog_mission_id=mission.id,
+                    event_type=EVENT_STATE,
+                    actor="scheduler",
+                    source="reconcile",
+                    before={"operational_state": previous_state},
+                    after={"operational_state": mission.operational_state},
+                    message=f"provider={discovered.provider_key}",
+                )
+            if previous_policy != mission.sync_policy:
+                record_mission_event(
+                    session,
+                    catalog_mission_id=mission.id,
+                    event_type=EVENT_SYNC_POLICY,
+                    actor="scheduler",
+                    source="reconcile",
+                    before={"sync_policy": previous_policy},
+                    after={"sync_policy": mission.sync_policy},
+                    message=f"provider={discovered.provider_key}",
+                )
+        except Exception as audit_exc:
+            logger.warning(
+                "Catalog audit event failed for %s: %s", mission.id, audit_exc
+            )
 
     if not mission.has_manual_overrides:
         mission.title = discovered.title or mission.title

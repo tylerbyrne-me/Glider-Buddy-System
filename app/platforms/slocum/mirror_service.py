@@ -91,19 +91,57 @@ def is_historical_dataset(dataset_id: str) -> bool:
     """
     True when ``dataset_id`` is listed in config ``historical_slocum_datasets``,
     or shares a ``mission_key`` with any listed historical id (realtime/delayed siblings).
+
+    When the historical env list is empty and the mission catalog is enabled,
+    authority is catalog COMPLETED ∩ inactive linked SlocumDeployment.
     """
     if not dataset_id or not str(dataset_id).strip():
         return False
     trimmed = resolve_slocum_dataset_id(dataset_id)
     historical_ids = resolve_slocum_dataset_ids(settings.historical_slocum_datasets)
-    historical_id_set = set(historical_ids)
-    if trimmed in historical_id_set:
-        return True
-    key = slocum_mission_key(trimmed)
-    if not key:
+    if historical_ids:
+        historical_id_set = set(historical_ids)
+        if trimmed in historical_id_set:
+            return True
+        key = slocum_mission_key(trimmed)
+        if not key:
+            return False
+        historical_keys = {
+            slocum_mission_key(hid) for hid in historical_ids if slocum_mission_key(hid)
+        }
+        return key in historical_keys
+
+    # Empty env → catalog-backed historical membership when catalog is on.
+    try:
+        from app.core.infra.db import SQLModelSession, sqlite_engine
+        from app.core.mission_catalog.enablement import list_catalog_sync_targets
+        from app.feature_toggle_config import DEFAULT_FEATURE_TOGGLES
+
+        catalog_on = bool(DEFAULT_FEATURE_TOGGLES.get("mission_catalog", True))
+        try:
+            from app.core.infra import feature_toggles
+
+            catalog_on = bool(feature_toggles.is_feature_enabled("mission_catalog"))
+        except Exception:
+            pass
+        if not catalog_on:
+            return False
+        with SQLModelSession(sqlite_engine) as session:
+            keys = list_catalog_sync_targets(
+                "slocum", session, operational_state="completed"
+            )
+        if not keys:
+            return False
+        resolved = {resolve_slocum_dataset_id(k) for k in keys}
+        if trimmed in resolved:
+            return True
+        key = slocum_mission_key(trimmed)
+        if not key:
+            return False
+        hist_keys = {slocum_mission_key(k) for k in resolved if slocum_mission_key(k)}
+        return key in hist_keys
+    except Exception:
         return False
-    historical_keys = {slocum_mission_key(hid) for hid in historical_ids if slocum_mission_key(hid)}
-    return key in historical_keys
 
 
 def _read_meta(dataset_id: str) -> dict[str, Any]:

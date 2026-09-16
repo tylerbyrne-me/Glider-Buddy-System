@@ -176,6 +176,7 @@ async def set_catalog_enrollment_override(
     catalog_mission_id: str,
     override: str = Query(..., description="automatic | forced_on | forced_off"),
     session: SQLModelSession = Depends(get_db_session),
+    current_user: models.User = Depends(get_current_admin_user),
 ):
     from app.core.mission_catalog.workspace import (
         get_catalog_mission,
@@ -186,7 +187,12 @@ async def set_catalog_enrollment_override(
     if mission is None:
         raise HTTPException(status_code=404, detail="Catalog mission not found")
     try:
-        updated = set_enrollment_override(session, mission, override)
+        updated = set_enrollment_override(
+            session,
+            mission,
+            override,
+            actor=current_user.username or "admin",
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {
@@ -201,15 +207,50 @@ async def set_catalog_enrollment_override(
 async def retry_catalog_provisioning(
     catalog_mission_id: str,
     session: SQLModelSession = Depends(get_db_session),
+    current_user: models.User = Depends(get_current_admin_user),
 ):
+    from app.core.mission_catalog.audit import EVENT_PROVISION, record_mission_event
     from app.core.mission_catalog.provisioning import provision_mission
+    from app.core.mission_catalog.sync_lock import (
+        TEAM_LOCK_TIMEOUT_SECONDS,
+        catalog_write_lock,
+    )
     from app.core.mission_catalog.workspace import get_catalog_mission
     from app.services.sensor_tracker_sync_service import SensorTrackerSyncService
 
     mission = get_catalog_mission(session, catalog_mission_id)
     if mission is None:
         raise HTTPException(status_code=404, detail="Catalog mission not found")
-    result = provision_mission(session, mission, dry_run=False)
+    actor = current_user.username or "admin"
+    try:
+        with catalog_write_lock(
+            timeout_seconds=TEAM_LOCK_TIMEOUT_SECONDS,
+            actor=actor,
+            detail=f"provision:{catalog_mission_id}",
+        ):
+            result = provision_mission(session, mission, dry_run=False)
+            record_mission_event(
+                session,
+                catalog_mission_id=catalog_mission_id,
+                event_type=EVENT_PROVISION,
+                actor=actor,
+                source="team_api",
+                after={
+                    "readiness": result.readiness,
+                    "actions": result.actions,
+                    "errors": result.errors,
+                },
+                message="manual_provision_retry",
+                commit=True,
+            )
+    except TimeoutError:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Catalog apply/provision is already in progress on another worker. "
+                "Retry in a few seconds."
+            ),
+        )
     st_synced = False
     try:
         sync_service = SensorTrackerSyncService()
@@ -234,6 +275,62 @@ async def retry_catalog_provisioning(
     }
 
 
+@router.get("/api/team/mission-catalog/missions/{catalog_mission_id}/events")
+async def get_catalog_mission_events(
+    catalog_mission_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    from app.core.mission_catalog.audit import event_to_dict, list_mission_events
+    from app.core.mission_catalog.workspace import get_catalog_mission
+
+    mission = get_catalog_mission(session, catalog_mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Catalog mission not found")
+    events = list_mission_events(session, catalog_mission_id, limit=limit)
+    return {"events": [event_to_dict(e) for e in events]}
+
+
+@router.get("/api/team/mission-catalog/runs")
+async def get_catalog_reconcile_runs(
+    limit: int = Query(20, ge=1, le=100),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    from app.core.mission_catalog.audit import (
+        list_recent_reconcile_runs,
+        reconcile_run_to_dict,
+    )
+
+    runs = list_recent_reconcile_runs(session, limit=limit)
+    return {"runs": [reconcile_run_to_dict(r) for r in runs]}
+
+
+@router.post("/api/team/mission-catalog/missions/{catalog_mission_id}/final-sync/retry")
+async def retry_catalog_final_sync(
+    catalog_mission_id: str,
+    session: SQLModelSession = Depends(get_db_session),
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    from app.core.mission_catalog.final_sync import (
+        request_final_sync_retry,
+        work_item_to_dict,
+    )
+    from app.core.mission_catalog.workspace import get_catalog_mission
+
+    mission = get_catalog_mission(session, catalog_mission_id)
+    if mission is None:
+        raise HTTPException(status_code=404, detail="Catalog mission not found")
+    try:
+        item = request_final_sync_retry(
+            session,
+            catalog_mission_id,
+            actor=current_user.username or "admin",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"final_sync": work_item_to_dict(item)}
+
+
 @router.get("/api/team/mission-catalog/health")
 async def get_catalog_health_report(
     session: SQLModelSession = Depends(get_db_session),
@@ -241,6 +338,7 @@ async def get_catalog_health_report(
     from app.core.mission_catalog.health import build_catalog_health_report
 
     return build_catalog_health_report(session)
+
 
 
 @router.get("/api/team/mission-catalog/unmatched-sources")

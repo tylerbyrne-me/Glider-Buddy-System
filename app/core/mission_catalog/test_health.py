@@ -12,6 +12,7 @@ from app.core.models.database import (
     CatalogExternalIdentity,
     CatalogMission,
     CatalogMissionSource,
+    CatalogMissionWorkItem,
     CatalogPlatform,
     MissionOverview,
     SlocumDeployment,
@@ -34,6 +35,7 @@ def _session() -> Session:
             CatalogExternalIdentity.__table__,
             MissionOverview.__table__,
             SlocumDeployment.__table__,
+            CatalogMissionWorkItem.__table__,
         ],
     )
     return Session(engine)
@@ -57,6 +59,8 @@ def test_status_report_has_safe_flags(monkeypatch) -> None:
     assert "sync_interval_minutes" in report
     assert report["last_success_at"] is not None
     assert "is_startup_leader" in report
+    assert "this_worker_is_leader" in report
+    assert "write_lock" in report
 
 
 def test_health_reports_enrolled_but_not_ready() -> None:

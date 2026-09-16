@@ -189,11 +189,17 @@ def _live_wave_glider_keys(session: Session) -> List[str]:
     return keys
 
 
-def _slocum_live_key(deployment: SlocumDeployment) -> Optional[str]:
+def _slocum_live_key(
+    deployment: SlocumDeployment,
+    *,
+    prefer_alias: bool = True,
+) -> Optional[str]:
     dataset = (deployment.erddap_dataset_id or "").strip()
     if dataset:
-        alias = reverse_slocum_alias(dataset)
-        return (alias or dataset).strip() or None
+        if prefer_alias:
+            alias = reverse_slocum_alias(dataset)
+            return (alias or dataset).strip() or None
+        return dataset
     mission_key = (deployment.mission_key or "").strip()
     return mission_key or None
 
@@ -202,10 +208,26 @@ def _live_slocum_keys(session: Session, *, is_active: bool) -> List[str]:
     """Slocum keys from live deployment rows.
 
     Active: require ``is_active`` and ``catalog_mission_id`` ∈ enrolled
-    (ACTIVE ∧ CONTINUOUS). Historical: inactive deployments (enrollment not
-    required for historical warm lists).
+    (ACTIVE ∧ CONTINUOUS). Prefer short aliases when configured.
+
+    Historical (empty env): exactly COMPLETED catalog missions ∩ inactive
+    linked ``SlocumDeployment`` rows — not unrelated archived orphans.
+    Prefer canonical ERDDAP dataset ids (no alias) so the historical dropdown
+    stays consistent and navigable.
     """
     if not is_active:
+        completed_ids = {
+            m.id
+            for m in session.exec(
+                select(CatalogMission).where(
+                    CatalogMission.operational_state
+                    == CatalogOperationalState.COMPLETED.value
+                )
+            ).all()
+            if m.id
+        }
+        if not completed_ids:
+            return []
         deployments = session.exec(
             select(SlocumDeployment).where(
                 SlocumDeployment.is_active == False  # noqa: E712
@@ -214,7 +236,10 @@ def _live_slocum_keys(session: Session, *, is_active: bool) -> List[str]:
         keys: List[str] = []
         seen: Set[str] = set()
         for deployment in deployments:
-            key = _slocum_live_key(deployment)
+            catalog_id = getattr(deployment, "catalog_mission_id", None)
+            if not catalog_id or catalog_id not in completed_ids:
+                continue
+            key = _slocum_live_key(deployment, prefer_alias=False)
             if not key or key in seen:
                 continue
             seen.add(key)
@@ -237,7 +262,7 @@ def _live_slocum_keys(session: Session, *, is_active: bool) -> List[str]:
         catalog_id = getattr(deployment, "catalog_mission_id", None)
         if not catalog_id or catalog_id not in enrolled_ids:
             continue
-        key = _slocum_live_key(deployment)
+        key = _slocum_live_key(deployment, prefer_alias=True)
         if not key or key in seen:
             continue
         seen.add(key)

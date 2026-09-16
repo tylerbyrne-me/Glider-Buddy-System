@@ -1057,8 +1057,9 @@ class TelemetryHexbinRequest(BaseModel):
     include_bathymetry: bool = True
     max_missions: int = Field(default=40, ge=1, le=200)
     source_filter: str = Field(
-        default="wgms",
-        description="wgms | erddap | all — data source(s) to include",
+        default="all",
+        description="wgms | erddap | all — catalog track source(s) to include "
+        "(default all: WGMS realtime + past + ERDDAP)",
     )
 
 
@@ -1796,3 +1797,11 @@ class SlocumDeploymentInfoResponse(BaseModel):
     parsed_dataset: Optional[SlocumParsedDataset] = None
     sensor_tracker_deployment: Optional[SensorTrackerDeployment] = None
     sensor_tracker_instruments: List[MissionInstrumentRead] = []
+
+
+class NavigationMissionEntry(BaseModel):
+    """Display-aware navigation item; ``key`` is the stable route/storage id."""
+
+    key: str
+    label: str
+    catalog_mission_id: Optional[str] = None

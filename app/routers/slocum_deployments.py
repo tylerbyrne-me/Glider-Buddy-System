@@ -77,15 +77,34 @@ def _require_slocum_platform():
         raise HTTPException(status_code=403, detail="Slocum platform is disabled.")
 
 
-def _get_deployment_or_404(deployment_id: int, session: SQLModelSession) -> models.SlocumDeployment:
+def _get_deployment_or_404(
+    deployment_id: int,
+    session: SQLModelSession,
+    *,
+    include_inactive: bool = True,
+) -> models.SlocumDeployment:
+    """Load deployment by primary key.
+
+    Historical briefing owners are inactive after catalog completion; reads and
+    metadata edits must still resolve them. Active-only listing stays elsewhere.
+    """
     deployment = session.get(models.SlocumDeployment, deployment_id)
-    if not deployment or not deployment.is_active:
+    if not deployment:
+        raise HTTPException(status_code=404, detail="Deployment not found")
+    if not include_inactive and not deployment.is_active:
         raise HTTPException(status_code=404, detail="Deployment not found")
     return deployment
 
 
-def _resolve_deployment_by_dataset(dataset_id: str, session: SQLModelSession) -> Optional[models.SlocumDeployment]:
-    return resolve_deployment_for_dataset(session, dataset_id)
+def _resolve_deployment_by_dataset(
+    dataset_id: str,
+    session: SQLModelSession,
+    *,
+    include_inactive: bool = False,
+) -> Optional[models.SlocumDeployment]:
+    return resolve_deployment_for_dataset(
+        session, dataset_id, include_inactive=include_inactive
+    )
 
 
 def _get_user_sensor_tracker_token(session: SQLModelSession, username: str) -> Optional[str]:
@@ -268,13 +287,29 @@ def get_dataset_info(
     current_user: models.User = Depends(get_current_active_user),
     session: SQLModelSession = Depends(get_db_session),
 ):
-    """Briefing bundle for a Slocum ERDDAP dataset (auto-creates deployment metadata if needed)."""
+    """
+    Briefing bundle for a Slocum ERDDAP dataset.
+
+    Historical datasets resolve the completed briefing owner only (no auto-create).
+    Active datasets may get-or-create metadata for first-time ops.
+    """
     _require_slocum_platform()
-    deployment = get_or_create_deployment_for_dataset(
-        session,
-        dataset_id,
-        created_by_username=current_user.username,
-    )
+    from app.platforms.slocum.mirror_service import is_historical_dataset
+
+    if is_historical_dataset(dataset_id):
+        deployment = get_or_create_deployment_for_dataset(
+            session,
+            dataset_id,
+            created_by_username=current_user.username,
+            allow_create=False,
+            update_erddap_dataset_id=False,
+        )
+    else:
+        deployment = get_or_create_deployment_for_dataset(
+            session,
+            dataset_id,
+            created_by_username=current_user.username,
+        )
     return _build_deployment_info(deployment, session, dataset_id=dataset_id)
 
 
@@ -285,9 +320,9 @@ def link_dataset_deployment(
     session: SQLModelSession = Depends(get_db_session),
 ):
     """
-    Compatibility alias for get-or-create deployment metadata for a dataset.
+    Admin get-or-create deployment metadata for a dataset.
 
-    Prefer relying on GET /datasets/{dataset_id}/info, which now auto-creates.
+    Historical GET ``/info`` is resolve-only; use this when explicitly provisioning.
     """
     _require_slocum_platform()
     deployment = get_or_create_deployment_for_dataset(

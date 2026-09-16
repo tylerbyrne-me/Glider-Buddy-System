@@ -636,6 +636,20 @@ def write_public_map_cache(bundle: Dict[str, Any]) -> None:
     replace_path_with_retries(tmp, path)
 
 
+def invalidate_public_map_cache() -> bool:
+    """Remove the on-disk public-map bundle so the next read rebuilds promptly."""
+    path = _bundle_path()
+    try:
+        if path.is_file():
+            path.unlink()
+            logger.info("PUBLICMAP: cache invalidated (%s)", path)
+            return True
+        return False
+    except Exception as exc:
+        logger.warning("PUBLICMAP: cache invalidate failed: %s", exc)
+        return False
+
+
 def read_public_map_cache() -> Optional[Dict[str, Any]]:
     path = _bundle_path()
     if not path.is_file():

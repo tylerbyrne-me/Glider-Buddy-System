@@ -14,9 +14,12 @@ from .enums import (
     CatalogIdentityKind,
     CatalogMatchStatus,
     CatalogOperationalState,
+    CatalogReconcileRunStatus,
     CatalogSourceKind,
     CatalogSourceVariant,
     CatalogSyncPolicy,
+    CatalogWorkItemStatus,
+    CatalogWorkItemType,
     UserRoleEnum,
     VmtCreatedVia,
     VmtCustodyStatus,
@@ -1378,6 +1381,113 @@ class CatalogMission(SQLModel, table=True):
     platform: Optional[CatalogPlatform] = Relationship(back_populates="missions")
     identities: List["CatalogExternalIdentity"] = Relationship(back_populates="mission")
     sources: List["CatalogMissionSource"] = Relationship(back_populates="mission")
+    events: List["CatalogMissionEvent"] = Relationship(back_populates="mission")
+    work_items: List["CatalogMissionWorkItem"] = Relationship(back_populates="mission")
+
+
+class CatalogMissionEvent(SQLModel, table=True):
+    """Append-only audit of catalog mission lifecycle / enrollment / provision."""
+
+    __tablename__ = "catalog_mission_events"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    catalog_mission_id: str = SQLModelField(
+        foreign_key="catalog_missions.id",
+        index=True,
+    )
+    event_type: str = SQLModelField(index=True)
+    actor: str = SQLModelField(
+        default="system",
+        index=True,
+        description="scheduler | cli | username",
+    )
+    source: str = SQLModelField(
+        default="reconcile",
+        index=True,
+        description="reconcile | team_api | handler | final_sync | cli",
+    )
+    before_json: Optional[Dict] = SQLModelField(default=None, sa_column=Column(JSON))
+    after_json: Optional[Dict] = SQLModelField(default=None, sa_column=Column(JSON))
+    message: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    created_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
+    mission: CatalogMission = Relationship(back_populates="events")
+
+
+class CatalogReconcileRun(SQLModel, table=True):
+    """Persisted catalog reconcile / apply run outcome."""
+
+    __tablename__ = "catalog_reconcile_runs"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    started_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+    finished_at_utc: Optional[datetime] = SQLModelField(default=None, index=True)
+    trigger: str = SQLModelField(
+        default="scheduler",
+        index=True,
+        description="scheduler | cli | team_api | startup",
+    )
+    dry_run: bool = SQLModelField(default=True, index=True)
+    status: str = SQLModelField(
+        default=CatalogReconcileRunStatus.DRY_RUN.value,
+        index=True,
+    )
+    gate_clean: Optional[bool] = SQLModelField(default=None)
+    counts_json: Optional[Dict] = SQLModelField(default=None, sa_column=Column(JSON))
+    provision_acted: int = SQLModelField(default=0)
+    provision_errors: int = SQLModelField(default=0)
+    final_sync_acted: int = SQLModelField(default=0)
+    final_sync_errors: int = SQLModelField(default=0)
+    summary: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    actor: str = SQLModelField(default="scheduler", index=True)
+
+
+class CatalogMissionWorkItem(SQLModel, table=True):
+    """Durable per-mission background work (e.g. final_sync)."""
+
+    __tablename__ = "catalog_mission_work_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "catalog_mission_id",
+            "work_type",
+            name="uq_catalog_mission_work_item",
+        ),
+    )
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    catalog_mission_id: str = SQLModelField(
+        foreign_key="catalog_missions.id",
+        index=True,
+    )
+    work_type: str = SQLModelField(
+        default=CatalogWorkItemType.FINAL_SYNC.value,
+        index=True,
+    )
+    status: str = SQLModelField(
+        default=CatalogWorkItemStatus.PENDING.value,
+        index=True,
+    )
+    attempts: int = SQLModelField(default=0)
+    max_attempts: int = SQLModelField(default=10)
+    next_retry_at_utc: Optional[datetime] = SQLModelField(default=None, index=True)
+    last_attempt_at_utc: Optional[datetime] = SQLModelField(default=None)
+    last_error: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    result_json: Optional[Dict] = SQLModelField(default=None, sa_column=Column(JSON))
+    created_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+    )
+
+    mission: CatalogMission = Relationship(back_populates="work_items")
 
 
 class CatalogExternalIdentity(SQLModel, table=True):

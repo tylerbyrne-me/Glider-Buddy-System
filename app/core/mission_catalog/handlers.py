@@ -24,14 +24,59 @@ from app.core.models.database import (
     MissionOverview,
     SlocumDeployment,
 )
-from app.core.models.enums import CatalogIdentityKind, CatalogSourceVariant
+from app.core.models.enums import (
+    CatalogIdentityKind,
+    CatalogMatchStatus,
+    CatalogSourceVariant,
+)
 from app.core.utils import deployment_mission_code_from_mission_id, slocum_mission_key
 
 logger = logging.getLogger(__name__)
 
+_BAD_MATCH = {
+    CatalogMatchStatus.STALE.value,
+    CatalogMatchStatus.CONFLICT.value,
+}
+
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _usable_sources(sources: List[CatalogMissionSource]) -> List[CatalogMissionSource]:
+    """Exclude STALE/CONFLICT sources from readiness and preference."""
+    return [
+        s
+        for s in sources
+        if (s.match_status or "").lower() not in _BAD_MATCH and bool(s.enabled)
+    ]
+
+
+def _prefer_variant(
+    sources: List[CatalogMissionSource],
+    *,
+    prefer_realtime: bool,
+) -> List[CatalogMissionSource]:
+    usable = _usable_sources(sources)
+    if prefer_realtime:
+        preferred = [
+            s
+            for s in usable
+            if "realtime" in (s.collection or "").lower()
+            or "realtime" in (s.external_ref or "").lower()
+            or (s.source_variant or "").lower() == CatalogSourceVariant.REALTIME.value
+        ]
+    else:
+        preferred = [
+            s
+            for s in usable
+            if "past" in (s.collection or "").lower()
+            or "delayed" in (s.collection or "").lower()
+            or "delayed" in (s.external_ref or "").lower()
+            or (s.source_variant or "").lower()
+            in (CatalogSourceVariant.DELAYED.value, "past")
+        ]
+    return preferred or usable
 
 
 def _deployment_code(mission: CatalogMission, session: Session) -> Optional[str]:
@@ -85,12 +130,16 @@ class WaveGliderHandler:
                 )
             ).all()
         )
-        realtime = [
-            s
-            for s in sources
-            if "realtime" in (s.collection or "").lower()
-            or (s.source_variant or "").lower() == CatalogSourceVariant.REALTIME.value
-        ]
+        prefer_realtime = (mission.operational_state or "").lower() != "completed"
+        realtime = _prefer_variant(sources, prefer_realtime=prefer_realtime)
+        if prefer_realtime:
+            realtime = [
+                s
+                for s in realtime
+                if "realtime" in (s.collection or "").lower()
+                or (s.source_variant or "").lower()
+                == CatalogSourceVariant.REALTIME.value
+            ]
         if not realtime:
             reasons.append("waiting_for_source")
         overviews = list(
@@ -221,6 +270,15 @@ class WaveGliderHandler:
         elif past:
             result.actions.append("would_prefer_past_wgms_source")
         result.actions.append("retained_overview")
+        if not dry_run:
+            try:
+                from app.core.mission_catalog.final_sync import ensure_final_sync_work_item
+
+                ensure_final_sync_work_item(session, mission, actor="handler", dry_run=False)
+                session.commit()
+                result.actions.append("final_sync_enqueued")
+            except Exception as exc:
+                logger.warning("Failed to enqueue final sync for %s: %s", mission.id, exc)
         return result
 
 
@@ -242,13 +300,17 @@ class SlocumHandler:
         ).all():
             if identity.external_id:
                 keys.append(identity.external_id.strip())
-        for source in session.exec(
-            select(CatalogMissionSource).where(
-                CatalogMissionSource.mission_id == mission.id,
-                CatalogMissionSource.source_kind == "erddap",
-                CatalogMissionSource.enabled == True,  # noqa: E712
-            )
-        ).all():
+        prefer_realtime = (mission.operational_state or "").lower() != "completed"
+        sources = list(
+            session.exec(
+                select(CatalogMissionSource).where(
+                    CatalogMissionSource.mission_id == mission.id,
+                    CatalogMissionSource.source_kind == "erddap",
+                    CatalogMissionSource.enabled == True,  # noqa: E712
+                )
+            ).all()
+        )
+        for source in _prefer_variant(sources, prefer_realtime=prefer_realtime):
             if source.external_ref:
                 keys.append(source.external_ref.strip())
         # Deduplicate preserving order
@@ -464,6 +526,14 @@ class SlocumHandler:
             result.actions.append("prefer_delayed_erddap")
         if not dry_run:
             session.commit()
+            try:
+                from app.core.mission_catalog.final_sync import ensure_final_sync_work_item
+
+                ensure_final_sync_work_item(session, mission, actor="handler", dry_run=False)
+                session.commit()
+                result.actions.append("final_sync_enqueued")
+            except Exception as exc:
+                logger.warning("Failed to enqueue final sync for %s: %s", mission.id, exc)
         return result
 
 

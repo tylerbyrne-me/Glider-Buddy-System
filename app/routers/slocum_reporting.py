@@ -46,7 +46,9 @@ async def list_slocum_reports(
     """List generated Slocum reports for a dataset (readable by any authenticated Slocum user)."""
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=403, detail="Slocum platform is disabled.")
-    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    deployment = resolve_deployment_for_dataset(
+        session, dataset_id, include_inactive=True
+    )
     mission_key = resolved_slocum_mission_key(dataset_id)
     dir_names = slocum_report_storage_dir_names(
         dataset_id,

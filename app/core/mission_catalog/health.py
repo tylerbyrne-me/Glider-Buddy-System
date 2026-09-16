@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
 
 from app.core.models.database import (
     CatalogMission,
     CatalogMissionSource,
+    CatalogMissionWorkItem,
     MissionOverview,
     SlocumDeployment,
 )
@@ -16,7 +17,45 @@ from app.core.models.enums import (
     CatalogEnrollmentOverride,
     CatalogOperationalState,
     CatalogSyncPolicy,
+    CatalogWorkItemStatus,
+    CatalogWorkItemType,
 )
+
+# Readiness reasons that are expected (source-late / not yet numbered) vs faults.
+_EXPECTED_READINESS = {
+    "waiting_for_source",
+    "waiting_for_start",
+    "waiting_for_deployment_number",
+    "waiting_for_live_row",
+}
+
+
+def _issue_severity(issue: str, reasons: Optional[List[str]] = None) -> str:
+    if issue in (
+        "enrolled_but_not_ready",
+        "missing_source_links",
+        "completed_final_sync_pending",
+    ):
+        reasons = reasons or []
+        if reasons and all(r in _EXPECTED_READINESS for r in reasons):
+            return "expected"
+        if issue == "completed_final_sync_pending":
+            return "expected"
+        if issue == "enrolled_but_not_ready" and any(
+            r in _EXPECTED_READINESS for r in reasons
+        ):
+            return "expected"
+    if issue in (
+        "completed_final_sync_failed",
+        "completed_final_sync_exhausted",
+        "duplicate_overviews",
+        "duplicate_active_slocum_deployments",
+        "completed_still_continuous",
+        "forced_off_but_continuous",
+        "stale_last_success",
+    ):
+        return "fault"
+    return "warning"
 
 
 def build_catalog_health_report(session: Session) -> Dict[str, Any]:
@@ -41,6 +80,7 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                     "mission_id": mission.id,
                     "title": mission.title,
                     "issue": "completed_still_continuous",
+                    "severity": _issue_severity("completed_still_continuous"),
                 }
             )
         if (
@@ -53,6 +93,7 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                     "mission_id": mission.id,
                     "title": mission.title,
                     "issue": "active_without_start_time",
+                    "severity": _issue_severity("active_without_start_time"),
                 }
             )
         if (
@@ -66,6 +107,7 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                     "mission_id": mission.id,
                     "title": mission.title,
                     "issue": "forced_off_but_continuous",
+                    "severity": _issue_severity("forced_off_but_continuous"),
                 }
             )
 
@@ -104,6 +146,9 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                         "issue": "enrolled_but_not_ready",
                         "readiness": readiness,
                         "reasons": reasons,
+                        "severity": _issue_severity(
+                            "enrolled_but_not_ready", reasons
+                        ),
                     }
                 )
             if not sources:
@@ -112,6 +157,7 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                         "mission_id": mission.id,
                         "title": mission.title,
                         "issue": "missing_source_links",
+                        "severity": _issue_severity("missing_source_links"),
                     }
                 )
 
@@ -124,6 +170,51 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                         "title": mission.title,
                         "issue": "completed_without_archived_live_row",
                         "deployment_ids": [d.id for d in active_live],
+                        "severity": _issue_severity(
+                            "completed_without_archived_live_row"
+                        ),
+                    }
+                )
+            work = session.exec(
+                select(CatalogMissionWorkItem).where(
+                    CatalogMissionWorkItem.catalog_mission_id == mission.id,
+                    CatalogMissionWorkItem.work_type
+                    == CatalogWorkItemType.FINAL_SYNC.value,
+                )
+            ).first()
+            if work is None or work.status in (
+                CatalogWorkItemStatus.PENDING.value,
+                CatalogWorkItemStatus.RUNNING.value,
+            ):
+                issues.append(
+                    {
+                        "mission_id": mission.id,
+                        "title": mission.title,
+                        "issue": "completed_final_sync_pending",
+                        "work_status": work.status if work else None,
+                        "severity": _issue_severity("completed_final_sync_pending"),
+                    }
+                )
+            elif work.status == CatalogWorkItemStatus.FAILED.value:
+                issues.append(
+                    {
+                        "mission_id": mission.id,
+                        "title": mission.title,
+                        "issue": "completed_final_sync_failed",
+                        "last_error": work.last_error,
+                        "severity": _issue_severity("completed_final_sync_failed"),
+                    }
+                )
+            elif work.status == CatalogWorkItemStatus.EXHAUSTED.value:
+                issues.append(
+                    {
+                        "mission_id": mission.id,
+                        "title": mission.title,
+                        "issue": "completed_final_sync_exhausted",
+                        "last_error": work.last_error,
+                        "severity": _issue_severity(
+                            "completed_final_sync_exhausted"
+                        ),
                     }
                 )
 
@@ -134,6 +225,7 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                     "title": mission.title,
                     "issue": "duplicate_overviews",
                     "overview_ids": [o.mission_id for o in overviews],
+                    "severity": _issue_severity("duplicate_overviews"),
                 }
             )
         active_slocum = [d for d in slocum if d.is_active]
@@ -144,6 +236,9 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                     "title": mission.title,
                     "issue": "duplicate_active_slocum_deployments",
                     "deployment_ids": [d.id for d in active_slocum],
+                    "severity": _issue_severity(
+                        "duplicate_active_slocum_deployments"
+                    ),
                 }
             )
 
@@ -195,8 +290,13 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                 "title": None,
                 "issue": "stale_last_success",
                 "last_success_at": status.get("last_success_at"),
+                "severity": _issue_severity("stale_last_success"),
             }
         )
+
+    fault_count = sum(1 for i in issues if i.get("severity") == "fault")
+    expected_count = sum(1 for i in issues if i.get("severity") == "expected")
+    warning_count = sum(1 for i in issues if i.get("severity") == "warning")
 
     return {
         "mission_count": len(missions),
@@ -210,4 +310,10 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
         "status": status,
         "issues": issues[:200],
         "issue_count": len(issues),
+        "fault_count": fault_count,
+        "expected_count": expected_count,
+        "warning_count": warning_count,
+        "overall_severity": (
+            "fault" if fault_count else ("warning" if warning_count else "ok")
+        ),
     }

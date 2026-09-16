@@ -94,9 +94,18 @@ document.addEventListener('DOMContentLoaded', () => {
         const age = status.last_success_age_seconds != null
             ? `${Math.round(status.last_success_age_seconds / 60)} min ago`
             : 'never';
-        const leader = status.is_startup_leader == null
-            ? 'leader=?'
-            : `leader=${status.is_startup_leader}`;
+        const leader = status.this_worker_is_leader == null
+            ? (status.is_startup_leader == null ? 'this_worker_leader=?' : `this_worker_leader=${status.is_startup_leader}`)
+            : `this_worker_leader=${status.this_worker_is_leader}`;
+        const lock = status.write_lock && status.write_lock.in_progress
+            ? `lock=busy(${status.write_lock.actor || '?'})`
+            : 'lock=idle';
+        const partial = status.last_partial_at
+            ? `last_partial=${escapeHtml(String(status.last_partial_at).slice(0, 19))}`
+            : 'last_partial=—';
+        const job = status.scheduler_job_outcome
+            ? `job=${escapeHtml(status.scheduler_job_outcome.outcome || '?')}`
+            : 'job=?';
         statusEl.className = status.is_stale
             ? 'alert alert-warning py-2 mb-3'
             : 'alert alert-success py-2 mb-3';
@@ -104,6 +113,9 @@ document.addEventListener('DOMContentLoaded', () => {
             `<strong>Cadence:</strong> ${escapeHtml(status.cadence || '—')}`,
             `<strong>Last success:</strong> ${escapeHtml(age)}`,
             escapeHtml(leader),
+            escapeHtml(lock),
+            partial,
+            job,
             escapeHtml(flags),
         ].join(' · ');
     };
@@ -153,10 +165,14 @@ document.addEventListener('DOMContentLoaded', () => {
         detailBadge.textContent = detail.readiness || detail.operational_state || 'detail';
         const reasons = (detail.readiness_reasons || []).map((r) => `<li><code>${escapeHtml(r)}</code></li>`).join('')
             || '<li class="text-muted">none</li>';
-        const sources = (detail.sources || []).map((s) => `
-            <li><code>${escapeHtml(s.kind)}</code> ${escapeHtml(s.external_ref || s.collection || '')}
-            <span class="text-muted">(${escapeHtml(s.variant || '—')} / ${escapeHtml(s.match_status || '—')})</span></li>
-        `).join('') || '<li class="text-muted">No sources linked</li>';
+        const sources = (detail.sources || []).map((s) => {
+            const match = (s.match_status || '—').toLowerCase();
+            const staleBadge = (match === 'stale' || match === 'conflict')
+                ? `<span class="badge text-bg-warning ms-1">${escapeHtml(match)}</span>`
+                : `<span class="text-muted">(${escapeHtml(s.variant || '—')} / ${escapeHtml(s.match_status || '—')})</span>`;
+            return `<li><code>${escapeHtml(s.kind)}</code> ${escapeHtml(s.external_ref || s.collection || '')}
+            ${staleBadge}</li>`;
+        }).join('') || '<li class="text-muted">No sources linked</li>';
         const overviews = (detail.overviews || []).map((o) => `<li><code>${escapeHtml(o.mission_id)}</code></li>`).join('')
             || '<li class="text-muted">None</li>';
         const slocum = (detail.slocum_deployments || []).map((d) => `
@@ -219,6 +235,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 <strong class="small">Instruments (sample)</strong>
                 <ul class="small mb-0">${instruments}</ul>
             </div>
+            <div class="mb-3">
+                <strong class="small">Final sync</strong>
+                <div class="small" id="mcFinalSyncState">${(() => {
+                    const fs = detail.final_sync;
+                    if (!fs) return '<span class="text-muted">No work item</span>';
+                    return `<code>${escapeHtml(fs.status)}</code> · attempts ${escapeHtml(fs.attempts)}/${escapeHtml(fs.max_attempts)}`
+                        + (fs.last_error ? ` · <span class="text-danger">${escapeHtml(fs.last_error)}</span>` : '');
+                })()}</div>
+            </div>
+            <div class="mb-3">
+                <strong class="small">Recent events</strong>
+                <ul class="small mb-0">${(detail.recent_events || []).slice(0, 8).map((e) => `
+                    <li><code>${escapeHtml(e.event_type)}</code> by ${escapeHtml(e.actor)}
+                    <span class="text-muted">${escapeHtml((e.created_at_utc || '').slice(0, 19))}</span>
+                    ${e.message ? ` — ${escapeHtml(e.message)}` : ''}</li>
+                `).join('') || '<li class="text-muted">None</li>'}</ul>
+            </div>
             <div class="mb-3 d-flex flex-wrap gap-2">${linkHtml}</div>
             <div class="border-top pt-3">
                 <label class="form-label small mb-1" for="mcOverrideSelect">Enrollment override</label>
@@ -230,8 +263,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     </select>
                     <button type="button" class="btn btn-outline-warning" id="mcOverrideBtn">Apply override</button>
                 </div>
-                <button type="button" class="btn btn-sm btn-primary" id="mcProvisionBtn">Retry provision / deep ST sync</button>
-                <div class="form-text">Apply does not run catalog reconcile. Forced_on enrolls early; completion still wins.</div>
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                    <button type="button" class="btn btn-sm btn-primary" id="mcProvisionBtn">Retry provision / deep ST sync</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="mcFinalSyncBtn">Retry final sync</button>
+                </div>
+                <div class="form-text">Apply does not run catalog reconcile. Forced_on enrolls early; completion still wins. Final sync never reactivates a completed mission.</div>
                 <pre class="small bg-body-secondary p-2 mt-2 mb-0 rounded d-none" id="mcActionOut"></pre>
             </div>
         `;
@@ -239,6 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
         overrideSelect.value = detail.enrollment_override || 'automatic';
         document.getElementById('mcOverrideBtn').addEventListener('click', () => applyOverride(detail.id, overrideSelect.value));
         document.getElementById('mcProvisionBtn').addEventListener('click', () => retryProvision(detail.id));
+        document.getElementById('mcFinalSyncBtn').addEventListener('click', () => retryFinalSync(detail.id));
     };
 
     const renderHealth = (health) => {
@@ -246,16 +283,23 @@ document.addEventListener('DOMContentLoaded', () => {
             healthBody.textContent = 'Health unavailable.';
             return;
         }
-        const issues = (health.issues || []).map((issue) => `
+        const issues = (health.issues || []).map((issue) => {
+            const sev = (issue.severity || 'warning').toLowerCase();
+            let badge = 'text-bg-secondary';
+            if (sev === 'fault') badge = 'text-bg-danger';
+            else if (sev === 'expected') badge = 'text-bg-info';
+            else if (sev === 'warning') badge = 'text-bg-warning';
+            return `
             <tr>
-                <td><code>${escapeHtml(issue.issue)}</code></td>
+                <td><span class="badge ${badge}">${escapeHtml(sev)}</span>
+                    <code class="ms-1">${escapeHtml(issue.issue)}</code></td>
                 <td>${issue.mission_id
                     ? `<button type="button" class="btn btn-link btn-sm p-0" data-mc-jump="${escapeHtml(issue.mission_id)}">${escapeHtml(shortId(issue.mission_id))}</button>`
                     : '—'}</td>
                 <td>${escapeHtml(issue.title || '—')}</td>
-                <td class="small">${escapeHtml(JSON.stringify(issue.reasons || issue.readiness || ''))}</td>
-            </tr>
-        `).join('') || '<tr><td colspan="4" class="text-muted">No issues</td></tr>';
+                <td class="small">${escapeHtml(JSON.stringify(issue.reasons || issue.readiness || issue.work_status || ''))}</td>
+            </tr>`;
+        }).join('') || '<tr><td colspan="4" class="text-muted">No issues</td></tr>';
         healthBody.innerHTML = `
             <div class="mb-2">
                 Missions <strong>${escapeHtml(health.mission_count)}</strong> ·
@@ -264,6 +308,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 linked Slocum <strong>${escapeHtml(health.linked_slocum_deployments)}</strong> ·
                 unmatched <strong>${escapeHtml(health.unmatched_sources)}</strong> ·
                 issues <strong>${escapeHtml(health.issue_count)}</strong>
+                (fault ${escapeHtml(health.fault_count || 0)} /
+                 expected ${escapeHtml(health.expected_count || 0)} /
+                 warning ${escapeHtml(health.warning_count || 0)}) ·
+                overall <strong>${escapeHtml(health.overall_severity || '—')}</strong>
             </div>
             <div class="table-responsive">
                 <table class="table table-sm table-striped align-middle mb-0">
@@ -403,6 +451,22 @@ document.addEventListener('DOMContentLoaded', () => {
             await loadDetail();
         } catch (err) {
             showToast(err.message || 'Provision failed', 'error');
+        }
+    };
+
+    const retryFinalSync = async (missionId) => {
+        const out = document.getElementById('mcActionOut');
+        try {
+            const result = await apiRequest(
+                `/api/team/mission-catalog/missions/${encodeURIComponent(missionId)}/final-sync/retry`,
+                'POST'
+            );
+            out.classList.remove('d-none');
+            out.textContent = JSON.stringify(result, null, 2);
+            showToast('Final sync queued for retry', 'success');
+            await loadDetail();
+        } catch (err) {
+            showToast(err.message || 'Final sync retry failed', 'error');
         }
     };
 

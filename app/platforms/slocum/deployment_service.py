@@ -5,6 +5,11 @@ SlocumDeployment is the briefing/metadata owner for an ERDDAP mission (shared by
 realtime and delayed datasets via ``mission_key``), analogous to Wave Glider
 MissionOverview for a mission folder id. Rows are get-or-created from the
 dataset id — no separate manual "link" step.
+
+Identity model:
+- One metadata-owning ``SlocumDeployment`` per suffix-neutral ``mission_key``.
+- ``_realtime`` and ``_delayed`` are source variants on the same deployment,
+  not sibling briefing rows.
 """
 
 from __future__ import annotations
@@ -34,6 +39,8 @@ def _is_alias_only_identity(deployment: models.SlocumDeployment) -> bool:
 def _find_alias_only_deployment(
     session: SQLModelSession,
     parsed: dict[str, Any],
+    *,
+    include_inactive: bool,
 ) -> Optional[models.SlocumDeployment]:
     """
     Match legacy rows that stored only the env alias as mission_key / erddap_dataset_id.
@@ -43,12 +50,12 @@ def _find_alias_only_deployment(
     glider_name = parsed["glider_name"]
     start_date = parsed["start_date"]
     dep_number = str(parsed["deployment_number"])
-    candidates = session.exec(
-        select(models.SlocumDeployment).where(
-            models.SlocumDeployment.is_active == True,  # noqa: E712
-            models.SlocumDeployment.glider_name == glider_name,
-        )
-    ).all()
+    stmt = select(models.SlocumDeployment).where(
+        models.SlocumDeployment.glider_name == glider_name,
+    )
+    if not include_inactive:
+        stmt = stmt.where(models.SlocumDeployment.is_active == True)  # noqa: E712
+    candidates = session.exec(stmt).all()
     matches: list[models.SlocumDeployment] = []
     for dep in candidates:
         if not _is_alias_only_identity(dep):
@@ -87,9 +94,14 @@ def _prefer_deployment(
         return next(iter(unique.values()))
 
     def sort_key(dep: models.SlocumDeployment) -> tuple:
+        # Prefer active when both exist (live ops), then catalog-linked, then
+        # rows that already own briefing artifacts, then oldest.
+        is_active = 0 if dep.is_active else 1
+        has_catalog = 0 if getattr(dep, "catalog_mission_id", None) else 1
         has_doc = 0 if dep.document_url else 1
+        has_reports = 0 if (dep.weekly_report_url or dep.end_of_mission_report_url) else 1
         created = dep.created_at_utc or datetime.min.replace(tzinfo=timezone.utc)
-        return (has_doc, created, dep.id or 0)
+        return (is_active, has_catalog, has_doc, has_reports, created, dep.id or 0)
 
     return sorted(unique.values(), key=sort_key)[0]
 
@@ -97,7 +109,16 @@ def _prefer_deployment(
 def resolve_deployment_for_dataset(
     session: SQLModelSession,
     dataset_id: str,
+    *,
+    include_inactive: bool = False,
 ) -> Optional[models.SlocumDeployment]:
+    """
+    Resolve the metadata-owning deployment for a dataset id.
+
+    By default only active rows are considered (live SFMC / public-map / warm).
+    Pass ``include_inactive=True`` for historical reads and identity existence
+    checks so completed briefing rows remain visible without creating orphans.
+    """
     dataset_id = resolve_slocum_dataset_id(dataset_id)
     mission_key = utils.slocum_mission_key(dataset_id)
     if not mission_key:
@@ -105,29 +126,33 @@ def resolve_deployment_for_dataset(
 
     candidates: list[models.SlocumDeployment] = []
 
-    by_key = session.exec(
-        select(models.SlocumDeployment).where(
-            models.SlocumDeployment.mission_key == mission_key,
-            models.SlocumDeployment.is_active == True,  # noqa: E712
+    by_key_stmt = select(models.SlocumDeployment).where(
+        models.SlocumDeployment.mission_key == mission_key,
+    )
+    if not include_inactive:
+        by_key_stmt = by_key_stmt.where(
+            models.SlocumDeployment.is_active == True  # noqa: E712
         )
-    ).all()
-    candidates.extend(by_key)
+    candidates.extend(session.exec(by_key_stmt).all())
 
     equivalent_keys = equivalent_slocum_dataset_keys(dataset_id)
-    by_equivalent = session.exec(
-        select(models.SlocumDeployment).where(
-            models.SlocumDeployment.is_active == True,  # noqa: E712
-            or_(
-                models.SlocumDeployment.mission_key.in_(equivalent_keys),
-                models.SlocumDeployment.erddap_dataset_id.in_(equivalent_keys),
-            ),
+    by_equivalent_stmt = select(models.SlocumDeployment).where(
+        or_(
+            models.SlocumDeployment.mission_key.in_(equivalent_keys),
+            models.SlocumDeployment.erddap_dataset_id.in_(equivalent_keys),
+        ),
+    )
+    if not include_inactive:
+        by_equivalent_stmt = by_equivalent_stmt.where(
+            models.SlocumDeployment.is_active == True  # noqa: E712
         )
-    ).all()
-    candidates.extend(by_equivalent)
+    candidates.extend(session.exec(by_equivalent_stmt).all())
 
     parsed = utils.parse_slocum_dataset_id(dataset_id)
     if parsed:
-        by_alias_only = _find_alias_only_deployment(session, parsed)
+        by_alias_only = _find_alias_only_deployment(
+            session, parsed, include_inactive=include_inactive
+        )
         if by_alias_only:
             candidates.append(by_alias_only)
 
@@ -139,20 +164,29 @@ def get_or_create_deployment_for_dataset(
     dataset_id: str,
     *,
     created_by_username: str,
+    allow_create: bool = True,
+    update_erddap_dataset_id: bool = True,
 ) -> Optional[models.SlocumDeployment]:
     """
-    Return the active SlocumDeployment for ``dataset_id``, creating one if needed.
+    Return the SlocumDeployment for ``dataset_id``, creating one if needed.
 
-    Resolution is by suffix-agnostic ``mission_key`` so realtime and delayed
-    datasets share the same briefing metadata. When an existing deployment is
-    resolved from a different dataset id (e.g. delayed after realtime),
-    ``erddap_dataset_id`` is updated to the most recently seen id.
+    Resolution always considers inactive completed rows first so historical
+    GETs and delayed handoffs cannot spawn empty duplicates. Creation is
+    skipped when ``allow_create=False`` (historical / read-only paths).
+
+    When an existing deployment is resolved from a different dataset id
+    (e.g. delayed after realtime), ``erddap_dataset_id`` may be updated to the
+    preferred source. That never creates a second mission row.
 
     Returns None when the dataset id cannot be parsed (same gate as Sensor Tracker
     mission-code derivation).
     """
     dataset_id = resolve_slocum_dataset_id(dataset_id)
-    existing = resolve_deployment_for_dataset(session, dataset_id)
+    # Always include inactive for identity existence — completed briefing owner
+    # must win over create.
+    existing = resolve_deployment_for_dataset(
+        session, dataset_id, include_inactive=True
+    )
     if existing:
         changed = False
         mission_key = utils.slocum_mission_key(dataset_id)
@@ -165,7 +199,12 @@ def get_or_create_deployment_for_dataset(
         ):
             existing.mission_key = mission_key
             changed = True
-        if dataset_id and existing.erddap_dataset_id != dataset_id:
+        # Do not reactivate completed rows on ordinary resolve/create.
+        if (
+            update_erddap_dataset_id
+            and dataset_id
+            and existing.erddap_dataset_id != dataset_id
+        ):
             existing.erddap_dataset_id = dataset_id
             changed = True
         if changed:
@@ -180,6 +219,9 @@ def get_or_create_deployment_for_dataset(
                 existing.erddap_dataset_id,
             )
         return existing
+
+    if not allow_create:
+        return None
 
     parsed = utils.parse_slocum_dataset_id(dataset_id)
     if not parsed:

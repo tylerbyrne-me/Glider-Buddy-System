@@ -40,12 +40,15 @@ def _resolve_slocum_enabled_sensor_cards(
     dataset_id: str,
     *,
     username: str = "system",
+    allow_create: bool = True,
 ) -> List[str]:
-    """Resolve sensor cards for a dataset; auto-creates deployment metadata if needed."""
+    """Resolve sensor cards for a dataset; optionally auto-creates deployment metadata."""
     deployment = get_or_create_deployment_for_dataset(
         session,
         dataset_id,
         created_by_username=username,
+        allow_create=allow_create,
+        update_erddap_dataset_id=False if not allow_create else True,
     )
     if not deployment or not deployment.enabled_sensor_cards:
         return list(SLOCUM_DEFAULT_SENSOR_CARDS)
@@ -87,7 +90,9 @@ def _merge_slocum_summary_context(
             from ..core.sfmc_cache_service import get_cached_dmon_asc_files
             from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
 
-            deployment = resolve_deployment_for_dataset(session, dataset_id)
+            deployment = resolve_deployment_for_dataset(
+                session, dataset_id, include_inactive=True
+            )
             if deployment is not None:
                 payload, _fetched_at, _err, configured = get_cached_dmon_asc_files(
                     session, deployment.id
@@ -316,7 +321,7 @@ async def get_slocum_dashboard(
     template_context["is_historical_dataset"] = False
     template_context["is_current_mission_realtime"] = True  # Active dataset: show auto-refresh in banner
     enabled_cards = _resolve_slocum_enabled_sensor_cards(
-        session, dataset, username=current_user.username
+        session, dataset, username=current_user.username, allow_create=True
     )
     template_context["slocum_enabled_sensor_cards"] = enabled_cards
     _merge_slocum_summary_context(template_context, dataset, enabled_cards, session=session)
@@ -352,7 +357,10 @@ async def get_slocum_historical_dashboard(
     template_context["is_historical_dataset"] = True
     template_context["is_current_mission_realtime"] = False  # Historical: no auto-refresh in banner
     enabled_cards = _resolve_slocum_enabled_sensor_cards(
-        session, dataset, username=current_user.username
+        session,
+        dataset,
+        username=current_user.username,
+        allow_create=False,
     )
     template_context["slocum_enabled_sensor_cards"] = enabled_cards
     _merge_slocum_summary_context(template_context, dataset, enabled_cards, session=session)

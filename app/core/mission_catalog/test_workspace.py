@@ -16,7 +16,9 @@ from app.core.mission_catalog.workspace import (
 from app.core.models.database import (
     CatalogExternalIdentity,
     CatalogMission,
+    CatalogMissionEvent,
     CatalogMissionSource,
+    CatalogMissionWorkItem,
     CatalogPlatform,
     MissionInstrument,
     MissionOverview,
@@ -36,6 +38,8 @@ def _session() -> Session:
             CatalogMission.__table__,
             CatalogMissionSource.__table__,
             CatalogExternalIdentity.__table__,
+            CatalogMissionEvent.__table__,
+            CatalogMissionWorkItem.__table__,
             SensorTrackerDeployment.__table__,
             MissionOverview.__table__,
             MissionInstrument.__table__,

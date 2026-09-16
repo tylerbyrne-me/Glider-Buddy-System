@@ -133,6 +133,44 @@ class CatalogIdentityKind(str, Enum):
     MANUAL = "manual"
 
 
+class CatalogWorkItemType(str, Enum):
+    """Durable per-mission work item kinds."""
+
+    FINAL_SYNC = "final_sync"
+
+
+class CatalogWorkItemStatus(str, Enum):
+    """Durable work-item lifecycle."""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE = "done"
+    FAILED = "failed"
+    EXHAUSTED = "exhausted"
+
+
+class CatalogReconcileRunStatus(str, Enum):
+    """Catalog reconcile/apply outcome."""
+
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    FAILURE = "failure"
+    DRY_RUN = "dry_run"
+    REFUSED = "refused"
+
+
+class CatalogMissionEventType(str, Enum):
+    """Append-only catalog mission event kinds."""
+
+    ENROLLMENT_OVERRIDE = "enrollment_override"
+    SYNC_POLICY = "sync_policy"
+    OPERATIONAL_STATE = "operational_state"
+    PROVISION = "provision"
+    LIVE_LINK = "live_link"
+    FINAL_SYNC = "final_sync"
+    RECONCILE = "reconcile"
+
+
 class VmtCustodyStatus(str, Enum):
     """Manual custody when a VMT is not currently attached in Sensor Tracker."""
 

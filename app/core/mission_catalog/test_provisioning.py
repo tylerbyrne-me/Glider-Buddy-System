@@ -11,7 +11,9 @@ from app.core.mission_catalog.provisioning import provision_mission
 from app.core.models.database import (
     CatalogExternalIdentity,
     CatalogMission,
+    CatalogMissionEvent,
     CatalogMissionSource,
+    CatalogMissionWorkItem,
     CatalogPlatform,
     MissionOverview,
     SlocumDeployment,
@@ -32,6 +34,8 @@ def _session() -> Session:
             CatalogMission.__table__,
             CatalogMissionSource.__table__,
             CatalogExternalIdentity.__table__,
+            CatalogMissionEvent.__table__,
+            CatalogMissionWorkItem.__table__,
             MissionOverview.__table__,
             SlocumDeployment.__table__,
         ],

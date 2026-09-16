@@ -4,21 +4,29 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.mission_catalog.providers_config import ProviderSpec, ProvidersManifest
+from app.core.mission_catalog import reconcile as reconcile_mod
 from app.core.mission_catalog.reconcile import (
     _apply_lifecycle_fields,
     _resolve_sync_policy,
     _update_mission_from_discovery,
 )
 from app.core.mission_catalog.schemas import DiscoveredMission
-from app.core.models.database import CatalogMission
+from app.core.models.database import CatalogMission, CatalogMissionEvent
 from app.core.models.enums import (
     CatalogEnrollmentOverride,
     CatalogOperationalState,
     CatalogSyncPolicy,
 )
+
+
+@pytest.fixture(autouse=True)
+def _disable_enrollment_shadow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Local .env may enable shadow; unit tests assert real enrollment writes."""
+    monkeypatch.setattr(reconcile_mod, "_shadow_enrollment_enabled", lambda: False)
 
 
 def _manifest() -> ProvidersManifest:
@@ -50,7 +58,10 @@ def _manifest() -> ProvidersManifest:
 
 def _session() -> Session:
     engine = create_engine("sqlite://")
-    SQLModel.metadata.create_all(engine, tables=[CatalogMission.__table__])
+    SQLModel.metadata.create_all(
+        engine,
+        tables=[CatalogMission.__table__, CatalogMissionEvent.__table__],
+    )
     return Session(engine)
 
 

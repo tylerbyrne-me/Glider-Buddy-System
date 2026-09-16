@@ -107,6 +107,13 @@ class Settings(BaseSettings):
     mission_catalog_enrollment_shadow: bool = False
     # Catalog reconcile cadence in minutes (leader job). 0 keeps daily cron only.
     mission_catalog_sync_interval_minutes: int = 30
+    # Deep Sensor Tracker refresh TTL for enrolled ACTIVE/PLANNED workspaces (hours).
+    # 0 = refresh whenever provision path runs; default 24 avoids every-interval deep pulls.
+    mission_catalog_st_deep_sync_ttl_hours: int = 24
+    # Bounded durable final-sync retries after ST completion.
+    mission_catalog_final_sync_max_attempts: int = 10
+    mission_catalog_final_sync_max_age_days: int = 14
+    mission_catalog_final_sync_batch_limit: int = 5
 
     # --- Slocum ERDDAP Settings ---
     # Ocean Track Slocum glider ERDDAP server; override in .env if needed

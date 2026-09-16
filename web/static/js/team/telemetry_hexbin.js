@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
             refresh: !!document.getElementById('refreshCache').checked,
             include_bathymetry: !!document.getElementById('includeBathy').checked,
             max_missions: Number(document.getElementById('maxMissions').value) || 40,
+            source_filter: document.getElementById('sourceFilter').value || 'all',
         };
         if (bbox) {
             body.lon_min = bbox[0];

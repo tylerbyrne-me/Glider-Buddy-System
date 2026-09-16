@@ -221,21 +221,27 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
         const isHistorical = document.body.dataset.isHistorical === 'true';
 
         try {
-            const missions = await apiRequest('/api/available_missions', 'GET');
+            let missionEntries = [];
+            try {
+                missionEntries = await apiRequest('/api/available_missions/detail', 'GET') || [];
+            } catch (_) {
+                const missions = await apiRequest('/api/available_missions', 'GET') || [];
+                missionEntries = missions.filter(m => m && String(m).trim()).map(m => ({ key: m, label: m }));
+            }
             activeMissionSelectorDropdownMenu.innerHTML = '';
-            // Filter out empty strings and null values
-            const validMissions = missions.filter(m => m && m.trim());
-            if (validMissions.length === 0) {
+            const validEntries = missionEntries.filter(e => e && e.key && String(e.key).trim());
+            if (validEntries.length === 0) {
                 const listItem = document.createElement('li');
                 listItem.innerHTML = '<a class="dropdown-item disabled">No active missions</a>';
                 activeMissionSelectorDropdownMenu.appendChild(listItem);
             } else {
-                validMissions.forEach(m_id => {
+                validEntries.forEach(entry => {
+                    const m_id = entry.key;
                     const listItem = document.createElement('li');
                     const link = document.createElement('a');
                     link.classList.add('dropdown-item');
-                    link.href = `/wave-glider?mission=${m_id}`;
-                    link.textContent = m_id;
+                    link.href = `/wave-glider?mission=${encodeURIComponent(m_id)}`;
+                    link.textContent = entry.label || m_id;
                     if (pageMissionId && m_id === pageMissionId && !isHistorical) {
                         link.classList.add('active');
                     }
@@ -256,21 +262,27 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
         const isHistorical = document.body.dataset.isHistorical === 'true';
 
         try {
-            const missions = await apiRequest('/api/available_historical_missions', 'GET');
+            let missionEntries = [];
+            try {
+                missionEntries = await apiRequest('/api/available_historical_missions/detail', 'GET') || [];
+            } catch (_) {
+                const missions = await apiRequest('/api/available_historical_missions', 'GET') || [];
+                missionEntries = missions.filter(m => m && String(m).trim()).map(m => ({ key: m, label: m }));
+            }
             historicalMissionSelectorDropdownMenu.innerHTML = '';
-            // Filter out empty strings and null values
-            const validMissions = missions.filter(m => m && m.trim());
-            if (validMissions.length === 0) {
+            const validEntries = missionEntries.filter(e => e && e.key && String(e.key).trim());
+            if (validEntries.length === 0) {
                 const listItem = document.createElement('li');
                 listItem.innerHTML = '<a class="dropdown-item disabled">No historical missions</a>';
                 historicalMissionSelectorDropdownMenu.appendChild(listItem);
             } else {
-                validMissions.forEach(m_id => {
+                validEntries.forEach(entry => {
+                    const m_id = entry.key;
                     const listItem = document.createElement('li');
                     const link = document.createElement('a');
                     link.classList.add('dropdown-item');
-                    link.href = `/wave-glider/historical?mission=${m_id}`;
-                    link.textContent = m_id;
+                    link.href = `/wave-glider/historical?mission=${encodeURIComponent(m_id)}`;
+                    link.textContent = entry.label || m_id;
                     if (pageMissionId && m_id === pageMissionId && isHistorical) {
                         link.classList.add('active');
                     }
@@ -290,20 +302,27 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
         const pageDataset = document.body.dataset.dataset;
         const isHistorical = document.body.dataset.isHistorical === 'true';
         try {
-            const datasets = await apiRequest('/api/slocum/available_datasets', 'GET');
+            let datasetEntries = [];
+            try {
+                datasetEntries = await apiRequest('/api/slocum/available_datasets/detail', 'GET') || [];
+            } catch (_) {
+                const datasets = await apiRequest('/api/slocum/available_datasets', 'GET') || [];
+                datasetEntries = datasets.filter(d => d && String(d).trim()).map(d => ({ key: d, label: d }));
+            }
             slocumActiveDatasetDropdownMenu.innerHTML = '';
-            const validDatasets = datasets.filter(d => d && d.trim());
-            if (validDatasets.length === 0) {
+            const validEntries = datasetEntries.filter(e => e && e.key && String(e.key).trim());
+            if (validEntries.length === 0) {
                 const listItem = document.createElement('li');
                 listItem.innerHTML = '<a class="dropdown-item disabled">No active datasets</a>';
                 slocumActiveDatasetDropdownMenu.appendChild(listItem);
             } else {
-                validDatasets.forEach(datasetId => {
+                validEntries.forEach(entry => {
+                    const datasetId = entry.key;
                     const listItem = document.createElement('li');
                     const link = document.createElement('a');
                     link.classList.add('dropdown-item');
                     link.href = `/slocum?dataset=${encodeURIComponent(datasetId)}`;
-                    link.textContent = datasetId;
+                    link.textContent = entry.label || datasetId;
                     if (pageDataset && datasetId === pageDataset && !isHistorical) {
                         link.classList.add('active');
                     }
@@ -323,20 +342,27 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
         const pageDataset = document.body.dataset.dataset;
         const isHistorical = document.body.dataset.isHistorical === 'true';
         try {
-            const datasets = await apiRequest('/api/slocum/available_historical_datasets', 'GET');
+            let datasetEntries = [];
+            try {
+                datasetEntries = await apiRequest('/api/slocum/available_historical_datasets/detail', 'GET') || [];
+            } catch (_) {
+                const datasets = await apiRequest('/api/slocum/available_historical_datasets', 'GET') || [];
+                datasetEntries = datasets.filter(d => d && String(d).trim()).map(d => ({ key: d, label: d }));
+            }
             slocumHistoricalDatasetDropdownMenu.innerHTML = '';
-            const validDatasets = datasets.filter(d => d && d.trim());
-            if (validDatasets.length === 0) {
+            const validEntries = datasetEntries.filter(e => e && e.key && String(e.key).trim());
+            if (validEntries.length === 0) {
                 const listItem = document.createElement('li');
                 listItem.innerHTML = '<a class="dropdown-item disabled">No historical datasets</a>';
                 slocumHistoricalDatasetDropdownMenu.appendChild(listItem);
             } else {
-                validDatasets.forEach(datasetId => {
+                validEntries.forEach(entry => {
+                    const datasetId = entry.key;
                     const listItem = document.createElement('li');
                     const link = document.createElement('a');
                     link.classList.add('dropdown-item');
                     link.href = `/slocum/historical?dataset=${encodeURIComponent(datasetId)}`;
-                    link.textContent = datasetId;
+                    link.textContent = entry.label || datasetId;
                     if (pageDataset && datasetId === pageDataset && isHistorical) {
                         link.classList.add('active');
                     }

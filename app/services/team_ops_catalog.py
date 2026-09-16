@@ -60,8 +60,9 @@ OPS_SCRIPTS: Dict[str, OpsScriptSpec] = {
         id="telemetry_hexbin",
         label="Wave Glider telemetry hexbin",
         description=(
-            "Build a Cartopy hexbin coverage map from past Wave Glider "
-            "telemetry around a center/size or bbox."
+            "Build a Cartopy hexbin coverage map from catalog Wave Glider "
+            "tracks (active realtime WGMS, past WGMS, and/or ERDDAP) around "
+            "a center/size or bbox."
         ),
         kind="page",
         href="/team/telemetry-hexbin",

@@ -9,6 +9,8 @@ from app.config import settings
 from app.services.mission_catalog_sync import (
     catalog_auto_apply_enabled,
     catalog_is_stale,
+    catalog_last_partial_at,
+    catalog_write_lock_status,
     last_success_at,
 )
 
@@ -26,13 +28,26 @@ def build_catalog_status_report() -> Dict[str, Any]:
     interval = int(getattr(settings, "mission_catalog_sync_interval_minutes", 30) or 0)
     cron_hour = int(getattr(settings, "mission_catalog_sync_cron_hour", 6))
 
-    is_leader: Optional[bool] = None
+    this_worker_is_leader: Optional[bool] = None
     try:
         from app.core.infra.startup_leader import is_startup_leader
 
-        is_leader = bool(is_startup_leader())
+        this_worker_is_leader = bool(is_startup_leader())
     except Exception:
-        is_leader = None
+        this_worker_is_leader = None
+
+    lock_state = catalog_write_lock_status()
+    partial = catalog_last_partial_at()
+
+    job_outcome: Optional[Dict[str, Any]] = None
+    try:
+        from app.core.infra.scheduler import get_job_outcome
+
+        raw = get_job_outcome("system_mission_catalog_sync_job")
+        if raw is not None:
+            job_outcome = raw.to_dict() if hasattr(raw, "to_dict") else dict(raw)
+    except Exception:
+        job_outcome = None
 
     return {
         "auto_apply": catalog_auto_apply_enabled(),
@@ -56,5 +71,12 @@ def build_catalog_status_report() -> Dict[str, Any]:
         "last_success_at": stamp.isoformat() if stamp else None,
         "last_success_age_seconds": age_seconds,
         "is_stale": catalog_is_stale(),
-        "is_startup_leader": is_leader,
+        "last_partial_at": partial.isoformat() if partial else None,
+        # Process-local: whether *this* worker holds the startup leader lock.
+        "this_worker_is_leader": this_worker_is_leader,
+        # Back-compat alias (same meaning as this_worker_is_leader).
+        "is_startup_leader": this_worker_is_leader,
+        "write_lock": lock_state,
+        "scheduler_job_id": "system_mission_catalog_sync_job",
+        "scheduler_job_outcome": job_outcome,
     }

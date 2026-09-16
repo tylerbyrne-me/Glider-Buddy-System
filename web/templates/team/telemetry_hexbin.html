@@ -7,9 +7,11 @@
     <p class="mb-2"><a href="/team">&larr; Team</a></p>
     <h1 class="mb-2">Wave Glider telemetry hexbin</h1>
     <p class="text-muted">
-        Build a Cartopy hexbin coverage map from past Wave Glider telemetry.
-        Large runs can hit gunicorn timeouts (~200s); narrow the box or set an explicit mission list first.
-        Default mission cap is 40 when discovering all past folders.
+        Build a Cartopy hexbin coverage map from mission-catalog Wave Glider tracks
+        (active realtime WGMS, past WGMS, and ERDDAP). All usable linked sources for
+        each included mission are combined. Large runs can hit gunicorn timeouts (~200s);
+        narrow the box or set an explicit mission list first. Default mission cap is 40
+        (active missions are selected first).
     </p>
 
     <div class="card gbs-card mt-3">
@@ -38,12 +40,20 @@
                     <input type="text" class="form-control" id="bboxInput" placeholder="Optional — overrides center/size">
                 </div>
                 <div class="mb-3">
-                    <label for="missionsInput" class="form-label">Missions (optional comma-separated folders)</label>
-                    <input type="text" class="form-control" id="missionsInput" placeholder="e.g. m169-C34166NS,m170-C34164NS">
+                    <label for="missionsInput" class="form-label">Missions / sources (optional comma-separated)</label>
+                    <input type="text" class="form-control" id="missionsInput" placeholder="e.g. m230-SV3-1070,m227-SV3-1071,DL_20150820_49_delayed">
                 </div>
                 <div class="row g-3 mb-3">
                     <div class="col-md-3">
-                        <label for="maxMissions" class="form-label">Max missions (discover)</label>
+                        <label for="sourceFilter" class="form-label">Sources</label>
+                        <select class="form-select" id="sourceFilter">
+                            <option value="all" selected>All (WGMS + ERDDAP)</option>
+                            <option value="wgms">WGMS only (realtime + past)</option>
+                            <option value="erddap">ERDDAP only</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="maxMissions" class="form-label">Max missions (catalog)</label>
                         <input type="number" min="1" max="200" class="form-control" id="maxMissions" value="40">
                     </div>
                     <div class="col-md-3 d-flex align-items-end">

@@ -186,6 +186,28 @@ async def get_available_datasets(
         return resolve_active_slocum_keys(session)
 
 
+@router.get(
+    "/available_datasets/detail",
+    response_model=List[models.NavigationMissionEntry],
+)
+async def get_available_datasets_detail(
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Active Slocum datasets with display labels; ``key`` remains the ERDDAP id."""
+    if not is_feature_enabled("slocum_platform"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
+        )
+    from app.core.infra.db import SQLModelSession, sqlite_engine
+    from app.core.mission_catalog.display_labels import build_navigation_entries
+    from app.core.mission_catalog.enablement import resolve_active_slocum_keys
+
+    with SQLModelSession(sqlite_engine) as session:
+        keys = resolve_active_slocum_keys(session)
+        return build_navigation_entries(session, keys, platform_family="slocum")
+
+
 @router.get("/available_historical_datasets", response_model=List[str])
 async def get_available_historical_datasets(
     current_user: models.User = Depends(get_current_active_user),
@@ -212,6 +234,27 @@ async def get_available_historical_datasets(
     except Exception as exc:
         logger.warning("Catalog historical Slocum keys failed: %s", exc)
         return env_keys
+
+
+@router.get(
+    "/available_historical_datasets/detail",
+    response_model=List[models.NavigationMissionEntry],
+)
+async def get_available_historical_datasets_detail(
+    current_user: models.User = Depends(get_current_active_user),
+):
+    """Historical Slocum datasets with display labels; ``key`` remains the ERDDAP id."""
+    if not is_feature_enabled("slocum_platform"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Slocum platform is disabled (feature_toggles.slocum_platform).",
+        )
+    from app.core.infra.db import SQLModelSession, sqlite_engine
+    from app.core.mission_catalog.display_labels import build_navigation_entries
+
+    keys = await get_available_historical_datasets(current_user)
+    with SQLModelSession(sqlite_engine) as session:
+        return build_navigation_entries(session, keys, platform_family="slocum")
 
 
 @router.get("/datasets/search")
@@ -877,8 +920,13 @@ async def get_slocum_sfmc_connection_durations(
 
     from ..core.sfmc_cache_service import get_cached_connection_durations
     from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
+    from app.platforms.slocum.mirror_service import is_historical_dataset
 
-    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    deployment = resolve_deployment_for_dataset(
+        session,
+        dataset_id,
+        include_inactive=is_historical_dataset(dataset_id),
+    )
     if deployment is None:
         return {
             "connections": [],
@@ -919,8 +967,13 @@ async def get_slocum_sfmc_dmon_asc_files(
     from ..core.sfmc_transforms import DMON_ASC_WINDOW_HOURS
     from app.platforms.slocum.deployment_service import resolve_deployment_for_dataset
     from app.platforms.slocum.dmon_asc_thruster import enrich_dmon_asc_with_thruster
+    from app.platforms.slocum.mirror_service import is_historical_dataset
 
-    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    deployment = resolve_deployment_for_dataset(
+        session,
+        dataset_id,
+        include_inactive=is_historical_dataset(dataset_id),
+    )
     if deployment is None:
         return {
             "files": [],
@@ -998,8 +1051,13 @@ async def get_slocum_dmon_review(
         get_cached_dmon_review,
     )
     from app.core.mission_aliases import resolved_slocum_mission_key
+    from app.platforms.slocum.mirror_service import is_historical_dataset
 
-    deployment = resolve_deployment_for_dataset(session, dataset_id)
+    deployment = resolve_deployment_for_dataset(
+        session,
+        dataset_id,
+        include_inactive=is_historical_dataset(dataset_id),
+    )
     source_url = (deployment.robots4whales_url if deployment else None) or None
     configured = bool(source_url and str(source_url).strip())
     empty_attr = default_attribution(source_url=source_url)

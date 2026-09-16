@@ -50,6 +50,7 @@ JOB_PLATFORM_BY_ID: dict[str, JobPlatformEnum] = {
     "system_navwarn_prefetch_job": JobPlatformEnum.SYSTEM,
     "system_navwarn_cleanup_job": JobPlatformEnum.SYSTEM,
     "system_dmon_review_prefetch_job": JobPlatformEnum.SYSTEM,
+    "system_mission_catalog_sync_job": JobPlatformEnum.SYSTEM,
 }
 
 _OUTCOMES_FILENAME = "scheduler_job_outcomes.json"

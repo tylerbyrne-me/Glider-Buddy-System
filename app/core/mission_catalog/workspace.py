@@ -210,6 +210,12 @@ def build_workspace_payload(
         if key:
             links["slocum_dashboard"] = f"/slocum/dashboard.html?dataset={key}"
 
+    from app.core.mission_catalog.audit import event_to_dict, list_mission_events
+    from app.core.mission_catalog.final_sync import (
+        get_final_sync_work_item,
+        work_item_to_dict,
+    )
+
     return {
         "id": mission.id,
         "title": mission.title,
@@ -253,6 +259,8 @@ def build_workspace_payload(
                 "last_synced_at": (
                     st_row.last_synced_at.isoformat() if st_row.last_synced_at else None
                 ),
+                "last_error": getattr(st_row, "last_error", None)
+                or getattr(st_row, "sync_error", None),
             }
             if st_row
             else None
@@ -291,6 +299,11 @@ def build_workspace_payload(
         ],
         "readiness_reasons": readiness_reasons,
         "links": links,
+        "final_sync": work_item_to_dict(get_final_sync_work_item(session, mission.id)),
+        "recent_events": [
+            event_to_dict(e)
+            for e in list_mission_events(session, mission.id, limit=20)
+        ],
         "updated_at_utc": mission.updated_at_utc.isoformat()
         if mission.updated_at_utc
         else None,
@@ -301,11 +314,24 @@ def set_enrollment_override(
     session: Session,
     mission: CatalogMission,
     override: str,
+    *,
+    actor: str = "operator",
 ) -> CatalogMission:
+    from app.core.mission_catalog.audit import (
+        EVENT_ENROLLMENT,
+        EVENT_SYNC_POLICY,
+        record_mission_event,
+    )
+    from app.core.public_map_service import invalidate_public_map_cache
+
     allowed = {e.value for e in CatalogEnrollmentOverride}
     value = (override or "").strip().lower()
     if value not in allowed:
         raise ValueError(f"Invalid enrollment_override: {override!r}")
+    before = {
+        "enrollment_override": mission.enrollment_override,
+        "sync_policy": mission.sync_policy,
+    }
     mission.enrollment_override = value
     mission.has_manual_overrides = value != CatalogEnrollmentOverride.AUTOMATIC.value
     mission.updated_at_utc = datetime.now(timezone.utc)
@@ -325,9 +351,37 @@ def set_enrollment_override(
         ):
             # Restore enrollable policy; next reconcile may also seed CONTINUOUS.
             mission.sync_policy = "continuous"
+    after = {
+        "enrollment_override": mission.enrollment_override,
+        "sync_policy": mission.sync_policy,
+    }
     session.add(mission)
+    record_mission_event(
+        session,
+        catalog_mission_id=mission.id,
+        event_type=EVENT_ENROLLMENT,
+        actor=actor,
+        source="team_api",
+        before=before,
+        after=after,
+        message=f"enrollment_override={value}",
+    )
+    if before.get("sync_policy") != after.get("sync_policy"):
+        record_mission_event(
+            session,
+            catalog_mission_id=mission.id,
+            event_type=EVENT_SYNC_POLICY,
+            actor=actor,
+            source="team_api",
+            before={"sync_policy": before.get("sync_policy")},
+            after={"sync_policy": after.get("sync_policy")},
+        )
     session.commit()
     session.refresh(mission)
+    try:
+        invalidate_public_map_cache()
+    except Exception:
+        pass
     return mission
 
 

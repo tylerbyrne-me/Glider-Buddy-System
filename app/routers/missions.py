@@ -1627,6 +1627,22 @@ async def get_available_missions(
     return resolve_active_wave_glider_keys(session)
 
 
+@router.get(
+    "/api/available_missions/detail",
+    response_model=List[models.NavigationMissionEntry],
+)
+async def get_available_missions_detail(
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """Active WG missions with display labels (keys remain route/storage ids)."""
+    from app.core.mission_catalog.display_labels import build_navigation_entries
+    from app.core.mission_catalog.enablement import resolve_active_wave_glider_keys
+
+    keys = resolve_active_wave_glider_keys(session)
+    return build_navigation_entries(session, keys, platform_family="wave_glider")
+
+
 @router.get("/api/available_all_missions", response_model=Dict[str, List[str]])
 async def get_all_available_missions(
     current_user: models.User = Depends(get_current_active_user),
@@ -1654,6 +1670,31 @@ async def get_all_available_missions(
     }
 
 
+@router.get("/api/available_all_missions/detail")
+async def get_all_available_missions_detail(
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """Active + historical WG missions with display labels."""
+    from app.core.mission_catalog.display_labels import build_navigation_entries
+    from app.core.mission_catalog.enablement import resolve_active_wave_glider_keys
+
+    active_keys = resolve_active_wave_glider_keys(session)
+    historical_keys: list[str] = []
+    try:
+        historical_keys = await get_available_historical_missions(current_user, session)
+    except Exception as e:
+        logger.error("Error fetching historical missions for detail endpoint: %s", e)
+    return {
+        "active": build_navigation_entries(
+            session, active_keys, platform_family="wave_glider"
+        ),
+        "historical": build_navigation_entries(
+            session, historical_keys, platform_family="wave_glider"
+        ),
+    }
+
+
 @router.get("/api/available_historical_missions", response_model=List[str])
 async def get_available_historical_missions(
     current_user: models.User = Depends(get_current_active_user),
@@ -1663,16 +1704,20 @@ async def get_available_historical_missions(
     Get list of historical/past missions.
 
     Prefer catalog COMPLETED wave-glider keys with linked overviews when the
-    catalog is populated; fall back to WGMS remote directory scrape.
+    catalog is populated (one preferred key per deployment code). Fall back to
+    WGMS remote directory scrape only when catalog has no completed WG rows.
     """
-    from ..core import models
-    from ..config import settings
-    import httpx
-
     # Catalog-backed historical keys (empty-env / enrollment era).
     try:
-        from app.core.mission_catalog.enablement import _live_wave_glider_keys
-        from app.core.models.database import CatalogMission, MissionOverview
+        from app.core.mission_catalog.live_link import prefer_wave_glider_overview
+        from app.core.mission_catalog.wg_historical import (
+            dedupe_wave_glider_historical_keys,
+        )
+        from app.core.models.database import (
+            CatalogMission,
+            CatalogPlatform,
+            MissionOverview,
+        )
         from app.core.models.enums import CatalogOperationalState
         from sqlmodel import select as _select
 
@@ -1685,36 +1730,70 @@ async def get_available_historical_missions(
             ).all()
         )
         if completed:
-            from app.core.mission_catalog.live_link import prefer_wave_glider_overview
-            from app.core.utils import deployment_mission_code_from_mission_id
-
-            catalog_ids = {m.id for m in completed if m.id}
+            # Restrict to wave_glider platforms when family is known.
+            wg_platform_ids = {
+                p.id
+                for p in session.exec(_select(CatalogPlatform)).all()
+                if p.id is not None
+                and (p.platform_family or "").strip().lower()
+                in ("wave_glider", "wg", "wave", "")
+            }
+            catalog_ids = {
+                m.id
+                for m in completed
+                if m.id
+                and (
+                    m.platform_id is None
+                    or m.platform_id in wg_platform_ids
+                    or not wg_platform_ids
+                )
+            }
             by_catalog: dict[str, list] = {}
             for overview in session.exec(_select(MissionOverview)).all():
                 cid = getattr(overview, "catalog_mission_id", None)
                 if cid and cid in catalog_ids:
                     by_catalog.setdefault(cid, []).append(overview)
             catalog_keys: list[str] = []
-            for cid, siblings in by_catalog.items():
+            for _cid, siblings in by_catalog.items():
                 preferred = prefer_wave_glider_overview(siblings)
                 if preferred and preferred.mission_id:
                     catalog_keys.append(str(preferred.mission_id).strip())
+                elif len(siblings) == 1 and siblings[0].mission_id:
+                    # Single non-canonical overview still usable for history.
+                    catalog_keys.append(str(siblings[0].mission_id).strip())
+            catalog_keys = dedupe_wave_glider_historical_keys(catalog_keys)
             if catalog_keys:
-                catalog_keys = sorted({k for k in catalog_keys if k})
                 logger.info(
-                    "Historical missions from catalog COMPLETED overviews: %s",
-                    catalog_keys[:20],
+                    "Historical missions from catalog COMPLETED overviews "
+                    "(no scrape merge): %d keys",
+                    len(catalog_keys),
                 )
-                # Still merge remote scrape below when available; prefer union.
-                remote_keys = await _scrape_wgms_historical_missions()
-                if remote_keys:
-                    merged = sorted(set(catalog_keys) | set(remote_keys))
-                    return merged
                 return catalog_keys
     except Exception as exc:
         logger.debug("Catalog historical WG lookup failed: %s", exc)
 
-    return await _scrape_wgms_historical_missions()
+    from app.core.mission_catalog.wg_historical import (
+        dedupe_wave_glider_historical_keys,
+    )
+
+    return dedupe_wave_glider_historical_keys(
+        await _scrape_wgms_historical_missions()
+    )
+
+
+@router.get(
+    "/api/available_historical_missions/detail",
+    response_model=List[models.NavigationMissionEntry],
+)
+async def get_available_historical_missions_detail(
+    current_user: models.User = Depends(get_current_active_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    """Historical WG missions with display labels (keys remain route/storage ids)."""
+    from app.core.mission_catalog.display_labels import build_navigation_entries
+
+    keys = await get_available_historical_missions(current_user, session)
+    return build_navigation_entries(session, keys, platform_family="wave_glider")
 
 
 async def _scrape_wgms_historical_missions() -> list[str]:

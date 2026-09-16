@@ -495,21 +495,28 @@ document.addEventListener('DOMContentLoaded', async () => {
             let active = [];
             let historical = [];
             try {
-                active = await apiRequest('/api/slocum/available_datasets', 'GET') || [];
-            } catch (_) {}
+                active = await apiRequest('/api/slocum/available_datasets/detail', 'GET') || [];
+            } catch (_) {
+                active = (await apiRequest('/api/slocum/available_datasets', 'GET') || [])
+                    .map(id => ({ key: id, label: id }));
+            }
             try {
-                historical = await apiRequest('/api/slocum/available_historical_datasets', 'GET') || [];
-            } catch (_) {}
+                historical = await apiRequest('/api/slocum/available_historical_datasets/detail', 'GET') || [];
+            } catch (_) {
+                historical = (await apiRequest('/api/slocum/available_historical_datasets', 'GET') || [])
+                    .map(id => ({ key: id, label: id }));
+            }
 
             missionSelect.innerHTML = '<option selected disabled>-- Select a Dataset --</option>';
 
             if (active.length > 0) {
                 const activeGroup = document.createElement('optgroup');
                 activeGroup.label = 'Active Missions';
-                active.forEach(datasetId => {
+                active.forEach(entry => {
+                    const datasetId = entry.key || entry;
                     const option = document.createElement('option');
                     option.value = datasetId;
-                    option.textContent = datasetId;
+                    option.textContent = entry.label || datasetId;
                     activeGroup.appendChild(option);
                 });
                 missionSelect.appendChild(activeGroup);
@@ -518,10 +525,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (historical.length > 0) {
                 const historicalGroup = document.createElement('optgroup');
                 historicalGroup.label = 'Historical Missions';
-                historical.forEach(datasetId => {
+                historical.forEach(entry => {
+                    const datasetId = entry.key || entry;
                     const option = document.createElement('option');
                     option.value = datasetId;
-                    option.textContent = datasetId;
+                    option.textContent = entry.label || datasetId;
                     historicalGroup.appendChild(option);
                 });
                 missionSelect.appendChild(historicalGroup);

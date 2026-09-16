@@ -177,6 +177,13 @@ def test_empty_env_slocum_uses_enrolled_active_deployments(monkeypatch) -> None:
             catalog_mission_id=unenrolled.id,
         )
     )
+    completed = _add_catalog_mission(
+        session,
+        mission_id="cat-slocum-hist",
+        operational_state=CatalogOperationalState.COMPLETED.value,
+        sync_policy=CatalogSyncPolicy.ON_DEMAND.value,
+        deployment_number=206,
+    )
     session.add(
         SlocumDeployment(
             name="Old",
@@ -185,6 +192,7 @@ def test_empty_env_slocum_uses_enrolled_active_deployments(monkeypatch) -> None:
             is_active=False,
             mission_key="peggy_20250522_206",
             erddap_dataset_id="peggy_20250522_206_delayed",
+            catalog_mission_id=completed.id,
         )
     )
     session.commit()

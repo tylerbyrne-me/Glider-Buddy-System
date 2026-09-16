@@ -1001,7 +1001,16 @@ document.addEventListener('DOMContentLoaded', async function() {
         async function loadMissions() {
             missionSpinner.style.display = 'inline-block';
             try {
-                const allMissions = await apiRequest('/api/available_all_missions', 'GET');
+                let allMissions;
+                try {
+                    allMissions = await apiRequest('/api/available_all_missions/detail', 'GET');
+                } catch (_) {
+                    const legacy = await apiRequest('/api/available_all_missions', 'GET');
+                    allMissions = {
+                        active: (legacy.active || []).map(id => ({ key: id, label: id })),
+                        historical: (legacy.historical || []).map(id => ({ key: id, label: id })),
+                    };
+                }
 
                 missionSelect.innerHTML = '<option selected disabled>-- Select a Mission --</option>';
                 
@@ -1009,10 +1018,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 if (allMissions.active && allMissions.active.length > 0) {
                     const activeGroup = document.createElement('optgroup');
                     activeGroup.label = 'Active Missions';
-                    allMissions.active.forEach(missionId => {
+                    allMissions.active.forEach(entry => {
+                        const missionId = entry.key || entry;
                         const option = document.createElement('option');
                         option.value = missionId;
-                        option.textContent = missionId;
+                        option.textContent = entry.label || missionId;
                         activeGroup.appendChild(option);
                     });
                     missionSelect.appendChild(activeGroup);
@@ -1022,10 +1032,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                 if (allMissions.historical && allMissions.historical.length > 0) {
                     const historicalGroup = document.createElement('optgroup');
                     historicalGroup.label = 'Historical Missions';
-                    allMissions.historical.forEach(missionId => {
+                    allMissions.historical.forEach(entry => {
+                        const missionId = entry.key || entry;
                         const option = document.createElement('option');
                         option.value = missionId;
-                        option.textContent = missionId;
+                        option.textContent = entry.label || missionId;
                         historicalGroup.appendChild(option);
                     });
                     missionSelect.appendChild(historicalGroup);
