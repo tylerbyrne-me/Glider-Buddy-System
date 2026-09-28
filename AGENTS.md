@@ -158,21 +158,20 @@ Expect **one** `STARTUP: Syncing remote data`, **one** `APScheduler started`, an
 
 Watch for problems: `WORKER TIMEOUT`, `SIGKILL`, repeated `BACKGROUND TASK` storms.
 
-### Production monitoring and capacity (16 GB hosts)
+### Production monitoring and capacity
 
-Executable runbooks, Prometheus rules, Grafana dashboard, textfile metrics, and systemd drop-ins live under [`ops/monitoring/`](ops/monitoring/README.md). Staging-first rollout: baseline → exporters → [STAGING_VALIDATION.md](ops/monitoring/STAGING_VALIDATION.md) → phased [PRODUCTION_ROLLOUT.md](ops/monitoring/PRODUCTION_ROLLOUT.md).
+Runbooks, Prometheus rules, Grafana dashboard, textfile metrics, and systemd drop-ins: [`ops/monitoring/`](ops/monitoring/README.md). **glider-dev.cove** (~9.5 GiB RAM) runs Phase A monitoring (2026-09-24) — ports, Grafana tunnel, and thresholds in [HOST_PROFILES.md](ops/monitoring/HOST_PROFILES.md). New hosts: baseline → [STAGING_VALIDATION.md](ops/monitoring/STAGING_VALIDATION.md) → [PRODUCTION_ROLLOUT.md](ops/monitoring/PRODUCTION_ROLLOUT.md).
 
-| Resource | Warning | Critical |
-|----------|---------|----------|
-| MemAvailable | < 4 GB (10m) | < 2 GB |
-| Gunicorn RSS (sum) | > 8 GB (10m) | > 10 GB |
-| Root filesystem used | > 70% | > 85% |
-| `data_store` | > 100 GB or +10 GB/day | — |
-| `/healthz` | p95 > 3 s (probe) | down > 2m |
+| Profile | MemAvailable warn/crit | Gunicorn RSS (resident) warn/crit |
+|---------|------------------------|-----------------------------------|
+| 16 GiB | < 4 GB / < 2 GB | > 8 GB / > 10 GB |
+| ~10 GiB (glider-dev) | < 2.5 GiB / < 1.5 GiB | > 6 GiB / > 7.5 GiB |
 
-**Alerts (journal via textfile):** any `WORKER TIMEOUT` or OOM; sustained `SLOWREQ` (>10/h); `APP5XX` bursts.
+Shared: root filesystem > 70% / > 85% used; `data_store` > 100 GB or +10 GB/day; `/healthz` p95 > 3 s or down > 2m. Sum gunicorn memory with `memtype="resident"` in PromQL.
 
-**Systemd guardrails (after staging validation):** Phase A `MemoryAccounting=yes` only; Phase C `MemoryHigh=10G`; optional `MemoryMax=12G` + `MemorySwapMax=2G`. Do **not** add workers or lower `--timeout` below 200 to compensate for memory pressure — escalate app memory follow-up instead.
+**Journal markers:** grep `SLOWREQ`, `APP5XX`, `WORKER TIMEOUT` in journal until `gbs_journal_log_counts.sh` is fixed (not installed on glider-dev).
+
+**Systemd guardrails (after observation):** Phase A `MemoryAccounting=yes`; on 16 GiB hosts Phase C `MemoryHigh=10G`, optional `MemoryMax=12G` + `MemorySwapMax=2G`. Tune caps for ~10 GiB before applying. Do **not** add workers or lower `--timeout` below 200 for memory pressure.
 
 **Rollback:** remove latest drop-in under `gliderbuddy.service.d/`; keep monitoring installed. See [RUNBOOK.md](ops/monitoring/RUNBOOK.md).
 

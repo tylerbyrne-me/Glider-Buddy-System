@@ -5,7 +5,10 @@ from __future__ import annotations
 from sqlmodel import Session, SQLModel, create_engine
 
 from app.core.mission_catalog import enablement as enablement_mod
-from app.core.mission_catalog.enablement import list_catalog_sync_targets
+from app.core.mission_catalog.enablement import (
+    list_catalog_sync_targets,
+    resolve_active_slocum_dataset_ids,
+)
 from app.core.models.database import (
     CatalogExternalIdentity,
     CatalogMission,
@@ -213,6 +216,36 @@ def test_empty_env_slocum_uses_enrolled_active_deployments(monkeypatch) -> None:
         "slocum", session, operational_state="completed"
     )
     assert historical == ["peggy_20250522_206_delayed"]
+
+
+def test_resolve_active_slocum_dataset_ids_catalog_when_env_empty(monkeypatch) -> None:
+    session = _session()
+    enrolled = _add_catalog_mission(session, mission_id="cat-slocum", deployment_number=229)
+    session.add(
+        SlocumDeployment(
+            name="Fundy",
+            glider_name="fundy",
+            created_by_username="test",
+            is_active=True,
+            mission_key="fundy_20260724_229",
+            erddap_dataset_id="fundy_20260724_229_realtime",
+            catalog_mission_id=enrolled.id,
+        )
+    )
+    session.commit()
+    monkeypatch.setattr(enablement_mod.settings, "active_slocum_datasets", [])
+    monkeypatch.setattr(enablement_mod.settings, "historical_slocum_datasets", [])
+    monkeypatch.setattr(enablement_mod, "_mission_catalog_enabled", lambda: True)
+    monkeypatch.setattr(enablement_mod, "reverse_slocum_alias", lambda _dataset: None)
+    from app.platforms.slocum import mirror_service
+
+    monkeypatch.setattr(
+        mirror_service,
+        "is_historical_dataset",
+        lambda dataset_id: "_delayed" in (dataset_id or ""),
+    )
+
+    assert resolve_active_slocum_dataset_ids(session) == ["fundy_20260724_229_realtime"]
 
 
 def test_catalog_disabled_returns_env(monkeypatch) -> None:

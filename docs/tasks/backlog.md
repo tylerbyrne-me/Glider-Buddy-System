@@ -15,6 +15,8 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 ## Medium priority
 
+- [ ] Ops monitoring follow-ups (after glider-dev Phase A 2026-09-24): fix `gbs_journal_log_counts.sh` (gauge or true counter, not rolling 5m as `counter`); install + enable journal alerts; optional Alertmanager (email/Teams); apply `gliderbuddy-accounting.conf` and complete 7–14d observation before systemd memory soft/hard drop-ins — [HOST_PROFILES.md](../../ops/monitoring/HOST_PROFILES.md) / [PRODUCTION_ROLLOUT.md](../../ops/monitoring/PRODUCTION_ROLLOUT.md)
+
 - [ ] Repair CLI: `mission_catalog_repair_duplicates --apply` must delete (or clear) `slocum_sfmc_snapshots` before removing an orphan `SlocumDeployment` — ORM nulls `deployment_id` and hits NOT NULL (`IntegrityError` on prod 2026-09-16). Workaround: raw SQL delete snapshot then deployment — `app/cli/mission_catalog_repair_duplicates.py` — idea inbox 2026-09-16
 
 - [ ] Map vector layers — remaining follow-ups (home overlays + catalog toggles + DFO FMA set shipped; how-to [map_vector_layers.md](../wiki/how-tos/map_vector_layers.md)): (0) commit/deploy feature + enable `map_vector_layers` on staging/prod when ready; (1) optional manifest `default_on` and/or per-mission/deployment layer id list (“always show”); (2) generalize `scripts/convert_map_layer_kml.py` beyond DSZ/safe-zone name splits; (3) wire selected layers onto public login map (`public_visible` + unauth routes); (4) further simplify large `dfo_fma_*` GeoJSON (~2–4 MB each) and/or re-fetch northern shrimp `OBJECTID` 19 when egisp stops 500ing — idea inbox 2026-08-08

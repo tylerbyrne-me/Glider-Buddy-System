@@ -390,3 +390,20 @@ def resolve_active_slocum_keys(session: Optional[Session] = None) -> List[str]:
             exc,
         )
         return env_slocum_active_keys()
+
+
+def resolve_active_slocum_dataset_ids(session: Optional[Session] = None) -> List[str]:
+    """Canonical active Slocum ERDDAP dataset ids for scheduled jobs and APIs.
+
+    Uses catalog enablement when ``ACTIVE_SLOCUM_DATASETS`` is empty; env list
+    remains override when non-empty. Drops historical datasets.
+    """
+    from app.core.mission_aliases import resolve_slocum_dataset_ids
+    from app.platforms.slocum.mirror_service import is_historical_dataset
+
+    keys = resolve_active_slocum_keys(session)
+    return [
+        did
+        for did in resolve_slocum_dataset_ids(keys)
+        if not is_historical_dataset(did)
+    ]

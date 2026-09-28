@@ -1,0 +1,144 @@
+# Glider Buddy alert rules (~10 GiB RAM hosts, gunicorn -w 2)
+# Deployed on glider-dev.cove (Rocky Linux 8.10, ~9.5 GiB RAM) 2026-09-24.
+# For 16 GiB hosts use alert_rules.yml instead — see HOST_PROFILES.md.
+
+groups:
+  - name: gliderbuddy_availability
+    rules:
+      - alert: GliderBuddyExporterDown
+        expr: up{job=~"node|process|blackbox_http"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Monitoring target {{ $labels.job }} is down"
+
+      - alert: GliderBuddyEndpointDown
+        expr: probe_success{job="blackbox_http"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HTTP probe failed for {{ $labels.instance }}"
+
+      - alert: GliderBuddyEndpointSlow
+        expr: quantile_over_time(0.95, probe_duration_seconds{job="blackbox_http"}[10m]) > 3
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HTTP probe p95 exceeds 3 seconds for {{ $labels.instance }}"
+
+      - alert: GliderBuddyGunicornProcessCount
+        expr: gbs_gunicorn_process_count != 3
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Expected gunicorn master plus two workers"
+
+      - alert: GliderBuddyUnexpectedRestart
+        expr: changes(gbs_systemd_nrestarts[1h]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: "gliderbuddy.service restarted unexpectedly"
+
+  - name: gliderbuddy_capacity
+    rules:
+      - alert: GliderBuddyMemoryAvailableWarning
+        expr: node_memory_MemAvailable_bytes < 2684354560
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Available memory below 2.5 GiB"
+
+      - alert: GliderBuddyMemoryAvailableCritical
+        expr: node_memory_MemAvailable_bytes < 1610612736
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Available memory below 1.5 GiB"
+
+      - alert: GliderBuddyGunicornRssWarning
+        expr: sum(namedprocess_namegroup_memory_bytes{groupname="gunicorn",memtype="resident"}) > 6442450944
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gunicorn RSS exceeds 6 GiB"
+
+      - alert: GliderBuddyGunicornRssCritical
+        expr: sum(namedprocess_namegroup_memory_bytes{groupname="gunicorn",memtype="resident"}) > 8053063680
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Gunicorn RSS exceeds 7.5 GiB"
+
+      - alert: GliderBuddyCpuHigh
+        expr: 100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))) > 85
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Average CPU usage exceeds 85 percent"
+
+      - alert: GliderBuddyIoWaitHigh
+        expr: 100 * avg(rate(node_cpu_seconds_total{mode="iowait"}[5m])) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Average IO wait exceeds 10 percent"
+
+      - alert: GliderBuddySwapActivity
+        expr: rate(node_vmstat_pswpin[5m]) + rate(node_vmstat_pswpout[5m]) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Sustained swap activity detected"
+
+      - alert: GliderBuddyFilesystemCritical
+        expr: (node_filesystem_avail_bytes{mountpoint=~"/|/home"} / node_filesystem_size_bytes{mountpoint=~"/|/home"}) < 0.15
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Filesystem {{ $labels.mountpoint }} has less than 15 percent free"
+
+  - name: gliderbuddy_operations
+    rules:
+      - alert: GliderBuddyTextfileScrapeError
+        expr: node_textfile_scrape_error != 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "node_exporter cannot read custom metrics"
+
+      - alert: GliderBuddySchedulerErrors
+        expr: gbs_scheduler_outcome_errors > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduler job outcomes contain errors"
+
+      - alert: GliderBuddyStrandedTemporaryFiles
+        expr: gbs_stranded_tmp_files > 0
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Stranded temporary files detected in {{ $labels.tree }}"
+
+      - alert: GliderBuddyDataStoreGrowth
+        expr: delta(gbs_cache_bytes{dir="data_store"}[24h]) > 10737418240
+        labels:
+          severity: warning
+        annotations:
+          summary: "data_store grew more than 10 GiB in 24 hours"

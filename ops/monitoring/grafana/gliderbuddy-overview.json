@@ -37,7 +37,7 @@
       "fieldConfig": { "defaults": { "unit": "bytes" } },
       "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
       "id": 2,
-      "targets": [{ "expr": "sum(namedprocess_namegroup_memory_bytes{groupname=~\"gunicorn.*\"})", "legendFormat": "gunicorn RSS", "refId": "A" }],
+      "targets": [{ "expr": "sum(namedprocess_namegroup_memory_bytes{groupname=\"gunicorn\",memtype=\"resident\"})", "legendFormat": "gunicorn RSS", "refId": "A" }],
       "title": "Gunicorn RSS (sum)",
       "type": "stat"
     },
@@ -75,7 +75,7 @@
       "fieldConfig": { "defaults": { "unit": "bytes" } },
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
       "id": 6,
-      "targets": [{ "expr": "sum by (groupname) (namedprocess_namegroup_memory_bytes{groupname=~\"gunicorn.*\"})", "legendFormat": "{{groupname}}", "refId": "A" }],
+      "targets": [{ "expr": "sum by (groupname) (namedprocess_namegroup_memory_bytes{groupname=\"gunicorn\",memtype=\"resident\"})", "legendFormat": "{{groupname}}", "refId": "A" }],
       "title": "Gunicorn RSS over time",
       "type": "timeseries"
     },
@@ -118,6 +118,7 @@
         { "expr": "increase(gbs_journal_events_total{marker=\"app5xx\"}[1h])", "legendFormat": "APP5XX/h", "refId": "B" },
         { "expr": "increase(gbs_journal_events_total{marker=\"worker_timeout\"}[24h])", "legendFormat": "WORKER TIMEOUT/24h", "refId": "C" }
       ],
+      "description": "Requires gbs_journal_log_counts.sh on the host (not enabled on glider-dev until counter semantics are fixed). Use journalctl SLOWREQ grep meanwhile.",
       "title": "Journal log markers (textfile)",
       "type": "timeseries"
     },

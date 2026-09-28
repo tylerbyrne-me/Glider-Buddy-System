@@ -1,55 +1,59 @@
 # Glider Buddy Prometheus scrape config
-# Install path example: /etc/gliderbuddy-monitoring/prometheus.yml
-# Tune targets for staging vs production hostnames.
+# Example install: /etc/prometheus/prometheus.yml (promtool check config)
+# Tune instance labels and rule_files path per host. See RUNBOOK.md and HOST_PROFILES.md.
 
 global:
   scrape_interval: 30s
   evaluation_interval: 30s
 
 rule_files:
-  - alert_rules.yml
+  # 16 GiB hosts: alert_rules.yml — ~10 GiB: alert_rules_10gb.yml
+  - /etc/prometheus/alert_rules.yml
 
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets:
-            # - alertmanager:9093
-            - localhost:9093
+# Uncomment when Alertmanager is installed (see backlog: external notifications).
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#             - 127.0.0.1:9093
 
 scrape_configs:
   - job_name: prometheus
     static_configs:
-      - targets: ["localhost:9090"]
+      - targets:
+          - "127.0.0.1:9091"
 
   - job_name: node
     static_configs:
-      - targets: ["localhost:9100"]
+      - targets:
+          - "127.0.0.1:9100"
         labels:
           instance: gliderbuddy-host
 
   - job_name: process
     static_configs:
-      - targets: ["localhost:9256"]
+      - targets:
+          - "127.0.0.1:9256"
+        labels:
+          instance: gliderbuddy-host
 
   - job_name: blackbox_http
     metrics_path: /probe
     params:
-      module: [http_2xx]
+      module:
+        - http_2xx
     static_configs:
       - targets:
-          - http://127.0.0.1:8080/healthz
-          - http://127.0.0.1:8080/login.html
+          - "http://127.0.0.1:8080/healthz"
+          - "http://127.0.0.1:8080/login.html"
         labels:
           probe: local
     relabel_configs:
-      - source_labels: [__address__]
+      - source_labels:
+          - __address__
         target_label: __param_target
-      - source_labels: [__param_target]
+      - source_labels:
+          - __param_target
         target_label: instance
       - target_label: __address__
-        replacement: 127.0.0.1:9115
-
-  # Optional: install prometheus-systemd-exporter for unit state metrics
-  # - job_name: systemd
-  #   static_configs:
-  #     - targets: ["localhost:9558"]
+        replacement: "127.0.0.1:9115"

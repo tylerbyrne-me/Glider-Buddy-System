@@ -1586,20 +1586,19 @@ async def run_slocum_weekly_reports_job():
     from app.platforms.slocum.reports import create_and_save_slocum_weekly_report
 
     try:
-        from app.core.mission_aliases import resolve_slocum_dataset_ids
-        from app.platforms.slocum.mirror_service import is_historical_dataset
+        from app.core.mission_catalog.enablement import resolve_active_slocum_dataset_ids
 
-        dataset_ids = [
-            did
-            for did in resolve_slocum_dataset_ids(settings.active_slocum_datasets)
-            if not is_historical_dataset(did)
-        ]
-        if not dataset_ids:
-            logger.info("AUTOMATED: No active Slocum datasets configured. Skipping weekly reports.")
-            record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active Slocum datasets")
-            return
-        logger.info("AUTOMATED: Slocum weekly report queue: %s", dataset_ids)
         with SQLModelSession(sqlite_engine) as session:
+            dataset_ids = resolve_active_slocum_dataset_ids(session)
+            if not dataset_ids:
+                logger.info(
+                    "AUTOMATED: No active Slocum datasets configured. Skipping weekly reports."
+                )
+                record_job_outcome(
+                    job_id, JobRunOutcomeEnum.SKIPPED, "No active Slocum datasets"
+                )
+                return
+            logger.info("AUTOMATED: Slocum weekly report queue: %s", dataset_ids)
             for dataset_id in dataset_ids:
                 await create_and_save_slocum_weekly_report(dataset_id, session)
         logger.info("AUTOMATED: Slocum weekly report job finished for %s datasets.", len(dataset_ids))
@@ -1951,33 +1950,29 @@ async def run_slocum_auto_checklist_submit_job():
         )
         return
 
-    from app.core.mission_aliases import resolve_slocum_dataset_ids
+    from app.core.mission_catalog.enablement import resolve_active_slocum_dataset_ids
     from app.platforms.slocum.checklist_submit_service import auto_submit_checklist_for_dataset
-    from app.platforms.slocum.mirror_service import is_historical_dataset
-
-    dataset_ids = [
-        did
-        for did in resolve_slocum_dataset_ids(settings.active_slocum_datasets)
-        if not is_historical_dataset(did)
-    ]
-    if not dataset_ids:
-        logger.info("AUTOMATED: No active Slocum datasets for auto checklist submit.")
-        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "No active Slocum datasets")
-        return
 
     stagger_seconds = max(
         0, int(getattr(settings, "slocum_auto_checklist_stagger_seconds", 150) or 0)
-    )
-    logger.info(
-        "AUTOMATED: Slocum auto checklist queue (%s datasets, stagger=%ss): %s",
-        len(dataset_ids),
-        stagger_seconds,
-        dataset_ids,
     )
     submitted = 0
     skipped = 0
     failed = 0
     with SQLModelSession(sqlite_engine) as session:
+        dataset_ids = resolve_active_slocum_dataset_ids(session)
+        if not dataset_ids:
+            logger.info("AUTOMATED: No active Slocum datasets for auto checklist submit.")
+            record_job_outcome(
+                job_id, JobRunOutcomeEnum.SKIPPED, "No active Slocum datasets"
+            )
+            return
+        logger.info(
+            "AUTOMATED: Slocum auto checklist queue (%s datasets, stagger=%ss): %s",
+            len(dataset_ids),
+            stagger_seconds,
+            dataset_ids,
+        )
         remaining_after = len(dataset_ids)
         for dataset_id in dataset_ids:
             remaining_after -= 1

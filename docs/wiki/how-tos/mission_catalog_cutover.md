@@ -63,6 +63,10 @@ STALE/CONFLICT sources are excluded from readiness. Prefer realtime while ACTIVE
 2. `MISSION_CATALOG_AUTO_APPLY=true`
 3. `MISSION_CATALOG_SLOCUM_WARM_FROM_CATALOG=true`
 4. `MISSION_CATALOG_PUBLIC_MAP_FROM_CATALOG=true`
+
+Slocum weekly reports and auto-checklist submit jobs always use catalog enablement when
+`ACTIVE_SLOCUM_DATASETS` is empty (via `resolve_active_slocum_dataset_ids`); they do not
+require flag (3).
 5. Optional: `MISSION_CATALOG_ENROLLMENT_SHADOW=true` before first ST auto-enroll write soak
 6. `MISSION_CATALOG_SYNC_INTERVAL_MINUTES=30` (default; `0` = daily cron only)
 7. `MISSION_CATALOG_ST_DEEP_SYNC_TTL_HOURS=24` (deep ST refresh cadence)
