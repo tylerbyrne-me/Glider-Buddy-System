@@ -6,8 +6,9 @@ SFMC log notes are not available via API; paste HTML/JSON response pages into fi
 
     YYYY-MM-DD HH:MM : [authorUsername] userLogNoteText
 
-Target the mission via its env alias from SLOCUM_DATASET_ALIAS_MAP_JSON
-(e.g. ``fundy``), not the integer ``slocum_deployments.id``.
+Target the mission via env alias (``peggy``), catalog display label
+(``m226-Peggy``), or full ERDDAP dataset id — not the integer
+``slocum_deployments.id``.
 
 Notes outside the mission window are skipped (SFMC archival noise):
   start = Sensor Tracker start_time → deployment_date → parsed dataset start
@@ -24,10 +25,10 @@ Remote HTTP auth (default path, same as station_cli):
     CLI_ADMIN_PASSWORD
 
 Usage:
-    python -m app.cli.sfmc_lognote_import --alias fundy page1.json --dry-run --local
-    python -m app.cli.sfmc_lognote_import --alias fundy page1.json --dry-run
-    python -m app.cli.sfmc_lognote_import --alias fundy page1.json page2.json
-    python -m app.cli.sfmc_lognote_import --alias fundy page1.json --after 2026-06-21 --before 2026-08-01
+    python -m app.cli.sfmc_lognote_import --alias m226-Peggy page1.json --dry-run --local
+    python -m app.cli.sfmc_lognote_import --alias peggy page1.json --dry-run
+    python -m app.cli.sfmc_lognote_import --alias peggy page1.json page2.json
+    python -m app.cli.sfmc_lognote_import --alias peggy page1.json --after 2026-06-21 --before 2026-08-01
 """
 
 from __future__ import annotations
@@ -339,8 +340,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--alias",
         required=True,
         help=(
-            "Slocum mission alias from SLOCUM_DATASET_ALIAS_MAP_JSON "
-            "(e.g. fundy), or a full ERDDAP dataset id"
+            "Slocum mission: env alias from SLOCUM_DATASET_ALIAS_MAP_JSON "
+            "(e.g. peggy), catalog display label (e.g. m226-Peggy), "
+            "or a full ERDDAP dataset id"
         ),
     )
     parser.add_argument(

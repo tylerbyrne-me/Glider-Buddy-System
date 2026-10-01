@@ -14,6 +14,7 @@ Operational procedures, sensor guides, and admin quick starts.
 - [Sensor Tracker Team browser](./sensor_tracker_team_browser.md)
 - [Team Visualizations gallery](./team_visualizations.md)
 - [VMT Team log book](./vmt_logbook.md)
+- [Wave Glider ORA request](./wave_glider_ora.md)
 - [Station offload season rollover](./station_offload_season_rollover.md)
 - [Knowledge base quick start](./KNOWLEDGE_BASE_QUICK_START.md)
 - [LLM chatbot troubleshooting example](./LLM_CHATBOT_TROUBLESHOOTING_EXAMPLE.md)

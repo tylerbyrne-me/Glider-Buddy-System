@@ -18,6 +18,7 @@ Start here. This folder is the source of truth for "how does this work."
 - [Sensor Tracker Team browser](./how-tos/sensor_tracker_team_browser.md) — admin Team hub live inventory search
 - [Team Visualizations gallery](./how-tos/team_visualizations.md) — static fleet charts from Sensor Tracker
 - [VMT Team log book](./how-tos/vmt_logbook.md) — Vemco Mobile Transceiver inventory, battery/service history, ST sync
+- [Wave Glider ORA request](./how-tos/wave_glider_ora.md) — Team draft of the Liquid Robotics operational risk form
 - [Glossary template](./GLOSSARY_TEMPLATE.md) — RAG/glossary authoring
 - [Module templates](./MODULE_TEMPLATES_README.md) — module scaffolding notes
 
@@ -35,7 +36,7 @@ Detailed coding and folder standards: [standards/README.md](./standards/README.m
 
 - [Backlog](../tasks/backlog.md) / [In progress](../tasks/in-progress.md) / [Done](../tasks/done.md)
 - [Bugs](../bugs/README.md)
-- [Decisions (ADRs)](../decisions/0000-template.md) — [0001 leader lock](../decisions/0001-gunicorn-leader-lock.md), [0002 no preload](../decisions/0002-no-gunicorn-preload.md), [0003 platform/brand naming](../decisions/0003-platform-brand-naming.md), [0004 DMON Robots4Whales cache](../decisions/0004-dmon-robots4whales-review-cache.md), [0005 mission catalog live keys](../decisions/0005-mission-catalog-live-keys.md), [0006 form submission retention windows](../decisions/0006-form-submission-retention-windows.md), [0007 ERDDAP metadata-only deferred](../decisions/0007-erddap-metadata-only-deferred.md), [0008 catalog durable ops state](../decisions/0008-catalog-durable-ops-state.md), [0009 historical identity / display labels](../decisions/0009-historical-identity-display-labels.md)
+- [Decisions (ADRs)](../decisions/0000-template.md) — [0001 leader lock](../decisions/0001-gunicorn-leader-lock.md), [0002 no preload](../decisions/0002-no-gunicorn-preload.md), [0003 platform/brand naming](../decisions/0003-platform-brand-naming.md), [0004 DMON Robots4Whales cache](../decisions/0004-dmon-robots4whales-review-cache.md), [0005 mission catalog live keys](../decisions/0005-mission-catalog-live-keys.md), [0006 form submission retention windows](../decisions/0006-form-submission-retention-windows.md), [0007 ERDDAP metadata-only deferred](../decisions/0007-erddap-metadata-only-deferred.md), [0008 catalog durable ops state](../decisions/0008-catalog-durable-ops-state.md), [0009 historical identity / display labels](../decisions/0009-historical-identity-display-labels.md), [0010 team ORA drafts](../decisions/0010-team-ora-drafts.md)
 
 ## Archive
 

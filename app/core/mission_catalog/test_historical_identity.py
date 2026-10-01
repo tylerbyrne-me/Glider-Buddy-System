@@ -49,6 +49,50 @@ def _session() -> Session:
     return Session(engine)
 
 
+def test_resolve_nav_display_label_m226_peggy() -> None:
+    """Catalog cutover labels (ADR 0009) must resolve to the briefing owner."""
+    session = _session()
+    owner = SlocumDeployment(
+        name="Peggy m226",
+        glider_name="peggy",
+        mission_key="peggy_20260621_226",
+        erddap_dataset_id="peggy_20260621_226_realtime",
+        status="active",
+        is_active=True,
+        created_by_username="pilot",
+    )
+    session.add(owner)
+    session.commit()
+    session.refresh(owner)
+
+    for label in ("m226-Peggy", "m226-peggy", "M226-PEGGY"):
+        resolved = resolve_deployment_for_dataset(session, label)
+        assert resolved is not None, label
+        assert resolved.id == owner.id
+
+    created = get_or_create_deployment_for_dataset(
+        session,
+        "m226-Peggy",
+        created_by_username="importer",
+    )
+    assert created is not None
+    assert created.id == owner.id
+    assert created.erddap_dataset_id == "peggy_20260621_226_realtime"
+    assert created.mission_key == "peggy_20260621_226"
+    assert len(session.exec(select(SlocumDeployment)).all()) == 1
+
+
+def test_display_label_does_not_create_orphan() -> None:
+    session = _session()
+    missing = get_or_create_deployment_for_dataset(
+        session,
+        "m999-Nobody",
+        created_by_username="importer",
+    )
+    assert missing is None
+    assert session.exec(select(SlocumDeployment)).all() == []
+
+
 def test_wave_glider_legacy_and_catalog_labels() -> None:
     assert wave_glider_display_label("1070-m170") == "m170-SV3-1070"
     assert (
@@ -80,6 +124,13 @@ def test_slocum_nav_labels_and_same_deployment_number_scopes() -> None:
     assert slocum_nav_display_label(
         "a", deployment_number=100, glider_name="fundy"
     ) != slocum_nav_display_label("b", deployment_number=100, glider_name="peggy")
+    from app.core.mission_catalog.display_labels import parse_slocum_nav_display_label
+
+    assert parse_slocum_nav_display_label("m226-Peggy") == {
+        "deployment_number": 226,
+        "glider_name": "Peggy",
+    }
+    assert parse_slocum_nav_display_label("peggy_20260621_226_realtime") is None
 
 
 def test_resolve_includes_inactive_completed_owner() -> None:

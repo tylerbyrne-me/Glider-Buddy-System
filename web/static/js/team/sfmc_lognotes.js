@@ -1,7 +1,9 @@
 import { apiRequest, showToast } from '/static/js/api.js';
 
 document.addEventListener('DOMContentLoaded', () => {
+    const missionSelect = document.getElementById('missionSelect');
     const aliasInput = document.getElementById('aliasInput');
+    const missionLabelHints = document.getElementById('missionLabelHints');
     const jsonText = document.getElementById('jsonText');
     const jsonFile = document.getElementById('jsonFile');
     const afterDate = document.getElementById('afterDate');
@@ -15,6 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const previewBody = document.getElementById('previewBody');
 
     let dryRunOk = false;
+    /** @type {Array<{key: string, label: string}>} */
+    let missionEntries = [];
 
     const escapeHtml = (value) => {
         const div = document.createElement('div');
@@ -22,8 +26,14 @@ document.addEventListener('DOMContentLoaded', () => {
         return div.innerHTML;
     };
 
+    const resolveAlias = () => {
+        const typed = (aliasInput.value || '').trim();
+        if (typed) return typed;
+        return (missionSelect.value || '').trim();
+    };
+
     const buildBody = () => ({
-        alias: (aliasInput.value || '').trim(),
+        alias: resolveAlias(),
         json_text: jsonText.value || '',
         after: afterDate.value || null,
         before: beforeDate.value || null,
@@ -36,9 +46,58 @@ document.addEventListener('DOMContentLoaded', () => {
         postBtn.disabled = true;
     };
 
-    [aliasInput, jsonText, afterDate, beforeDate, noDateFilter, includeInReport].forEach((el) => {
+    const populateMissions = (entries) => {
+        missionEntries = Array.isArray(entries) ? entries : [];
+        missionSelect.innerHTML = '';
+        missionLabelHints.innerHTML = '';
+        if (!missionEntries.length) {
+            missionSelect.innerHTML = '<option value="">No active Slocum missions</option>';
+            return;
+        }
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select a mission…';
+        missionSelect.appendChild(placeholder);
+        missionEntries.forEach((entry) => {
+            const key = (entry.key || '').trim();
+            const label = (entry.label || key).trim();
+            if (!key) return;
+            const option = document.createElement('option');
+            option.value = key;
+            option.textContent = label === key ? key : `${label} (${key})`;
+            missionSelect.appendChild(option);
+
+            const hint = document.createElement('option');
+            hint.value = label;
+            missionLabelHints.appendChild(hint);
+            if (label !== key) {
+                const keyHint = document.createElement('option');
+                keyHint.value = key;
+                missionLabelHints.appendChild(keyHint);
+            }
+        });
+    };
+
+    const loadMissions = async () => {
+        try {
+            const entries = await apiRequest('/api/slocum/available_datasets/detail', 'GET');
+            populateMissions(entries);
+        } catch (err) {
+            missionSelect.innerHTML = '<option value="">Could not load missions</option>';
+            showToast(err.message || 'Failed to load Slocum missions.', 'warning');
+        }
+    };
+
+    [missionSelect, aliasInput, jsonText, afterDate, beforeDate, noDateFilter, includeInReport].forEach((el) => {
         el.addEventListener('input', invalidateDryRun);
         el.addEventListener('change', invalidateDryRun);
+    });
+
+    missionSelect.addEventListener('change', () => {
+        if (missionSelect.value) {
+            aliasInput.value = '';
+        }
+        invalidateDryRun();
     });
 
     jsonFile.addEventListener('change', async () => {
@@ -69,7 +128,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const run = async (endpoint, { enablePostOnSuccess }) => {
         const body = buildBody();
         if (!body.alias || !body.json_text.trim()) {
-            showToast('Alias and JSON are required.', 'danger');
+            showToast('Select or type a mission, and provide JSON.', 'danger');
             return;
         }
         dryRunBtn.disabled = true;
@@ -112,4 +171,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         run('/api/team/sfmc-lognotes/post', { enablePostOnSuccess: false });
     });
+
+    loadMissions();
 });

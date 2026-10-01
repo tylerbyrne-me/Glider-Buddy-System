@@ -90,6 +90,8 @@ from .database import (
     VmtBatteryCheck,
     VmtServiceEvent,
     VmtUnitAuditLog,
+    OraRequest,
+    OraHullProfile,
 )
 
 # Import Pydantic schemas
@@ -214,6 +216,16 @@ from .schemas import (
     VmtSyncResult,
     VmtStAttachmentRow,
     VmtStAccountingResponse,
+    OraCoordinateIn,
+    OraDeviceRow,
+    OraDraftWrite,
+    OraDraftRead,
+    OraDraftSummary,
+    OraHullProfileRead,
+    OraMissionOption,
+    OraContextTrack,
+    OraLoadoutRequest,
+    OraLoadoutResponse,
     
     # Knowledge base models
     KnowledgeDocumentCreate,
@@ -324,6 +336,8 @@ __all__ = [
     "VmtBatteryCheck",
     "VmtServiceEvent",
     "VmtUnitAuditLog",
+    "OraRequest",
+    "OraHullProfile",
     
     # Pydantic schemas (add all schema names here)
     "ReportDataParams",
@@ -429,6 +443,16 @@ __all__ = [
     "VmtSyncResult",
     "VmtStAttachmentRow",
     "VmtStAccountingResponse",
+    "OraCoordinateIn",
+    "OraDeviceRow",
+    "OraDraftWrite",
+    "OraDraftRead",
+    "OraDraftSummary",
+    "OraHullProfileRead",
+    "OraMissionOption",
+    "OraContextTrack",
+    "OraLoadoutRequest",
+    "OraLoadoutResponse",
     "KnowledgeDocumentCreate",
     "KnowledgeDocumentUpdate",
     "KnowledgeDocumentRead",

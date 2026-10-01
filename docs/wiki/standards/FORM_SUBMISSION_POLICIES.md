@@ -29,7 +29,7 @@ Composite index `(mission_id, form_type, submission_timestamp)` supports mission
 | `pre_deployment_checklist` | Wave Glider | Rare | Low volume |
 | `slocum_daily_checklist` | Slocum | ~1 / UTC day (+ automated `System` fill) | Same table; list via `/api/slocum/checklists/...` |
 
-Related but **out of scope** for this policy: WG-VM4 `offload_logs` (separate table), weekly/EOM PDF URLs on mission/deployment rows.
+Related but **out of scope** for this policy: WG-VM4 `offload_logs` (separate table), weekly/EOM PDF URLs on mission/deployment rows, and Team ORA drafts (`ora_requests`, ADR [0010](../../decisions/0010-team-ora-drafts.md)).
 
 ## Interactive retention windows
 

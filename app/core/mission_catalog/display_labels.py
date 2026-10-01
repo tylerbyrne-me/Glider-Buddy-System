@@ -21,6 +21,11 @@ _SV3_HULL = re.compile(r"^SV3-(?P<hull>\d+)$", re.IGNORECASE)
 _FOLDER_STYLE = re.compile(
     r"^(?P<code>m\d+)(?:-(?P<rest>.+))?$", re.IGNORECASE
 )
+# Slocum nav labels after catalog cutover: m226-Peggy (not ERDDAP storage keys).
+_SLOCUM_NAV_LABEL = re.compile(
+    r"^m(?P<num>\d+)(?:-(?P<name>.+))?$",
+    re.IGNORECASE,
+)
 
 
 def mission_code_from_deployment_number(deployment_number: Optional[int]) -> Optional[str]:
@@ -44,6 +49,26 @@ def extract_sv3_hull(platform_name: Optional[str]) -> Optional[str]:
     if re.fullmatch(r"\d{3,5}", token):
         return token
     return None
+
+
+def parse_slocum_nav_display_label(raw: str) -> Optional[dict[str, Any]]:
+    """
+    Parse ``m###`` / ``m###-<GliderName>`` navigation labels (ADR 0009).
+
+    Returns None for ERDDAP dataset ids and other non-label strings so resolvers
+    do not confuse storage keys with display-only labels.
+    """
+    trimmed = (raw or "").strip()
+    if not trimmed or parse_slocum_dataset_id(trimmed):
+        return None
+    match = _SLOCUM_NAV_LABEL.match(trimmed)
+    if not match:
+        return None
+    name = (match.group("name") or "").strip()
+    return {
+        "deployment_number": int(match.group("num")),
+        "glider_name": name or None,
+    }
 
 
 def wave_glider_display_label(

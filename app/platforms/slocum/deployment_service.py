@@ -24,8 +24,18 @@ from sqlmodel import select
 from app.core import models, utils
 from app.core.infra.db import SQLModelSession
 from app.core.mission_aliases import equivalent_slocum_dataset_keys, resolve_slocum_dataset_id
+from app.core.mission_catalog.display_labels import parse_slocum_nav_display_label
 
 logger = logging.getLogger(__name__)
+
+
+def _deployment_number_for_row(deployment: models.SlocumDeployment) -> Optional[int]:
+    """Best-effort deployment number from ERDDAP identity fields."""
+    for candidate in (deployment.erddap_dataset_id, deployment.mission_key):
+        parsed = utils.parse_slocum_dataset_id(candidate or "")
+        if parsed:
+            return int(parsed["deployment_number"])
+    return None
 
 
 def _is_alias_only_identity(deployment: models.SlocumDeployment) -> bool:
@@ -74,6 +84,51 @@ def _find_alias_only_deployment(
             "Multiple alias-only Slocum deployments match glider=%s start=%s; skipping auto-link",
             glider_name,
             start_date,
+        )
+    return None
+
+
+def _find_by_nav_display_label(
+    session: SQLModelSession,
+    label: str,
+    *,
+    include_inactive: bool,
+) -> Optional[models.SlocumDeployment]:
+    """
+    Resolve catalog cutover display labels (``m226-Peggy``) to a briefing row.
+
+    Labels are display-only (ADR 0009); they are not env aliases and are not
+    parseable ERDDAP dataset ids. Match by deployment number + optional glider.
+    """
+    parsed_label = parse_slocum_nav_display_label(label)
+    if not parsed_label:
+        return None
+
+    dep_number = int(parsed_label["deployment_number"])
+    glider_hint = parsed_label.get("glider_name")
+    stmt = select(models.SlocumDeployment)
+    if not include_inactive:
+        stmt = stmt.where(models.SlocumDeployment.is_active == True)  # noqa: E712
+    candidates = session.exec(stmt).all()
+
+    matches: list[models.SlocumDeployment] = []
+    for dep in candidates:
+        row_number = _deployment_number_for_row(dep)
+        if row_number is None or row_number != dep_number:
+            continue
+        if glider_hint:
+            dep_glider = (dep.glider_name or "").strip()
+            if dep_glider.lower() != glider_hint.lower():
+                continue
+        matches.append(dep)
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        logger.warning(
+            "Multiple Slocum deployments match display label %r (n=%s); skipping auto-link",
+            label,
+            len(matches),
         )
     return None
 
@@ -156,6 +211,12 @@ def resolve_deployment_for_dataset(
         if by_alias_only:
             candidates.append(by_alias_only)
 
+    by_display_label = _find_by_nav_display_label(
+        session, dataset_id, include_inactive=include_inactive
+    )
+    if by_display_label:
+        candidates.append(by_display_label)
+
     return _prefer_deployment(candidates)
 
 
@@ -174,6 +235,10 @@ def get_or_create_deployment_for_dataset(
     GETs and delayed handoffs cannot spawn empty duplicates. Creation is
     skipped when ``allow_create=False`` (historical / read-only paths).
 
+    Accepts env aliases, full ERDDAP dataset ids, and navigation display labels
+    (``m226-Peggy``). Display labels only resolve existing rows — they never
+    create or overwrite ``erddap_dataset_id`` / ``mission_key``.
+
     When an existing deployment is resolved from a different dataset id
     (e.g. delayed after realtime), ``erddap_dataset_id`` may be updated to the
     preferred source. That never creates a second mission row.
@@ -182,6 +247,7 @@ def get_or_create_deployment_for_dataset(
     mission-code derivation).
     """
     dataset_id = resolve_slocum_dataset_id(dataset_id)
+    is_parseable_erddap = utils.parse_slocum_dataset_id(dataset_id) is not None
     # Always include inactive for identity existence — completed briefing owner
     # must win over create.
     existing = resolve_deployment_for_dataset(
@@ -189,24 +255,26 @@ def get_or_create_deployment_for_dataset(
     )
     if existing:
         changed = False
-        mission_key = utils.slocum_mission_key(dataset_id)
-        if mission_key and (
-            not existing.mission_key
-            or (
-                existing.mission_key != mission_key
-                and utils.parse_slocum_dataset_id(existing.mission_key or "") is None
-            )
-        ):
-            existing.mission_key = mission_key
-            changed = True
-        # Do not reactivate completed rows on ordinary resolve/create.
-        if (
-            update_erddap_dataset_id
-            and dataset_id
-            and existing.erddap_dataset_id != dataset_id
-        ):
-            existing.erddap_dataset_id = dataset_id
-            changed = True
+        # Never rewrite storage identity from a display label / bare alias.
+        if is_parseable_erddap:
+            mission_key = utils.slocum_mission_key(dataset_id)
+            if mission_key and (
+                not existing.mission_key
+                or (
+                    existing.mission_key != mission_key
+                    and utils.parse_slocum_dataset_id(existing.mission_key or "") is None
+                )
+            ):
+                existing.mission_key = mission_key
+                changed = True
+            # Do not reactivate completed rows on ordinary resolve/create.
+            if (
+                update_erddap_dataset_id
+                and dataset_id
+                and existing.erddap_dataset_id != dataset_id
+            ):
+                existing.erddap_dataset_id = dataset_id
+                changed = True
         if changed:
             existing.updated_at_utc = datetime.now(timezone.utc)
             session.add(existing)

@@ -5,7 +5,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlmodel import Session as SQLModelSession
 
 from ..core import models
@@ -39,6 +39,7 @@ from ..services.sensor_tracker_query import (
     lookup_buddy_deployment,
     get_entity_analytics,
 )
+from ..services import team_ora
 from ..services import team_vmt_logbook as vmt_logbook
 
 logger = logging.getLogger(__name__)
@@ -798,3 +799,118 @@ async def vmt_logbook_st_accounting(
         _raise_vmt_error(exc)
     except SensorTrackerQueryError as exc:
         _raise_st_query_error(exc)
+
+
+def _raise_ora_error(exc: team_ora.OraError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/team/ora", response_class=HTMLResponse, include_in_schema=False)
+async def get_ora_request_page(
+    request: Request,
+    current_user: models.User = Depends(get_current_admin_user),
+):
+    context = get_template_context(
+        request=request,
+        current_user=current_user,
+        show_banner_nav=True,
+    )
+    return templates.TemplateResponse("team/ora_request.html", context)
+
+
+@router.get("/api/team/ora/drafts", response_model=List[models.OraDraftSummary])
+async def list_ora_drafts(session: SQLModelSession = Depends(get_db_session)):
+    return team_ora.list_drafts(session)
+
+
+@router.post(
+    "/api/team/ora/drafts",
+    response_model=models.OraDraftRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_ora_draft(
+    body: models.OraDraftWrite,
+    current_user: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        row = team_ora.create_draft(session, body, username=current_user.username)
+        return team_ora.draft_to_read(row)
+    except team_ora.OraError as exc:
+        _raise_ora_error(exc)
+
+
+@router.get("/api/team/ora/drafts/{draft_id}", response_model=models.OraDraftRead)
+async def get_ora_draft(
+    draft_id: int,
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        return team_ora.draft_to_read(team_ora.get_draft(session, draft_id))
+    except team_ora.OraError as exc:
+        _raise_ora_error(exc)
+
+
+@router.put("/api/team/ora/drafts/{draft_id}", response_model=models.OraDraftRead)
+async def update_ora_draft(
+    draft_id: int,
+    body: models.OraDraftWrite,
+    current_user: models.User = Depends(get_current_admin_user),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        row = team_ora.update_draft(
+            session, draft_id, body, username=current_user.username
+        )
+        return team_ora.draft_to_read(row)
+    except team_ora.OraError as exc:
+        _raise_ora_error(exc)
+
+
+@router.delete("/api/team/ora/drafts/{draft_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_ora_draft(
+    draft_id: int,
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        team_ora.delete_draft(session, draft_id)
+    except team_ora.OraError as exc:
+        _raise_ora_error(exc)
+
+
+@router.get("/api/team/ora/missions", response_model=List[models.OraMissionOption])
+async def list_ora_missions(session: SQLModelSession = Depends(get_db_session)):
+    return team_ora.list_wave_glider_missions(session)
+
+
+@router.get("/api/team/ora/device-defaults", response_model=List[models.OraDeviceRow])
+async def ora_device_defaults():
+    from app.platforms.wave_glider.ora_devices import default_device_rows
+
+    return [models.OraDeviceRow.model_validate(row) for row in default_device_rows()]
+
+
+@router.get("/api/team/ora/context-tracks", response_model=List[models.OraContextTrack])
+async def list_ora_context_tracks(session: SQLModelSession = Depends(get_db_session)):
+    return team_ora.list_context_tracks(session)
+
+
+@router.post("/api/team/ora/loadout", response_model=models.OraLoadoutResponse)
+async def ora_loadout_from_tracker(body: models.OraLoadoutRequest):
+    try:
+        return await team_ora.load_tracker_devices(body.platform_name, body.devices)
+    except team_ora.OraError as exc:
+        _raise_ora_error(exc)
+
+
+@router.post("/api/team/ora/pdf")
+async def download_ora_pdf(body: models.OraDraftWrite):
+    try:
+        content, filename = team_ora.render_draft_pdf(body)
+    except team_ora.OraError as exc:
+        _raise_ora_error(exc)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

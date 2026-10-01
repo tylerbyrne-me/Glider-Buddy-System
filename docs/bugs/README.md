@@ -36,3 +36,5 @@ When fixed: set `status: fixed`, complete Resolution, and move the related line 
 | [BUG-005](./BUG-005-slocum-invalid-gps-status-track-points.md) | fixed | Slocum track outliers: invalid `m_gps_status` + implausible NaN-status DR |
 | [BUG-006](./BUG-006-slocum-stale-badge-false-outage.md) | fixed | Slocum source badge treated healthy `stale` mirror as ERDDAP down |
 | [BUG-007](./BUG-007-sensor-tracker-list-next-page.md) | fixed | Sensor Tracker browser Next repeated page 1 (did not follow Tracker `next`) |
+| [BUG-008](./BUG-008-slocum-interactive-overage-clipped.md) | fixed | Slocum interactive ranges clipped to 72h mirror (overage not used) |
+| [BUG-009](./BUG-009-sfmc-lognote-display-label.md) | fixed | SFMC log-note import failed on catalog display labels (`m226-Peggy`) |

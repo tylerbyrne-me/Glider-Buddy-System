@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+
+{% block title %}Wave Glider ORA - {{ platform_buddy_title }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4 px-3 px-lg-4">
+    <p class="mb-2"><a href="/team">&larr; Team</a></p>
+    <h1 class="mb-2">Wave Glider ORA request</h1>
+    <p class="text-muted mb-3">
+        Draft an Operational Risk Assessment for Liquid Robotics, then download a PDF.
+        Email it to
+        <a href="mailto:opscenter@liquid-robotics.com">opscenter@liquid-robotics.com</a>.
+        Suggested subject: <code id="oraSubject">ORA request</code>
+    </p>
+
+    <div class="d-flex flex-wrap gap-2 mb-3 align-items-end">
+        <div style="min-width: 16rem;">
+            <label for="oraDraftSelect" class="form-label mb-1">Saved drafts</label>
+            <select id="oraDraftSelect" class="form-select">
+                <option value="">New request</option>
+            </select>
+        </div>
+        <button type="button" class="btn btn-outline-secondary" id="oraNewBtn">New</button>
+        <button type="button" class="btn btn-outline-danger" id="oraDeleteBtn" disabled>Delete draft</button>
+        <button type="button" class="btn btn-primary" id="oraSaveBtn">Save draft</button>
+        <button type="button" class="btn btn-outline-primary" id="oraDownloadBtn">Download PDF</button>
+    </div>
+    <p id="oraStatus" class="small text-muted"></p>
+
+    <div class="row g-4">
+        <div class="col-xl-6">
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">Request</h2></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="oraMission" class="form-label">Catalog mission (planned or active Wave Glider)</label>
+                        <select id="oraMission" class="form-select">
+                            <option value="">Not linked</option>
+                        </select>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="oraTitle" class="form-label">Title</label>
+                            <input id="oraTitle" class="form-control" placeholder="Spring Bloom 2026">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="oraRequester" class="form-label">Requester</label>
+                            <input id="oraRequester" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="oraProjectCode" class="form-label">Project code</label>
+                            <input id="oraProjectCode" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="oraProjectOther" class="form-label">Other code</label>
+                            <input id="oraProjectOther" class="form-control">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="oraClient" class="form-label">Client</label>
+                            <input id="oraClient" class="form-control">
+                        </div>
+                        <div class="col-md-8">
+                            <label for="oraDates" class="form-label">Dates of operation</label>
+                            <input id="oraDates" class="form-control" placeholder="7 Apr 2026 – 6 May 2026">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="oraHull" class="form-label">Hull</label>
+                            <input id="oraHull" class="form-control" placeholder="SV3-1071">
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <span class="form-label d-block">Purpose</span>
+                        <div class="d-flex flex-wrap gap-3">
+                            <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="oraPurpose" value="mission"> Mission</label>
+                            <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="oraPurpose" value="demo"> Demo</label>
+                            <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="oraPurpose" value="training"> Training</label>
+                            <label class="form-check-label"><input class="form-check-input me-1" type="checkbox" name="oraPurpose" value="regional_analysis"> Regional Analysis</label>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <span class="form-label d-block">Priority</span>
+                        <div class="d-flex flex-wrap gap-3">
+                            <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="oraPriority" value="1"> 1 Company critical</label>
+                            <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="oraPriority" value="2"> 2 High importance</label>
+                            <label class="form-check-label"><input class="form-check-input me-1" type="radio" name="oraPriority" value="3"> 3 Standard</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">Wave Glider configuration</h2></div>
+                <div class="card-body">
+                    <p class="small text-muted">Saving a draft remembers the last non-empty values for this hull.</p>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <span class="form-label d-block">Model</span>
+                            <label class="me-3"><input type="radio" name="oraVehicle" value="sv2"> SV2</label>
+                            <label><input type="radio" name="oraVehicle" value="sv3"> SV3</label>
+                        </div>
+                        <div class="col-md-6">
+                            <span class="form-label d-block">Umbilical</span>
+                            <label class="me-3"><input type="radio" name="oraUmbilical" value="4"> 4m</label>
+                            <label class="me-3"><input type="radio" name="oraUmbilical" value="8"> 8m</label>
+                            <label><input type="radio" name="oraUmbilical" value="20"> 20m</label>
+                        </div>
+                        <div class="col-md-6">
+                            <span class="form-label d-block">Towing</span>
+                            <label class="me-3"><input type="radio" name="oraTowing" value="yes"> Yes</label>
+                            <label><input type="radio" name="oraTowing" value="no"> No</label>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="oraTowedDevice" class="form-label">Towed device</label>
+                            <input id="oraTowedDevice" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <span class="form-label d-block">ECO's up to date</span>
+                            <label class="me-3"><input type="radio" name="oraEcos" value="yes"> Yes</label>
+                            <label><input type="radio" name="oraEcos" value="no"> No</label>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="oraSoftware" class="form-label">SV3 software version</label>
+                            <input id="oraSoftware" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="oraApus" class="form-label"># of APUs</label>
+                            <input id="oraApus" class="form-control">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="oraSmc" class="form-label">SMC version</label>
+                            <input id="oraSmc" class="form-control">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card gbs-card mb-3">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h2 class="h5 mb-0">Devices and power</h2>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="oraTrackerBtn">Load from Sensor Tracker</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="oraBusBtn">Reset vehicle bus</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="oraAddDeviceBtn">Add device</button>
+                    </div>
+                    <p id="oraTrackerWarning" class="small text-warning mb-2"></p>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>Device</th>
+                                    <th>Power</th>
+                                    <th>Duty cycle</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="oraDeviceBody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">Notes</h2></div>
+                <div class="card-body">
+                    <textarea id="oraNotes" class="form-control" rows="5" placeholder="Survey intent, duty-cycle plan, experimental gear, who is piloting."></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card gbs-card mb-3">
+                <div class="card-header">
+                    <h2 class="h5 mb-0">Operations area</h2>
+                </div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        Click the map to write the coordinate table. Markers on the map are the points that go into the PDF.
+                        Turn reference overlays off when they block a click.
+                    </p>
+                    <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Coordinate mode">
+                        <input type="radio" class="btn-check" name="oraMode" id="oraModeHold" value="hold_station" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="oraModeHold">Hold station</label>
+                        <input type="radio" class="btn-check" name="oraMode" id="oraModeBox" value="box" autocomplete="off">
+                        <label class="btn btn-outline-primary" for="oraModeBox">Box</label>
+                        <input type="radio" class="btn-check" name="oraMode" id="oraModeCourse" value="course" autocomplete="off" checked>
+                        <label class="btn btn-outline-primary" for="oraModeCourse">Course</label>
+                    </div>
+                    <div class="form-check form-check-inline mb-2">
+                        <input class="form-check-input" type="checkbox" id="oraShowTracks" checked>
+                        <label class="form-check-label" for="oraShowTracks">Glider tracks (48 h)</label>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary mb-2" id="oraClearPointsBtn">Clear points</button>
+                    <div id="oraMap" class="border rounded mb-3" style="height: 520px;"></div>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-2">
+                            <thead>
+                                <tr>
+                                    <th>Location</th>
+                                    <th>Latitude</th>
+                                    <th>Longitude</th>
+                                    <th>Comments</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="oraCoordBody"></tbody>
+                        </table>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="oraAddPointBtn">Add coordinate row</button>
+
+                    {% if feature_enabled('map_vector_layers') %}
+                    <div id="vectorOverlaySection" class="mt-3">
+                        <label class="form-label small mb-1">Reference zones</label>
+                        <div id="vectorLayerToggleGroup" class="btn-group btn-group-sm mb-2 flex-wrap" role="group" aria-label="Reference zone toggles">
+                            <small class="text-muted">Loading layers…</small>
+                        </div>
+                    </div>
+                    {% endif %}
+                    {% if feature_enabled('vessel_density_map_layer') %}
+                    <div id="vesselDensitySection" class="mt-2">
+                        <label class="form-label small mb-1">AIS vessel density</label>
+                        <a id="vesselDensityOpenDataLink" class="d-none" href="https://open.canada.ca/data/en/dataset/eac8e835-e7c8-450d-96b0-ff42d416c815">Open Data</a>
+                        <div class="btn-group btn-group-sm mb-2" role="group">
+                            <input type="checkbox" class="btn-check" id="vesselDensityToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="vesselDensityToggle">Density 2025</label>
+                        </div>
+                        <div id="vesselDensityMonthGroup" class="btn-group btn-group-sm mb-2 flex-wrap d-none" role="group">
+                            {% for m, label in [(1,'Jan'),(2,'Feb'),(3,'Mar'),(4,'Apr'),(5,'May'),(6,'Jun'),(7,'Jul'),(8,'Aug'),(9,'Sep'),(10,'Oct'),(11,'Nov'),(12,'Dec')] %}
+                            <input type="radio" class="btn-check" name="vesselDensityMonth" id="vesselDensityMonth{{ m }}" value="{{ m }}" autocomplete="off" disabled>
+                            <label class="btn btn-outline-secondary" for="vesselDensityMonth{{ m }}">{{ label }}</label>
+                            {% endfor %}
+                        </div>
+                        <small id="vesselDensityStatusLine" class="text-muted d-block"></small>
+                    </div>
+                    {% endif %}
+                    {% if feature_enabled('ciops_ice_map_layer') %}
+                    <div id="ciopsIceSection" class="mt-2">
+                        <label class="form-label small mb-1">Ice forecast</label>
+                        <a id="ciopsIceOpenDataLink" class="d-none" href="https://open.canada.ca/data/en/dataset/bfe44cce-a9c4-467f-9172-c8800b32e4ec">MSC</a>
+                        <div class="btn-group btn-group-sm mb-2" role="group">
+                            <input type="checkbox" class="btn-check" id="ciopsIceToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="ciopsIceToggle">Ice forecast</label>
+                        </div>
+                        <div id="ciopsIceControls" class="d-none mb-2">
+                            <input type="range" class="form-range form-range-sm" id="ciopsIceTimeSlider" min="0" max="0" step="1" value="0" disabled>
+                            <img id="ciopsIceLegendImg" class="d-none mt-2" alt="Sea ice concentration legend" style="max-height: 140px;">
+                        </div>
+                        <small id="ciopsIceStatusLine" class="text-muted d-block"></small>
+                    </div>
+                    {% endif %}
+                    {% if feature_enabled('navwarn_map_layer') %}
+                    <div id="navwarnOverlaySection" class="mt-2">
+                        <label class="form-label small mb-1">NAVWARN</label>
+                        <div class="btn-group btn-group-sm mb-2" role="group">
+                            <input type="checkbox" class="btn-check" id="navwarnActiveToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="navwarnActiveToggle">Active NAVWARNs</label>
+                            <input type="checkbox" class="btn-check" id="navwarnAreasToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="navwarnAreasToggle">NAVWARN areas</label>
+                        </div>
+                        <small id="navwarnStatusLine" class="text-muted d-block"></small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block body_extra_js %}
+<script type="module" src="/static/js/team/ora_request.js?v={{ app_version }}"></script>
+{% endblock %}

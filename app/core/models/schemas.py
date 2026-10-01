@@ -1805,3 +1805,107 @@ class NavigationMissionEntry(BaseModel):
     key: str
     label: str
     catalog_mission_id: Optional[str] = None
+
+
+class OraCoordinateIn(BaseModel):
+    label: str = ""
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    comment: str = ""
+
+
+class OraDeviceRow(BaseModel):
+    name: str = ""
+    power_draw: str = ""
+    duty_cycle: str = ""
+    source: str = "manual"
+    included: bool = True
+
+
+class OraDraftWrite(BaseModel):
+    title: Optional[str] = None
+    catalog_mission_id: Optional[str] = None
+    hull_name: Optional[str] = None
+    requester: str = ""
+    project_code: Optional[str] = None
+    project_code_other: Optional[str] = None
+    client: Optional[str] = None
+    dates_of_operation: Optional[str] = None
+    purposes: List[str] = []
+    priority: Optional[int] = Field(default=None, ge=1, le=3)
+    coordinate_mode: str = "course"
+    coordinates: List[OraCoordinateIn] = []
+    vehicle_model: Optional[str] = None
+    umbilical_m: Optional[str] = None
+    towing: Optional[str] = None
+    towed_device: Optional[str] = None
+    ecos_up_to_date: Optional[str] = None
+    sv3_software_version: Optional[str] = None
+    apu_count: Optional[str] = None
+    smc_version: Optional[str] = None
+    devices: List[OraDeviceRow] = []
+    notes: Optional[str] = None
+
+
+class OraDraftRead(OraDraftWrite):
+    id: int
+    created_at_utc: datetime
+    updated_at_utc: datetime
+    updated_by_username: Optional[str] = None
+
+
+class OraDraftSummary(BaseModel):
+    id: int
+    title: Optional[str] = None
+    hull_name: Optional[str] = None
+    requester: str = ""
+    dates_of_operation: Optional[str] = None
+    updated_at_utc: datetime
+
+
+class OraHullProfileRead(BaseModel):
+    hull_name: str
+    vehicle_model: Optional[str] = None
+    umbilical_m: Optional[str] = None
+    towing: Optional[str] = None
+    towed_device: Optional[str] = None
+    ecos_up_to_date: Optional[str] = None
+    sv3_software_version: Optional[str] = None
+    apu_count: Optional[str] = None
+    smc_version: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class OraMissionOption(BaseModel):
+    id: str
+    label: str
+    platform_name: Optional[str] = None
+    operational_state: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    dates_of_operation: str = ""
+    vehicle_model: Optional[str] = None
+    hull_profile: Optional[OraHullProfileRead] = None
+
+
+class OraContextTrack(BaseModel):
+    catalog_mission_id: str
+    label: str
+    platform_family: Optional[str] = None
+    platform_name: Optional[str] = None
+    track_kind: Optional[str] = None
+    track_id: Optional[str] = None
+
+
+class OraLoadoutRequest(BaseModel):
+    platform_name: str
+    devices: List[OraDeviceRow] = []
+
+
+class OraLoadoutResponse(BaseModel):
+    platform_name: str
+    instrument_names: List[str] = []
+    devices: List[OraDeviceRow] = []
+    warning: Optional[str] = None

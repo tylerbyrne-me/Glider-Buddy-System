@@ -8,16 +8,26 @@
     <h1 class="mb-2">SFMC log-note import</h1>
     <p class="text-muted">
         Paste an SFMC user-log-note JSON array, dry-run to preview, then post backdated
-        Slocum deployment notes. Alias is from <code>SLOCUM_DATASET_ALIAS_MAP_JSON</code>
-        (e.g. <code>fundy</code>) or a full ERDDAP dataset id.
+        Slocum deployment notes. Prefer a mission from the list (label shown, stable key
+        submitted). Free-text also accepts catalog labels (<code>m226-Peggy</code>),
+        env aliases from <code>SLOCUM_DATASET_ALIAS_MAP_JSON</code> (e.g. <code>peggy</code>),
+        or a full ERDDAP dataset id.
     </p>
 
     <div class="card gbs-card mt-3">
         <div class="card-body">
             <form id="sfmcLognoteForm">
                 <div class="mb-3">
-                    <label for="aliasInput" class="form-label">Slocum alias / dataset id</label>
-                    <input type="text" class="form-control" id="aliasInput" required placeholder="fundy">
+                    <label for="missionSelect" class="form-label">Active Slocum mission</label>
+                    <select class="form-select" id="missionSelect">
+                        <option value="">Loading missions…</option>
+                    </select>
+                    <div class="form-text">Uses the navigation display label; posts the ERDDAP/storage key.</div>
+                </div>
+                <div class="mb-3">
+                    <label for="aliasInput" class="form-label">Or type alias / label / dataset id</label>
+                    <input type="text" class="form-control" id="aliasInput" list="missionLabelHints" placeholder="m226-Peggy or peggy">
+                    <datalist id="missionLabelHints"></datalist>
                 </div>
                 <div class="mb-3">
                     <label for="jsonText" class="form-label">SFMC JSON array</label>

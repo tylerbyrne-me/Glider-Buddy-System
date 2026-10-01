@@ -1731,3 +1731,65 @@ class VmtUnitAuditLog(SQLModel, table=True):
     )
 
     unit: VmtUnit = Relationship(back_populates="audit_logs")
+
+
+class OraRequest(SQLModel, table=True):
+    """Team draft of a Liquid Robotics Operational Risk Assessment request."""
+
+    __tablename__ = "ora_requests"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    title: Optional[str] = SQLModelField(default=None, index=True)
+    catalog_mission_id: Optional[str] = SQLModelField(
+        default=None,
+        foreign_key="catalog_missions.id",
+        index=True,
+    )
+    hull_name: Optional[str] = SQLModelField(default=None, index=True)
+    requester: str = SQLModelField(default="")
+    project_code: Optional[str] = SQLModelField(default=None)
+    project_code_other: Optional[str] = SQLModelField(default=None)
+    client: Optional[str] = SQLModelField(default=None)
+    dates_of_operation: Optional[str] = SQLModelField(default=None)
+    purposes_json: Optional[List[str]] = SQLModelField(
+        default=None, sa_column=Column(JSON)
+    )
+    priority: Optional[int] = SQLModelField(default=None)
+    coordinate_mode: str = SQLModelField(default="course", index=True)
+    coordinates_json: Optional[List[Dict[str, Any]]] = SQLModelField(
+        default=None, sa_column=Column(JSON)
+    )
+    vehicle_model: Optional[str] = SQLModelField(default=None)
+    umbilical_m: Optional[str] = SQLModelField(default=None)
+    towing: Optional[str] = SQLModelField(default=None)
+    towed_device: Optional[str] = SQLModelField(default=None)
+    ecos_up_to_date: Optional[str] = SQLModelField(default=None)
+    sv3_software_version: Optional[str] = SQLModelField(default=None)
+    apu_count: Optional[str] = SQLModelField(default=None)
+    smc_version: Optional[str] = SQLModelField(default=None)
+    devices_json: Optional[List[Dict[str, Any]]] = SQLModelField(
+        default=None, sa_column=Column(JSON)
+    )
+    notes: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    created_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
+    updated_by_username: Optional[str] = SQLModelField(default=None, index=True)
+
+
+class OraHullProfile(SQLModel, table=True):
+    """Last Wave Glider ORA vehicle config remembered for a hull."""
+
+    __tablename__ = "ora_hull_profiles"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    hull_name: str = SQLModelField(index=True, unique=True)
+    vehicle_model: Optional[str] = SQLModelField(default=None)
+    umbilical_m: Optional[str] = SQLModelField(default=None)
+    towing: Optional[str] = SQLModelField(default=None)
+    towed_device: Optional[str] = SQLModelField(default=None)
+    ecos_up_to_date: Optional[str] = SQLModelField(default=None)
+    sv3_software_version: Optional[str] = SQLModelField(default=None)
+    apu_count: Optional[str] = SQLModelField(default=None)
+    smc_version: Optional[str] = SQLModelField(default=None)
+    updated_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
+    updated_by_username: Optional[str] = SQLModelField(default=None)

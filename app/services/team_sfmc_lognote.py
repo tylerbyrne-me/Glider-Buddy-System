@@ -29,10 +29,23 @@ def _mission_window_from_db(
     """Mirror CLI mission_window_from_info using DB rows."""
     from app.core import utils
     from app.core.mission_aliases import resolve_slocum_dataset_id
+    from app.core.mission_catalog.display_labels import parse_slocum_nav_display_label
+    from app.core.utils import parse_slocum_dataset_id
 
     resolved = resolve_slocum_dataset_id(dataset_id)
-    parsed = utils.parse_slocum_dataset_id(resolved) if resolved else None
+    parsed = parse_slocum_dataset_id(resolved) if resolved else None
     mission_code = f"m{parsed['deployment_number']}" if parsed else None
+    if not mission_code:
+        label = parse_slocum_nav_display_label(resolved or dataset_id)
+        if label:
+            mission_code = f"m{label['deployment_number']}"
+        else:
+            for candidate in (deployment.erddap_dataset_id, deployment.mission_key):
+                row_parsed = parse_slocum_dataset_id(candidate or "")
+                if row_parsed:
+                    mission_code = f"m{row_parsed['deployment_number']}"
+                    break
+
     sensor = None
     if mission_code:
         sensor = session.exec(

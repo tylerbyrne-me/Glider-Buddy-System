@@ -119,6 +119,17 @@ OPS_SCRIPTS: Dict[str, OpsScriptSpec] = {
         kind="page",
         href="/team/vmt-logbook",
     ),
+    "ora_request": OpsScriptSpec(
+        id="ora_request",
+        label="Wave Glider ORA request",
+        description=(
+            "Draft a Liquid Robotics Operational Risk Assessment for a Wave Glider: "
+            "catalog mission, map area, vehicle config, and device power table. "
+            "Download a formatted PDF."
+        ),
+        kind="page",
+        href="/team/ora",
+    ),
 }
 
 
