@@ -8,6 +8,8 @@ Slocum mirror bundles, column names, and near-surface profile reduction.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
@@ -16,6 +18,7 @@ import pandas as pd
 
 from app.core.data.processors import preprocess_slocum_ctd_df
 from app.core.data.summaries import _generate_mini_trend, _get_common_status_data
+from app.core.infra.logging_config import get_request_id
 from app.core.mission_aliases import resolve_slocum_dataset_id
 from .mirror_service import load_mirror_df
 
@@ -378,10 +381,35 @@ def build_slocum_sensor_summaries(
 
     Returns flat keys for SSR (ctd_info, ctd_values, ...) plus a nested
     ``sensors`` map keyed by card name for the JSON API.
+
+    Each unique mirror bundle is loaded at most once per call (dashboard
+    cards share one frame; CTD uses its own).
     """
+    started = time.monotonic()
     dataset_id = resolve_slocum_dataset_id(dataset_id)
     context: Dict[str, Any] = {"sensors": {}}
     enabled = {str(card) for card in (enabled_cards or [])}
+
+    # Resolve enabled specs first so we know which bundles to load.
+    enabled_specs: list[tuple[str, Dict[str, Any]]] = [
+        (card_name, spec)
+        for card_name, spec in SLOCUM_SENSOR_SUMMARY_SPECS.items()
+        if card_name in enabled
+    ]
+    bundles_needed = sorted({spec["bundle"] for _, spec in enabled_specs})
+    bundle_frames: Dict[str, pd.DataFrame] = {}
+    for bundle in bundles_needed:
+        try:
+            bundle_frames[bundle] = load_mirror_df(dataset_id, bundle)
+        except Exception as e:
+            logger.warning(
+                "Failed to load Slocum mirror for %s/%s: %s",
+                dataset_id,
+                bundle,
+                e,
+                exc_info=True,
+            )
+            bundle_frames[bundle] = pd.DataFrame()
 
     for card_name, spec in SLOCUM_SENSOR_SUMMARY_SPECS.items():
         info_key = spec["info_key"]
@@ -396,17 +424,8 @@ def build_slocum_sensor_summaries(
         status_fn: Callable = spec["status_fn"]
         mini_trend_fn: Callable = spec["mini_trend_fn"]
         bundle = spec["bundle"]
-
-        try:
-            df = load_mirror_df(dataset_id, bundle)
-        except Exception as e:
-            logger.warning(
-                "Failed to load Slocum mirror for %s/%s: %s",
-                dataset_id,
-                bundle,
-                e,
-                exc_info=True,
-            )
+        df = bundle_frames.get(bundle)
+        if df is None:
             df = pd.DataFrame()
 
         try:
@@ -445,4 +464,18 @@ def build_slocum_sensor_summaries(
             "mini_trend": info.get("mini_trend") or [],
         }
 
+    row_counts = {
+        bundle: int(len(df)) for bundle, df in bundle_frames.items()
+    }
+    logger.info(
+        "SLOCUM_DASHBOARD_SUMMARIES dataset=%s cards=%s bundles=%s rows=%s "
+        "duration=%.2fs pid=%s request_id=%s",
+        dataset_id,
+        ",".join(sorted(enabled)) or "-",
+        ",".join(bundles_needed) or "-",
+        row_counts,
+        time.monotonic() - started,
+        os.getpid(),
+        get_request_id(),
+    )
     return context

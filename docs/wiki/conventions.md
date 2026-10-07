@@ -111,9 +111,10 @@ Shared UI classes: [`custom.css`](../../web/static/css/custom.css) (`.gbs-card`,
   1. Card contract: `{values, latest_timestamp_str, time_ago_str, mini_trend}` (optional extras like `ess_state`).
   2. Builder in `app/platforms/{id}/summaries.py` (shared for SSR + JSON).
   3. `GET /api/{platform_id}/sensor-summaries/{resource_id}` (WG: prefer `/api/wave_glider/...`; handler may live at legacy `/api/sensor-summaries/...` via alias).
-  4. On cache `last_data_timestamp` advance: quietly reload open charts **and** refresh summary cards/footers/mini-charts — no hard reload as the primary path.
+  4. On cache advance (`last_data_timestamp` and/or file mtime / change token): quietly reload open charts **and** refresh summary cards/footers/mini-charts — no hard reload as the primary path.
   5. When changing left-nav cards or timestamps, ask: *does this update live, or only on SSR?* See [architecture](./architecture.md#dashboard-summary-soft-refresh).
   6. Wave Glider: set `data-is-realtime` on the dashboard body for active missions; prefer lazy chart loads (active category first). Lifetime mission distance / observed max Wh come from `wave_glider_mission_metrics`, not full-history DataFrames on every request ([ADR 0012](../decisions/0012-wg-dashboard-synced-metrics.md)).
+  7. Slocum: same `data-is-realtime` gate + lazy chart categories; cache-status stays metadata-only; summaries load each mirror bundle once per request; client single-flight/generation guards on CTD, category, and summary refresh. Chart default 24h / mirror retention 72h — [slocum_dashboard_perf_baseline.md](./how-tos/slocum_dashboard_perf_baseline.md).
 
 ### Outlier suppress
 

@@ -7,6 +7,7 @@
 {% block body_data_attributes %}
   data-dataset="{{ dataset }}"
   data-is-historical="{{ 'true' if is_historical_dataset else 'false' }}"
+  data-is-realtime="{{ 'true' if is_current_mission_realtime else 'false' }}"
   data-enabled-sensors="{{ (slocum_enabled_sensor_cards or ['ctd']) | join(',') }}"
 {% endblock %}
 

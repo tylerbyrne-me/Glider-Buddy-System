@@ -334,12 +334,24 @@ let countdownTimer = null;
 let cachePollIntervalId = null;
 const slocumCacheTimestamps = new Map();
 
+/** @type {Record<string, { generation: number, fetchInFlight: boolean, url: string|null, promise: Promise<void>|null }>} */
+const categoryRefreshState = {};
+/** @type {{ generation: number, fetchInFlight: boolean, url: string|null, promise: Promise<void>|null }} */
+let ctdRefreshState = { generation: 0, fetchInFlight: false, url: null, promise: null };
+/** @type {{ generation: number, fetchInFlight: boolean, promise: Promise<void>|null }} */
+let summaryRefreshState = { generation: 0, fetchInFlight: false, promise: null };
+
 function getDatasetId() {
     return document.body.dataset.dataset || '';
 }
 
 function isHistoricalDataset() {
     return document.body.dataset.isHistorical === 'true';
+}
+
+/** Explicit realtime gate (matches WG ``data-is-realtime``); not merely "not historical". */
+function isRealtimeMission() {
+    return document.body.dataset.isRealtime === 'true';
 }
 
 function getHoursBack() {
@@ -838,30 +850,52 @@ function setSlocumDataSourceBadge(cacheMetadata) {
 async function refreshCtdProfileCharts() {
     const url = buildProfileDataUrl();
     if (!url) return;
-    CTD_PROFILE_CHARTS.forEach((cfg) => showProfileSpinner(cfg.spinnerId));
-    const badge = document.getElementById('slocumDataSourceBadge');
-    if (badge) {
-        badge.className = 'badge text-bg-secondary ms-1';
-        badge.textContent = 'Source: loading…';
+
+    // Coalesce identical concurrent requests; supersede when URL (hours/date) changes.
+    if (
+        ctdRefreshState.fetchInFlight
+        && ctdRefreshState.url === url
+        && ctdRefreshState.promise
+    ) {
+        return ctdRefreshState.promise;
     }
-    try {
-        const payload = await apiRequest(url, 'GET');
-        ctdProfilePayloadCache = payload || null;
-        updateChartColorVariables();
-        CTD_PROFILE_CHARTS.forEach((cfg) => renderOneProfileChart(cfg, payload));
-        setSlocumDataSourceBadge(payload?.cache_metadata || {});
-        setSlocumCtdLastDataFooter(payload?.cache_metadata?.last_data_timestamp);
-    } catch (err) {
-        console.error('Failed to load CTD profile data:', err);
-        showToast(`CTD profile load failed: ${err.message || err}`, 'danger');
-        ctdProfilePayloadCache = null;
-        destroyCtdCharts();
-        CTD_PROFILE_CHARTS.forEach((cfg) => drawNoDataOnCanvas(cfg.canvasId, 'Failed to load profile data'));
-        setSlocumDataSourceBadge({});
-        setSlocumCtdLastDataFooter(null);
-    } finally {
-        CTD_PROFILE_CHARTS.forEach((cfg) => hideProfileSpinner(cfg.spinnerId));
-    }
+
+    const generation = (ctdRefreshState.generation || 0) + 1;
+    const run = (async () => {
+        CTD_PROFILE_CHARTS.forEach((cfg) => showProfileSpinner(cfg.spinnerId));
+        const badge = document.getElementById('slocumDataSourceBadge');
+        if (badge) {
+            badge.className = 'badge text-bg-secondary ms-1';
+            badge.textContent = 'Source: loading…';
+        }
+        try {
+            const payload = await apiRequest(url, 'GET');
+            if (ctdRefreshState.generation !== generation) return;
+            ctdProfilePayloadCache = payload || null;
+            updateChartColorVariables();
+            CTD_PROFILE_CHARTS.forEach((cfg) => renderOneProfileChart(cfg, payload));
+            setSlocumDataSourceBadge(payload?.cache_metadata || {});
+            setSlocumCtdLastDataFooter(payload?.cache_metadata?.last_data_timestamp);
+        } catch (err) {
+            if (ctdRefreshState.generation !== generation) return;
+            console.error('Failed to load CTD profile data:', err);
+            showToast(`CTD profile load failed: ${err.message || err}`, 'danger');
+            ctdProfilePayloadCache = null;
+            destroyCtdCharts();
+            CTD_PROFILE_CHARTS.forEach((cfg) => drawNoDataOnCanvas(cfg.canvasId, 'Failed to load profile data'));
+            setSlocumDataSourceBadge({});
+            setSlocumCtdLastDataFooter(null);
+        } finally {
+            if (ctdRefreshState.generation === generation) {
+                ctdRefreshState.fetchInFlight = false;
+                ctdRefreshState.promise = null;
+                CTD_PROFILE_CHARTS.forEach((cfg) => hideProfileSpinner(cfg.spinnerId));
+            }
+        }
+    })();
+
+    ctdRefreshState = { generation, fetchInFlight: true, url, promise: run };
+    return run;
 }
 
 function loadCtdProfileCharts() {
@@ -1548,40 +1582,67 @@ async function refreshTimeSeriesCategory(category) {
     const url = buildBulkChartDataUrl(cfg.variables);
     if (!url) return;
 
-    cfg.charts.forEach((chartCfg) => showProfileSpinner(chartCfg.spinnerId));
-    const badge = document.getElementById('slocumDataSourceBadge');
-    if (badge) {
-        badge.className = 'badge text-bg-secondary ms-1';
-        badge.textContent = 'Source: loading…';
+    const prev = categoryRefreshState[category] || {
+        generation: 0,
+        fetchInFlight: false,
+        url: null,
+        promise: null,
+    };
+    if (prev.fetchInFlight && prev.url === url && prev.promise) {
+        return prev.promise;
     }
 
-    try {
-        updateChartColorVariables();
-        const payload = await apiRequest(url, 'GET');
-        const series = payload?.series || {};
-        timeSeriesSeriesCache[category] = series;
-        destroyTimeSeriesCharts(category);
-        cfg.charts.forEach((chartCfg) => renderTimeSeriesChart(category, chartCfg, series));
-        setSlocumDataSourceBadge(payload?.cache_metadata || {});
-        setCategoryLastDataFooter(cfg.footerId, payload?.cache_metadata?.last_data_timestamp);
-        if (category === 'vehicle_health') {
-            await refreshSfmcCallLengthChart(cfg);
+    const generation = (prev.generation || 0) + 1;
+    const run = (async () => {
+        cfg.charts.forEach((chartCfg) => showProfileSpinner(chartCfg.spinnerId));
+        const badge = document.getElementById('slocumDataSourceBadge');
+        if (badge) {
+            badge.className = 'badge text-bg-secondary ms-1';
+            badge.textContent = 'Source: loading…';
         }
-        if (category === 'dmon') {
-            await refreshDmonAscPanel();
-            await refreshDmonReviewPanel();
-            initDmonReviewCollapseChevron();
+
+        try {
+            updateChartColorVariables();
+            const payload = await apiRequest(url, 'GET');
+            if (categoryRefreshState[category]?.generation !== generation) return;
+            const series = payload?.series || {};
+            timeSeriesSeriesCache[category] = series;
+            destroyTimeSeriesCharts(category);
+            cfg.charts.forEach((chartCfg) => renderTimeSeriesChart(category, chartCfg, series));
+            setSlocumDataSourceBadge(payload?.cache_metadata || {});
+            setCategoryLastDataFooter(cfg.footerId, payload?.cache_metadata?.last_data_timestamp);
+            if (category === 'vehicle_health') {
+                await refreshSfmcCallLengthChart(cfg);
+            }
+            if (category === 'dmon') {
+                await refreshDmonAscPanel();
+                await refreshDmonReviewPanel();
+                initDmonReviewCollapseChevron();
+            }
+        } catch (err) {
+            if (categoryRefreshState[category]?.generation !== generation) return;
+            console.error(`Failed to load ${category} charts:`, err);
+            showToast(`${category} chart load failed: ${err.message || err}`, 'danger');
+            destroyTimeSeriesCharts(category);
+            cfg.charts.forEach((chartCfg) => drawNoDataOnCanvas(chartCfg.canvasId, 'Failed to load chart data'));
+            setSlocumDataSourceBadge({});
+            setCategoryLastDataFooter(cfg.footerId, null);
+        } finally {
+            if (categoryRefreshState[category]?.generation === generation) {
+                categoryRefreshState[category].fetchInFlight = false;
+                categoryRefreshState[category].promise = null;
+                cfg.charts.forEach((chartCfg) => hideProfileSpinner(chartCfg.spinnerId));
+            }
         }
-    } catch (err) {
-        console.error(`Failed to load ${category} charts:`, err);
-        showToast(`${category} chart load failed: ${err.message || err}`, 'danger');
-        destroyTimeSeriesCharts(category);
-        cfg.charts.forEach((chartCfg) => drawNoDataOnCanvas(chartCfg.canvasId, 'Failed to load chart data'));
-        setSlocumDataSourceBadge({});
-        setCategoryLastDataFooter(cfg.footerId, null);
-    } finally {
-        cfg.charts.forEach((chartCfg) => hideProfileSpinner(chartCfg.spinnerId));
-    }
+    })();
+
+    categoryRefreshState[category] = {
+        generation,
+        fetchInFlight: true,
+        url,
+        promise: run,
+    };
+    return run;
 }
 
 function findCategoryForCanvas(canvasId) {
@@ -1748,28 +1809,43 @@ function handleLeftPanelClicks() {
 
 async function pollSlocumCacheStatus() {
     const datasetId = getDatasetId();
-    if (!datasetId || !autoRefreshEnabled || isHistoricalDataset()) return;
+    if (!datasetId || !autoRefreshEnabled || !isRealtimeMission()) return;
     try {
         const status = await apiRequest(`/api/slocum/cache-status/${encodeURIComponent(datasetId)}`, 'GET');
         let cacheUpdated = false;
         for (const [bundle, bundleStatus] of Object.entries(status || {})) {
             const stored = slocumCacheTimestamps.get(bundle);
-            const serverLast = bundleStatus?.last_data_timestamp;
-            const storedLast = stored?.last_data_timestamp;
-            if (storedLast && serverLast && new Date(serverLast) > new Date(storedLast)) {
+            const serverLast = bundleStatus?.last_data_timestamp || null;
+            const serverCacheTs = bundleStatus?.cache_timestamp || null;
+
+            if (!stored) {
+                if (serverLast || serverCacheTs) {
+                    slocumCacheTimestamps.set(bundle, {
+                        cache_timestamp: serverCacheTs,
+                        last_data_timestamp: serverLast,
+                    });
+                }
+                continue;
+            }
+
+            const lastAdvanced = Boolean(
+                stored.last_data_timestamp
+                && serverLast
+                && new Date(serverLast) > new Date(stored.last_data_timestamp),
+            );
+            const mtimeAdvanced = Boolean(
+                stored.cache_timestamp
+                && serverCacheTs
+                && new Date(serverCacheTs) > new Date(stored.cache_timestamp),
+            );
+            // Tail progression OR parquet mtime rewrite (schema rebuild / backfill).
+            if (lastAdvanced || mtimeAdvanced) {
                 cacheUpdated = true;
-            } else if (!storedLast && serverLast) {
-                slocumCacheTimestamps.set(bundle, {
-                    cache_timestamp: bundleStatus.cache_timestamp,
-                    last_data_timestamp: serverLast,
-                });
             }
-            if (bundleStatus?.cache_timestamp) {
-                slocumCacheTimestamps.set(bundle, {
-                    cache_timestamp: bundleStatus.cache_timestamp,
-                    last_data_timestamp: serverLast,
-                });
-            }
+            slocumCacheTimestamps.set(bundle, {
+                cache_timestamp: serverCacheTs || stored.cache_timestamp,
+                last_data_timestamp: serverLast || stored.last_data_timestamp,
+            });
         }
         if (cacheUpdated) {
             refreshAllLoadedChartsQuiet();
@@ -1827,30 +1903,49 @@ function updateSlocumCardFromSummary(category, summary) {
 async function refreshSlocumSummaryCards() {
     const datasetId = getDatasetId();
     if (!datasetId) return;
-    try {
-        const sensors = await apiRequest(
-            `/api/slocum/sensor-summaries/${encodeURIComponent(datasetId)}`,
-            'GET',
-        );
-        if (!sensors || typeof sensors !== 'object') return;
-        Object.entries(sensors).forEach(([category, summary]) => {
-            updateSlocumCardFromSummary(category, summary);
-        });
-        initializeMiniCharts();
-        // Keep DMON ASC gap indicator in sync with SFMC cache (not part of ERDDAP summaries).
-        if (document.querySelector('#left-nav-panel .summary-card[data-category="dmon"]')) {
-            refreshDmonAscPanel().catch((err) => {
-                console.debug('DMON ASC indicator refresh failed:', err);
+
+    // Single-flight: poll/countdown overlap must not duplicate summary + DMON work.
+    if (summaryRefreshState.fetchInFlight && summaryRefreshState.promise) {
+        return summaryRefreshState.promise;
+    }
+
+    const generation = (summaryRefreshState.generation || 0) + 1;
+    const run = (async () => {
+        try {
+            const sensors = await apiRequest(
+                `/api/slocum/sensor-summaries/${encodeURIComponent(datasetId)}`,
+                'GET',
+            );
+            if (summaryRefreshState.generation !== generation) return;
+            if (!sensors || typeof sensors !== 'object') return;
+            Object.entries(sensors).forEach(([category, summary]) => {
+                updateSlocumCardFromSummary(category, summary);
             });
-            if (document.getElementById('detail-dmon')?.style.display !== 'none') {
-                refreshDmonReviewPanel().catch((err) => {
-                    console.debug('DMON review refresh failed:', err);
+            initializeMiniCharts();
+            // Keep DMON ASC gap indicator in sync with SFMC cache (not part of ERDDAP summaries).
+            if (document.querySelector('#left-nav-panel .summary-card[data-category="dmon"]')) {
+                refreshDmonAscPanel().catch((err) => {
+                    console.debug('DMON ASC indicator refresh failed:', err);
                 });
+                if (document.getElementById('detail-dmon')?.style.display !== 'none') {
+                    refreshDmonReviewPanel().catch((err) => {
+                        console.debug('DMON review refresh failed:', err);
+                    });
+                }
+            }
+        } catch (err) {
+            if (summaryRefreshState.generation !== generation) return;
+            console.debug('Slocum summary card refresh failed:', err);
+        } finally {
+            if (summaryRefreshState.generation === generation) {
+                summaryRefreshState.fetchInFlight = false;
+                summaryRefreshState.promise = null;
             }
         }
-    } catch (err) {
-        console.debug('Slocum summary card refresh failed:', err);
-    }
+    })();
+
+    summaryRefreshState = { generation, fetchInFlight: true, promise: run };
+    return run;
 }
 
 function refreshAllLoadedChartsQuiet() {
@@ -1891,7 +1986,7 @@ function updateAutoRefreshState(isEnabled) {
         localStorage.setItem('autoRefreshEnabled', JSON.stringify(isEnabled));
     } catch (e) { /* ignore */ }
 
-    const isRealtime = !isHistoricalDataset();
+    const isRealtime = isRealtimeMission();
     if (isEnabled && isRealtime) {
         startCountdownTimer();
         if (cachePollIntervalId) clearInterval(cachePollIntervalId);
@@ -1912,7 +2007,7 @@ function updateAutoRefreshState(isEnabled) {
 }
 
 function initAutoRefresh() {
-    const isRealtime = !isHistoricalDataset();
+    const isRealtime = isRealtimeMission();
     if (!isRealtime) return;
 
     const autoRefreshToggle = document.getElementById('autoRefreshToggleBanner');

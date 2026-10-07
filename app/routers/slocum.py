@@ -9,6 +9,7 @@ import io
 import json
 import logging
 import math
+import os
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -32,6 +33,7 @@ from ..core.mission_aliases import (
     resolve_slocum_dataset_id,
 )
 from ..core.infra.feature_toggles import is_feature_enabled
+from ..core.infra.logging_config import get_request_id
 from app.platforms.slocum.erddap_client import fetch_slocum_ctd_data, fetch_slocum_dashboard_data, list_slocum_datasets
 from app.platforms.slocum.cache_service import (
     datasets_cache_ttl_seconds,
@@ -899,7 +901,20 @@ async def get_slocum_cache_status(
     """Mirror cache status for Slocum dashboard/CTD bundles (frontend polling)."""
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
+    started = time.monotonic()
     status_payload = get_mirror_cache_status(dataset_id)
+    cached_bundles = [
+        name for name, info in (status_payload or {}).items()
+        if isinstance(info, dict) and info.get("cached")
+    ]
+    logger.info(
+        "SLOCUM_CACHE_STATUS dataset=%s bundles=%s duration=%.2fs pid=%s request_id=%s",
+        dataset_id,
+        ",".join(cached_bundles) or "-",
+        time.monotonic() - started,
+        os.getpid(),
+        get_request_id(),
+    )
     return status_payload
 
 
@@ -1569,6 +1584,7 @@ async def get_slocum_chart_data_bulk(
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
 
+    started = time.monotonic()
     requested = [v.strip() for v in variables.split(",") if v.strip()]
     invalid = [v for v in requested if v not in _SLOCUM_CHART_VARIABLES]
     if invalid:
@@ -1640,6 +1656,7 @@ async def get_slocum_chart_data_bulk(
     last_dt: Optional[datetime] = None
     source_meta: dict[str, Any] = {}
     display_df = pd.DataFrame()
+    row_count = 0
 
     if needs_dashboard and dashboard_result is not None and not dashboard_result.df.empty:
         full_df = dashboard_result.df
@@ -1649,6 +1666,7 @@ async def get_slocum_chart_data_bulk(
             time_start_str=time_start_str,
             time_end_str=time_end_str,
         )
+        row_count = max(row_count, int(len(display_df)))
         last_dt = _last_dt_from_processed(display_df) or _last_dt_from_processed(full_df)
         source_meta = dashboard_result.metadata or source_meta
         for variable in dash_vars:
@@ -1668,6 +1686,7 @@ async def get_slocum_chart_data_bulk(
             time_start_str=time_start_str,
             time_end_str=time_end_str,
         )
+        row_count = max(row_count, int(len(sliced)))
         ctd_last = _last_dt_from_processed(sliced)
         if ctd_last and (last_dt is None or ctd_last > last_dt):
             last_dt = ctd_last
@@ -1679,12 +1698,25 @@ async def get_slocum_chart_data_bulk(
     for variable in requested:
         series.setdefault(variable, [])
 
+    cache_metadata = _merge_overage_metadata(
+        _cache_metadata(last_dt.isoformat() if last_dt else None),
+        source_meta,
+    )
+    logger.info(
+        "SLOCUM_CHART_BULK dataset=%s variables=%s hours=%s rows=%s source=%s "
+        "duration=%.2fs pid=%s request_id=%s",
+        dataset_id,
+        ",".join(requested) or "-",
+        hours_back,
+        row_count,
+        cache_metadata.get("data_source") or cache_metadata.get("source") or "-",
+        time.monotonic() - started,
+        os.getpid(),
+        get_request_id(),
+    )
     return {
         "series": series,
-        "cache_metadata": _merge_overage_metadata(
-            _cache_metadata(last_dt.isoformat() if last_dt else None),
-            source_meta,
-        ),
+        "cache_metadata": cache_metadata,
     }
 
 

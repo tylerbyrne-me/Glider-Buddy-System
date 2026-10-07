@@ -271,6 +271,48 @@ def _iso_z(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _file_mtime_utc(path: Path) -> Optional[datetime]:
+    try:
+        if not path.is_file():
+            return None
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        return None
+
+
+def _bundle_meta_entry(
+    df: pd.DataFrame,
+    *,
+    schema_version: int,
+    path: Path,
+) -> dict[str, Any]:
+    """Build per-bundle mirror metadata from an in-memory frame + file mtime."""
+    last_ts = _last_timestamp(df)
+    file_mtime = _file_mtime_utc(path)
+    return {
+        "row_count": int(len(df)) if df is not None else 0,
+        "last_data_timestamp": last_ts.isoformat() if last_ts else None,
+        "schema_version": int(schema_version),
+        "file_mtime": file_mtime.isoformat() if file_mtime else None,
+    }
+
+
+def _parse_iso_timestamp(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    try:
+        parsed = pd.to_datetime(value, utc=True)
+        if pd.isna(parsed):
+            return None
+        return parsed.to_pydatetime()
+    except Exception:
+        return None
+
+
 def _round_time_end(now: Optional[datetime] = None) -> datetime:
     time_end = now or datetime.now(timezone.utc)
     window_min = max(1, settings.slocum_cache_window_minutes)
@@ -401,6 +443,7 @@ async def sync_dataset_mirror(
     stored_versions = meta.get("bundle_schema_versions") or {}
     if not isinstance(stored_versions, dict):
         stored_versions = {}
+    prior_bundles_meta = meta.get("bundles") if isinstance(meta.get("bundles"), dict) else {}
     rebuilt_for_schema: list[str] = []
     for bundle in DEFAULT_MIRROR_BUNDLES:
         if do_rebuild_ctd and bundle == "ctd":
@@ -410,8 +453,13 @@ async def sync_dataset_mirror(
             continue
         if clear_mirror_bundle(dataset_id, bundle):
             rebuilt_for_schema.append(bundle)
+            # Cleared on disk — drop stale per-bundle metadata until rewrite.
+            prior_bundles_meta.pop(bundle, None)
     if rebuilt_for_schema:
         sync_summary["schema_rebuild_cleared"] = rebuilt_for_schema
+
+    updated_bundles_meta: dict[str, Any] = dict(prior_bundles_meta)
+    latest_ts: Optional[datetime] = None
 
     for bundle in DEFAULT_MIRROR_BUNDLES:
         spec = get_bundle_spec(bundle)
@@ -441,6 +489,12 @@ async def sync_dataset_mirror(
                 "error": str(err),
                 "decimation_minutes": effective_decimation,
             }
+            # Preserve prior bundle metadata; still track tail for dataset-level stamp.
+            prior_last = _parse_iso_timestamp(
+                (updated_bundles_meta.get(bundle) or {}).get("last_data_timestamp")
+            )
+            if prior_last and (latest_ts is None or prior_last > latest_ts):
+                latest_ts = prior_last
             continue
 
         merged = _merge_mirror_frames(existing, fetched)
@@ -461,8 +515,32 @@ async def sync_dataset_mirror(
                 "fetched_rows": len(fetched),
                 "decimation_minutes": effective_decimation,
             }
+            prior_last = _parse_iso_timestamp(
+                (updated_bundles_meta.get(bundle) or {}).get("last_data_timestamp")
+            )
+            if prior_last and (latest_ts is None or prior_last > latest_ts):
+                latest_ts = prior_last
+            elif not existing.empty:
+                # Existing bytes still on disk; refresh metadata from in-memory existing.
+                entry = _bundle_meta_entry(
+                    existing,
+                    schema_version=spec.schema_version,
+                    path=_parquet_path(dataset_id, bundle),
+                )
+                updated_bundles_meta[bundle] = entry
+                existing_last = _parse_iso_timestamp(entry.get("last_data_timestamp"))
+                if existing_last and (latest_ts is None or existing_last > latest_ts):
+                    latest_ts = existing_last
             continue
+
         last_ts = _last_timestamp(merged)
+        path = _parquet_path(dataset_id, bundle)
+        bundle_entry = _bundle_meta_entry(
+            merged, schema_version=spec.schema_version, path=path
+        )
+        updated_bundles_meta[bundle] = bundle_entry
+        if last_ts and (latest_ts is None or last_ts > latest_ts):
+            latest_ts = last_ts
         sync_summary["bundles"][bundle] = {
             "rows": len(merged),
             "last_data_timestamp": last_ts.isoformat() if last_ts else None,
@@ -481,15 +559,21 @@ async def sync_dataset_mirror(
             "bundle_schema_versions": {
                 name: get_bundle_spec(name).schema_version for name in DEFAULT_MIRROR_BUNDLES
             },
+            "bundles": updated_bundles_meta,
         }
     )
-    latest_ts: Optional[datetime] = None
-    for bundle in DEFAULT_MIRROR_BUNDLES:
-        bundle_last = _last_timestamp(load_mirror_df(dataset_id, bundle))
-        if bundle_last and (latest_ts is None or bundle_last > latest_ts):
-            latest_ts = bundle_last
     if latest_ts:
         meta["last_data_timestamp"] = latest_ts.isoformat()
+    elif meta.get("last_data_timestamp") is None:
+        # Fall back to any preserved per-bundle timestamps without re-reading parquet.
+        for entry in updated_bundles_meta.values():
+            if not isinstance(entry, dict):
+                continue
+            candidate = _parse_iso_timestamp(entry.get("last_data_timestamp"))
+            if candidate and (latest_ts is None or candidate > latest_ts):
+                latest_ts = candidate
+        if latest_ts:
+            meta["last_data_timestamp"] = latest_ts.isoformat()
     _write_meta(dataset_id, meta)
     return sync_summary
 
@@ -629,20 +713,38 @@ async def sync_active_slocum_mirrors(
 
 
 def get_mirror_cache_status(dataset_id: str) -> dict[str, Any]:
-    """Return cache status for registered mirror bundles."""
+    """
+    Return cache status for registered mirror bundles.
+
+    Metadata-only: uses ``meta.json`` plus cheap parquet ``stat()`` mtimes.
+    Does **not** parse parquet (safe for 60s dashboard polling).
+    Legacy caches without per-bundle meta fall back to dataset-level
+    ``last_data_timestamp`` and file mtime; ``row_count`` may be null.
+    """
     dataset_id = resolve_slocum_dataset_id(dataset_id)
     meta = _read_meta(dataset_id)
+    bundles_meta = meta.get("bundles") if isinstance(meta.get("bundles"), dict) else {}
+    dataset_last = meta.get("last_data_timestamp")
     status: dict[str, Any] = {}
     for bundle in list_bundle_names():
         path = _parquet_path(dataset_id, bundle)
-        df = load_mirror_df(dataset_id, bundle) if path.is_file() else pd.DataFrame()
-        last_ts = _last_timestamp(df)
-        file_mtime = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc) if path.is_file() else None
+        promote_orphan_tmp_file(path)
+        is_cached = path.is_file()
+        file_mtime = _file_mtime_utc(path) if is_cached else None
+        entry = bundles_meta.get(bundle) if isinstance(bundles_meta.get(bundle), dict) else {}
+        last_data = entry.get("last_data_timestamp") or dataset_last
+        row_count = entry.get("row_count")
+        if row_count is not None:
+            try:
+                row_count = int(row_count)
+            except (TypeError, ValueError):
+                row_count = None
         status[bundle] = {
-            "cached": path.is_file(),
+            "cached": is_cached,
             "cache_timestamp": file_mtime.isoformat() if file_mtime else None,
-            "last_data_timestamp": last_ts.isoformat() if last_ts else meta.get("last_data_timestamp"),
-            "row_count": len(df),
+            "last_data_timestamp": last_data,
+            "row_count": row_count,
+            "schema_version": entry.get("schema_version"),
         }
     return status
 

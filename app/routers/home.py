@@ -2,6 +2,9 @@ from fastapi import APIRouter, Request, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import Optional, Dict, List
 import json
+import logging
+import os
+import time
 from ..core import models, utils
 from ..core.mission_instruments import load_mission_instruments_with_sensors, mission_id_variants
 from ..core.auth import (
@@ -12,6 +15,7 @@ from ..core.auth import (
     user_has_platform_access,
 )
 from ..core.infra.db import get_db_session, SQLModelSession
+from ..core.infra.logging_config import get_request_id
 from ..core.templates import templates
 from app.config import settings
 from ..core.template_context import get_template_context
@@ -27,7 +31,7 @@ from app.platforms.slocum.deployment_service import get_or_create_deployment_for
 from app.platforms.slocum.summaries import build_slocum_sensor_summaries
 from sqlmodel import select
 from sqlalchemy import or_
-import logging
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Home"])
@@ -309,6 +313,7 @@ async def get_slocum_dashboard(
         return denied
     if not dataset:
         return RedirectResponse(url=home_url_for(PLATFORM_SLOCUM))
+    started = time.monotonic()
     template_context = get_template_context(
         request=request,
         current_user=current_user,
@@ -325,6 +330,17 @@ async def get_slocum_dashboard(
     )
     template_context["slocum_enabled_sensor_cards"] = enabled_cards
     _merge_slocum_summary_context(template_context, dataset, enabled_cards, session=session)
+    logger.info(
+        "SLOCUM_DASHBOARD_SSR dataset=%s historical=%s realtime=%s cards=%s "
+        "duration=%.2fs pid=%s request_id=%s",
+        dataset,
+        False,
+        True,
+        ",".join(enabled_cards) or "-",
+        time.monotonic() - started,
+        os.getpid(),
+        get_request_id(),
+    )
     return templates.TemplateResponse("slocum_dashboard.html", template_context)
 
 
@@ -345,6 +361,7 @@ async def get_slocum_historical_dashboard(
         return denied
     if not dataset:
         return RedirectResponse(url=home_url_for(PLATFORM_SLOCUM))
+    started = time.monotonic()
     template_context = get_template_context(
         request=request,
         current_user=current_user,
@@ -364,6 +381,17 @@ async def get_slocum_historical_dashboard(
     )
     template_context["slocum_enabled_sensor_cards"] = enabled_cards
     _merge_slocum_summary_context(template_context, dataset, enabled_cards, session=session)
+    logger.info(
+        "SLOCUM_DASHBOARD_SSR dataset=%s historical=%s realtime=%s cards=%s "
+        "duration=%.2fs pid=%s request_id=%s",
+        dataset,
+        True,
+        False,
+        ",".join(enabled_cards) or "-",
+        time.monotonic() - started,
+        os.getpid(),
+        get_request_id(),
+    )
     return templates.TemplateResponse("slocum_dashboard.html", template_context)
 
 
