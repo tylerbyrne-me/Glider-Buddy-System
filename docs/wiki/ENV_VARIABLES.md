@@ -97,6 +97,9 @@ BACKGROUND_CACHE_REFRESH_INTERVAL_MINUTES=60
 # UI Preferences
 WEEK_STARTS_SUNDAY=True
 
+# CARTO Dark Matter raster basemap (browser-visible; restrict key to app origins in CARTO)
+CARTO_BASEMAP_API_KEY=your-carto-basemap-key
+
 # Knowledge Base
 KNOWLEDGE_BASE_MAX_UPLOAD_SIZE_MB=50
 ```
@@ -339,6 +342,12 @@ Enablement membership (all `MISSION_CATALOG_*_FROM_CATALOG` consumers): non-empt
 - Optional: `TRUSTED_PROXY_COUNT` (int; default `0`) — how many rightmost `X-Forwarded-For` hops to trust for rate-limit client IP
 - Cache dir / TTL defaults live in `app/config.py` (`public_map_cache_dir`, `public_map_cache_ttl_seconds`, `public_map_warm_interval_minutes`, `public_map_max_missions`)
 - Ops detail: [Public login map how-to](./how-tos/public_login_map.md)
+
+### CARTO Leaflet basemap
+- Set `CARTO_BASEMAP_API_KEY` to enable CARTO Dark Matter raster tiles on maps using the dark basemap.
+- The value is loaded from `.env` and added to CARTO tile requests as the required `key` query parameter.
+- This is necessarily a browser-visible client key. Restrict it to the application's production and development origins in the CARTO basemap dashboard; do not treat it as a server-only secret.
+- Light maps continue to use OpenStreetMap and do not use this key.
 
 ### Static vector map layers (home overlays)
 - Kill switch: `map_vector_layers` in `FEATURE_TOGGLES_FILE` / `FEATURE_TOGGLES_JSON` (default **off**)

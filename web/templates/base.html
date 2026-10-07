@@ -3,6 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    {% if carto_basemap_api_key %}
+    <meta name="carto-basemap-api-key" content="{{ carto_basemap_api_key }}">
+    {% endif %}
     <title>{% block title %}{{ app_name }}{% endblock %}</title>
     <script>
       (function() {

@@ -134,6 +134,7 @@ def get_global_template_context() -> Dict[str, Any]:
         "active_missions": settings.active_realtime_missions,
         "mission_count": len(settings.active_realtime_missions),
         "forms_storage_mode": settings.forms_storage_mode,
+        "carto_basemap_api_key": settings.carto_basemap_api_key,
         
         "is_production": not settings.jwt_secret_key.startswith("CHANGE_THIS"),
         "is_development": settings.jwt_secret_key.startswith("CHANGE_THIS"),
@@ -189,6 +190,7 @@ def get_minimal_template_context(**kwargs) -> Dict[str, Any]:
     return {
         **_brand_context(platform if isinstance(platform, str) else None),
         "current_year": datetime.now().year,
+        "carto_basemap_api_key": settings.carto_basemap_api_key,
         **kwargs
     }
 

@@ -244,6 +244,9 @@ class Settings(BaseSettings):
     public_map_warm_interval_minutes: int = 10
     # Client IP for rate limits: 0 = request.client.host; >0 = trust that many rightmost X-Forwarded-For hops.
     trusted_proxy_count: int = 0
+    # Required by CARTO's browser-loaded raster basemaps. Keep the source value in
+    # .env, but treat it as a public client key and restrict it to the app's origins.
+    carto_basemap_api_key: Optional[str] = None
 
     # --- Sensor Tracker Settings ---
     # SECURITY: Credentials MUST be configured in .env file

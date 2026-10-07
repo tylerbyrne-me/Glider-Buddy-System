@@ -13,12 +13,23 @@ const LIGHT_TILES = {
 };
 
 const DARK_TILES = {
-    url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png',
     attribution:
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
     subdomains: 'abcd',
     maxZoom: 20,
 };
+
+function getCartoBasemapApiKey() {
+    const keyElement = document.querySelector('meta[name="carto-basemap-api-key"]');
+    return keyElement?.content?.trim() || '';
+}
+
+function getDarkTileUrl() {
+    const apiKey = getCartoBasemapApiKey();
+    if (!apiKey) return DARK_TILES.url;
+    return `${DARK_TILES.url}?key=${encodeURIComponent(apiKey)}`;
+}
 
 export function isDarkTheme() {
     const root = document.documentElement;
@@ -46,7 +57,7 @@ export function shouldUseDarkTiles(forceDark = null) {
 
 export function getTileLayerConfig(forceDark = null) {
     const useDark = shouldUseDarkTiles(forceDark);
-    return useDark ? { ...DARK_TILES } : { ...LIGHT_TILES };
+    return useDark ? { ...DARK_TILES, url: getDarkTileUrl() } : { ...LIGHT_TILES };
 }
 
 export function createThemedTileLayer(forceDark = null) {
