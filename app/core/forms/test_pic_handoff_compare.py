@@ -47,17 +47,26 @@ def test_build_compare_uses_bounded_hours_back():
 
     user = MagicMock(username="pilot", id=1)
 
-    load_calls: list[tuple[str, int | None]] = []
+    load_calls: list[tuple[str, int | None, str | None, bool]] = []
 
-    async def fake_load(report_type, mission_id, *, current_user, source_preference, hours_back):
-        load_calls.append((report_type, hours_back))
-        return pd.DataFrame(), None, None
+    async def fake_load(
+        report_type,
+        mission_id,
+        *,
+        current_user=None,
+        source_preference=None,
+        hours_back=None,
+        force_refresh=False,
+        **kwargs,
+    ):
+        load_calls.append((report_type, hours_back, source_preference, force_refresh))
+        return pd.DataFrame(), "Synced: /tmp/m227", None
 
     mock_service = MagicMock()
     mock_service.load = AsyncMock(side_effect=fake_load)
 
     with patch(
-        "app.core.forms.pic_handoff_compare.get_data_service", return_value=mock_service
+        "app.core.forms.pic_handoff_autofill.get_data_service", return_value=mock_service
     ), patch(
         "app.core.forms.pic_handoff_compare._mission_title", return_value="Test Mission"
     ):
@@ -68,9 +77,11 @@ def test_build_compare_uses_bounded_hours_back():
     assert "sensor_ctd_status" in values
     assert "sensor_weather_status" in values
 
-    hours_by_type = dict(load_calls)
+    hours_by_type = {rt: hours for rt, hours, _pref, _force in load_calls}
     assert hours_by_type["ais"] == AIS_COMPARE_HOURS
     assert hours_by_type["errors"] == ERRORS_COMPARE_HOURS
     assert hours_by_type["power"] == POWER_COMPARE_HOURS
     assert hours_by_type["ctd"] == SENSOR_COMPARE_HOURS
     assert hours_by_type["weather"] == SENSOR_COMPARE_HOURS
+    assert all(pref == "synced" for _rt, _h, pref, _f in load_calls)
+    assert all(force is False for _rt, _h, _p, force in load_calls)

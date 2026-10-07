@@ -1,5 +1,6 @@
 import logging
 
+from sqlalchemy import event
 from sqlmodel import Session as SQLModelSession  # type: ignore
 from sqlmodel import create_engine
 
@@ -15,8 +16,23 @@ sqlite_engine = create_engine(
     connect_args={
         "check_same_thread": False,
         "timeout": 15,
-    },  # Add timeout (e.g., 15 seconds)
+    },  # busy timeout in seconds (sqlite3)
 )
+
+
+@event.listens_for(sqlite_engine, "connect")
+def _configure_sqlite_connection(dbapi_connection, connection_record) -> None:
+    """Enable WAL + explicit busy_timeout on every new SQLite connection."""
+    # Only apply SQLite pragmas (unit tests may use other dialects later).
+    if sqlite_engine.dialect.name != "sqlite":
+        return
+    cursor = dbapi_connection.cursor()
+    try:
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA busy_timeout=15000")
+        cursor.execute("PRAGMA foreign_keys=ON")
+    finally:
+        cursor.close()
 
 
 def get_db_session():
@@ -24,4 +40,3 @@ def get_db_session():
     # It will be automatically closed after the request.
     with SQLModelSession(sqlite_engine) as session:
         yield session
-

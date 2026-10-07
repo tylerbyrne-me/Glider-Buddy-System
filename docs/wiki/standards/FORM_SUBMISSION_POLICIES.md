@@ -47,6 +47,8 @@ Related but **out of scope** for this policy: WG-VM4 `offload_logs` (separate ta
 
 - **View Details / Edit** — fetch one row by id (`GET /api/forms/id/{id}` or `GET /api/slocum/checklists/id/{id}`).
 - **PIC “changes since last”** — `GET /api/forms/id/{id}/with-changes` uses bounded mission data loads (8–48h windows, parallel) for the **latest** PIC of a mission only; do not call for every list row. The UI loads the stored snapshot first, then fetches change badges in the background.
+- **PIC new / edit template** — `GET /api/forms/{mission}/template/pic_handoff_checklist` autofills from **leader-synced disk** (`source_preference="synced"`) with the same bounded windows (power 48h, AIS/errors 8h, sensors 24h) in parallel. It does **not** fall through to remote WGMS. Pass `?refresh=true` (Refresh Data button) to force a remote check. Implementation: `app/core/forms/pic_handoff_autofill.py` (shared with compare).
+- **PIC create** — `POST /api/forms/{mission_id}` accepts `client_submission_id` for idempotent retries; SQLite lock exhaustion returns **503** + `Retry-After`. Persist helper: `app/core/forms/pic_submit_service.py`.
 - **Slocum compare** — picker uses summary metadata (id, timestamp, submitter); compare payload loads two full forms by id.
 
 ## API contract
@@ -93,6 +95,12 @@ Routers: [`app/routers/forms.py`](../../../app/routers/forms.py), [`app/routers/
 3. Prefer opening the modal with the stored snapshot; call `/with-changes` only when change highlighting is needed (typically the latest PIC). Background refresh must not re-open a dismissed modal.
 4. Prefer column projection / summary selects over loading full ORM rows for lists.
 5. New form types that share `submitted_forms` must use the same list/detail split and a documented default window.
+6. **PIC template loads** must use synced disk + bounded `hours_back` + parallel `asyncio.gather` by default; remote only on explicit refresh.
+7. **SQLite writer contention** — connections use WAL + `busy_timeout=15000` (`app/core/infra/db.py`). Form persist maps lock errors to 503 rather than raw 500s.
+
+## Create idempotency
+
+Browser creates send a per-page `client_submission_id` (UUID). Unique index `(submitted_by_username, client_submission_id)` makes retries after proxy timeouts safe. This does **not** limit how many PIC handoffs a mission may have per day.
 
 ## Operational baseline
 
@@ -127,11 +135,12 @@ Expect KB-scale mission list responses after the summary + 7-day default; multi-
 - Archival tier after 12–24 months (archive table or export).
 - Slimmer snapshots on write (drop redundant labels from persisted JSON).
 - Extracted summary columns (PIC, mission status, battery %) for list/filter without parsing JSON.
-- Edit-form autofill caching / parallel sensor loads for template generation latency.
+- Optional CSV tail-read / parquet mirror so synced loads avoid full-file parse on multi‑month missions.
 
 ## Related documentation
 
 - [FORMS_FOLDER_STANDARDS.md](./FORMS_FOLDER_STANDARDS.md) — schema definitions only
 - [ADR 0006](../../decisions/0006-form-submission-retention-windows.md)
+- [ADR 0011](../../decisions/0011-pic-synced-autofill-and-submit-idempotency.md) — synced PIC autofill + submit idempotency
 - [Architecture — Submitted forms](../architecture.md#submitted-forms)
 - Slocum checklist how-to: [slocum.md](../how-tos/slocum.md#daily-pilot-checklist)

@@ -153,6 +153,9 @@ from .schemas import (
     MissionFormDataResponse,
     SubmittedFormSummary,
     SubmittedFormListResponse,
+    SubmittedFormCreate,
+    SubmittedFormUpdate,
+    SubmittedFormSubmitResponse,
     
     # Mission info models
     MissionOverviewUpdate,
@@ -386,6 +389,9 @@ __all__ = [
     "MissionFormDataResponse",
     "SubmittedFormSummary",
     "SubmittedFormListResponse",
+    "SubmittedFormCreate",
+    "SubmittedFormUpdate",
+    "SubmittedFormSubmitResponse",
     "MissionOverviewUpdate",
     "MissionMediaUpdate",
     "MissionMediaRead",

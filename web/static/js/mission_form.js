@@ -16,6 +16,11 @@ document.addEventListener('DOMContentLoaded', async function () {
     const username = document.body.dataset.username;
     const editFormId = new URLSearchParams(window.location.search).get('edit');
     let savedSubmission = null;
+    // Stable per-page create attempt id — reused across retries after ambiguous failures.
+    let clientSubmissionId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : `fallback-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    let isSubmitting = false;
 
     const formTitleElement = document.getElementById('formTitle');
     const formDescriptionElement = document.getElementById('formDescription');
@@ -384,7 +389,11 @@ document.addEventListener('DOMContentLoaded', async function () {
                     btn.disabled = true;
                     btn.textContent = 'Refreshing…';
                     try {
-                        const schema = await apiRequest(`/api/forms/${missionId}/template/${formType}`, 'GET');
+                        const refreshQs = formType === 'pic_handoff_checklist' ? '?refresh=true' : '';
+                        const schema = await apiRequest(
+                            `/api/forms/${missionId}/template/${formType}${refreshQs}`,
+                            'GET'
+                        );
                         let updated = 0;
                         for (const section of schema.sections || []) {
                             for (const item of section.items || []) {
@@ -500,15 +509,26 @@ document.addEventListener('DOMContentLoaded', async function () {
     }
 
     async function performSubmission(capturedSectionsData) {
+        if (isSubmitting) return;
+        isSubmitting = true;
+        const submitBtn = missionReportForm.querySelector('button[type="submit"]');
+        if (submitBtn) submitBtn.disabled = true;
+        if (unverifiedSubmitBtn) unverifiedSubmitBtn.disabled = true;
+
         submissionStatusDiv.innerHTML = `<div class="alert alert-info">${editFormId ? 'Saving changes...' : 'Submitting form...'}</div>`;
 
         const sectionsData = capturedSectionsData != null ? capturedSectionsData : buildSectionsDataFromForm();
-        const submissionPayload = {
-            mission_id: missionId,
-            form_type: formType,
-            form_title: formTitleElement.textContent,
-            sections_data: sectionsData
-        };
+        const submissionPayload = editFormId
+            ? {
+                form_title: formTitleElement.textContent,
+                sections_data: sectionsData,
+            }
+            : {
+                form_type: formType,
+                form_title: formTitleElement.textContent,
+                sections_data: sectionsData,
+                client_submission_id: clientSubmissionId,
+            };
 
         try {
             const result = editFormId
@@ -516,13 +536,21 @@ document.addEventListener('DOMContentLoaded', async function () {
                 : await apiRequest(`/api/forms/${missionId}`, 'POST', submissionPayload);
             const timestampField = editFormId ? result.last_edited_timestamp : result.submission_timestamp;
             const actorField = editFormId ? result.edited_by_username : result.submitted_by_username;
-            const submissionTimestampStr = timestampField.endsWith('Z') ? timestampField : timestampField + 'Z';
+            const submissionTimestampStr = String(timestampField || '').endsWith('Z')
+                ? String(timestampField)
+                : `${timestampField}Z`;
             const submissionTime = new Date(submissionTimestampStr);
-            const formattedTime = submissionTime.toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'medium', hour12: false }) + ' UTC';
+            const formattedTime = Number.isNaN(submissionTime.getTime())
+                ? 'N/A'
+                : submissionTime.toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'medium', hour12: false }) + ' UTC';
             showToast(editFormId ? 'Form updated successfully!' : 'Form submitted successfully!', 'success');
-            submissionStatusDiv.innerHTML = `<div class="alert alert-success">${editFormId ? 'Form updated' : 'Form submitted'} successfully at ${formattedTime} by ${actorField}!</div>`;
+            submissionStatusDiv.innerHTML = `<div class="alert alert-success">${editFormId ? 'Form updated' : 'Form submitted'} successfully at ${formattedTime} by ${actorField || 'Unknown'}!</div>`;
             if (!editFormId) {
                 missionReportForm.reset();
+                // Next intentional create gets a fresh id after a successful submit.
+                clientSubmissionId = (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function')
+                    ? crypto.randomUUID()
+                    : `fallback-${Date.now()}-${Math.random().toString(16).slice(2)}`;
             }
             const platform = (window.APP_PLATFORM || '').toLowerCase();
             const dashboardUrl = platform === 'slocum' ? '/slocum/home' : '/wave-glider/home';
@@ -530,13 +558,18 @@ document.addEventListener('DOMContentLoaded', async function () {
                 window.location.assign(dashboardUrl);
             }, 1500);
         } catch (error) {
+            // Keep the same client_submission_id so a retry after timeout/proxy 502 is idempotent.
             showToast(`Error submitting form: ${error.message}`, 'danger');
             submissionStatusDiv.innerHTML = `<div class="alert alert-danger">Submission failed: ${error.message}</div>`;
+            isSubmitting = false;
+            if (submitBtn) submitBtn.disabled = false;
+            if (unverifiedSubmitBtn) unverifiedSubmitBtn.disabled = false;
         }
     }
 
     missionReportForm.addEventListener('submit', async function (event) {
         event.preventDefault();
+        if (isSubmitting) return;
 
         // Capture form state immediately when Submit is clicked, before any modal or async work.
         // This ensures we submit the user's actual choices even if the form refreshes or resets.

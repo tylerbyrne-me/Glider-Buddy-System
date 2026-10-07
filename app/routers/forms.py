@@ -1,16 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Body, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import List, Optional
-from datetime import datetime, timezone
-from sqlmodel import select, or_
-from ..core import models, utils
-from ..core.pic_handoff_optional_sensors import PIC_HANDOFF_OPTIONAL_SENSOR_REGISTRY
+import logging
+from pathlib import Path
+from sqlmodel import select
+from ..core import models
 from ..core.infra.db import get_db_session, SQLModelSession
+from ..core.infra.logging_config import get_request_id
 from ..core.auth import get_current_active_user, get_optional_current_user
 from ..config import settings
 import json
-import logging
-from pathlib import Path
 from ..forms.form_definitions import get_static_form_schema
 from ..core.templates import templates
 from ..core.template_context import get_template_context
@@ -26,6 +25,12 @@ from ..core.forms.submission_queries import (
     submission_cutoff_for_hours,
 )
 from ..core.forms.pic_handoff_compare import build_pic_handoff_compare_current_values
+from ..core.forms.pic_handoff_autofill import build_pic_handoff_autofilled_schema
+from ..core.forms.pic_submit_service import (
+    FormSubmitValidationError,
+    persist_form_submission,
+    update_form_submission,
+)
 
 router = APIRouter(tags=["Forms"])
 logger = logging.getLogger(__name__)
@@ -121,24 +126,6 @@ def _normalize_submitted_value(item: dict) -> str:
     if sub_checked is not None:
         return "true" if sub_checked else "false"
     return ""
-
-
-def _current_value_from_template_item(item: dict) -> str:
-    """Extract a comparable string from a template form item."""
-    item_type = item.get("item_type") or ""
-    val = item.get("value")
-    if item_type == "sensor_status" and isinstance(val, str) and val.strip():
-        try:
-            parsed = json.loads(val)
-            return str(parsed.get("value", "")).strip()
-        except (json.JSONDecodeError, TypeError):
-            pass
-    if item_type == "checkbox":
-        checked = item.get("is_checked")
-        return "true" if checked else "false"
-    if val is None:
-        return ""
-    return str(val).strip()
 
 
 @router.get("/api/forms/id/{form_db_id}", response_model=models.SubmittedForm)
@@ -271,562 +258,46 @@ async def get_pic_handoff_submissions_for_mission(
         offset=offset if offset is not None else 0,
     )
 
+
 @router.get("/api/forms/{mission_id}/template/{form_type}")
 async def get_form_template(
     mission_id: str,
     form_type: str,
+    refresh: bool = Query(
+        False,
+        description="When true (PIC only), force remote WGMS refresh. Default uses synced disk.",
+    ),
     session: SQLModelSession = Depends(get_db_session),
     current_user: Optional[models.User] = Depends(get_optional_current_user),
 ):
+    """
+    Return a form schema. PIC handoff autofills from leader-synced disk by default;
+    pass ``refresh=true`` to check upstream WGMS in parallel.
+    """
     try:
         schema_obj = get_static_form_schema(form_type)
         if not schema_obj:
             raise HTTPException(status_code=404, detail="Form template not found")
 
-        # Convert Pydantic model to dict for mutation and .get() access
-        schema = schema_obj.model_dump(mode="python")
-
-        from app.core.data.data_service import get_data_service
-        from app.core.data import summaries
-
-        def _user_display_name(user_in_db: models.UserInDB) -> str:
-            name = (user_in_db.full_name or user_in_db.username or "").strip()
-            return name or (user_in_db.username or "").strip()
-
-        def _inject_pic_handoff_rosters(schema_dict: dict) -> None:
-            """Inject MOS/PIC rosters into PIC handoff dropdowns from the users table."""
-            if schema_dict.get("form_type") != "pic_handoff_checklist":
-                return
-
-            users_in_db = session.exec(
-                select(models.UserInDB).where(models.UserInDB.disabled == False)  # noqa: E712
-            ).all()
-
-            mos_options = sorted(
-                {_user_display_name(u) for u in users_in_db if getattr(u, "is_mos", False)},
-                key=lambda s: s.casefold(),
-            )
-            pic_options = sorted(
-                {_user_display_name(u) for u in users_in_db if getattr(u, "is_pic", False)},
-                key=lambda s: s.casefold(),
+        if form_type == "pic_handoff_checklist":
+            if current_user is None:
+                raise HTTPException(status_code=401, detail="Authentication required")
+            return await build_pic_handoff_autofilled_schema(
+                mission_id,
+                session,
+                current_user,
+                refresh_upstream=bool(refresh),
             )
 
-            for section in schema_dict.get("sections", []) or []:
-                for item in section.get("items", []) or []:
-                    iid = item.get("id")
-                    if iid == "current_mos_val":
-                        item["options"] = mos_options
-                    if iid in ("current_pic_val", "last_pic_val"):
-                        item["options"] = pic_options
-
-        # Resolve mission overview (support compound ids like "1070-m216" -> try "m216" if not found)
-        mission_overview = session.get(models.MissionOverview, mission_id)
-        if mission_overview is None and "-" in mission_id:
-            mission_base = utils.deployment_mission_code_from_mission_id(mission_id)
-            mission_overview = session.get(models.MissionOverview, mission_base)
-        battery_apu = getattr(mission_overview, "battery_apu_count", None) if mission_overview else None
-        theoretical_max_wh = summaries.theoretical_max_wh(battery_apu)
-
-        # Load power so battery values match dashboard (try local then remote if no data)
-        data_service = get_data_service()
-        df_power, _, _ = await data_service.load(
-            "power", mission_id, current_user=current_user, source_preference="local"
-        )
-        if df_power is None or df_power.empty:
-            df_power, _, _ = await data_service.load(
-                "power", mission_id, current_user=current_user, source_preference="remote"
-            )
-        power_info = (
-            summaries.get_power_status(df_power, None, theoretical_max_wh=theoretical_max_wh)
-            if df_power is not None and not df_power.empty
-            else {}
-        )
-        values = power_info.get("values", {})
-        battery_wh = values.get("BatteryWattHours", "N/A")
-        battery_pct = values.get("BatteryPercentage", "N/A")
-        theoretical_wh = values.get("TheoreticalMaxBatteryWh")
-        realistic_wh = values.get("RealisticMaxBatteryWh")
-        effective_wh = values.get("EffectiveMaxBatteryWh")
-
-        # Total Battery Capacity: show both theoretical and observed (match dashboard)
-        if theoretical_wh is not None:
-            total_capacity_display = f"Max (theoretical): {int(theoretical_wh)} Wh"
-            if realistic_wh is not None:
-                total_capacity_display += f". Observed max: {int(realistic_wh)} Wh"
-        else:
-            total_capacity_display = "2775 Wh"
-            if realistic_wh is not None:
-                total_capacity_display += f". Observed max: {int(realistic_wh)} Wh"
-
-        # Hint for % Battery Remaining: explain which max was used
-        if effective_wh is not None:
-            if realistic_wh is not None and effective_wh == realistic_wh:
-                percent_battery_hint = (
-                    f"% Battery Remaining is calculated using the observed max ({int(realistic_wh)} Wh) for this mission."
-                )
-            else:
-                percent_battery_hint = (
-                    f"% Battery Remaining is calculated using the theoretical max ({int(effective_wh)} Wh)."
-                )
-        else:
-            percent_battery_hint = (
-                "% Battery Remaining is calculated using the theoretical max when set, otherwise the legacy default."
-            )
-
-        # Mission title from Sensor Tracker deployment
-        mission_base = utils.deployment_mission_code_from_mission_id(mission_id)
-        st_deployment = session.exec(
-            select(models.SensorTrackerDeployment).where(
-                or_(
-                    models.SensorTrackerDeployment.mission_id == mission_id,
-                    models.SensorTrackerDeployment.mission_id == mission_base,
-                )
-            )
-        ).first()
-        mission_title = (st_deployment.title or "Mission Not Assigned") if st_deployment else "Mission Not Assigned"
-
-        # Boats in the Area: AIS summary (8h) - time seen, time since contact, MMSI
-        df_ais, _, _ = await data_service.load("ais", mission_id, current_user=current_user, source_preference="local")
-        if df_ais is None or df_ais.empty:
-            df_ais, _, _ = await data_service.load("ais", mission_id, current_user=current_user, source_preference="remote")
-        ais_vessels = summaries.get_ais_summary(df_ais, max_age_hours=8) if df_ais is not None and not df_ais.empty else []
-        if ais_vessels:
-            boats_lines = []
-            for v in ais_vessels:
-                ts = v.get("LastSeenTimestamp")
-                if ts is not None and hasattr(ts, "strftime"):
-                    time_str = ts.strftime("%Y-%m-%d %H:%M UTC")
-                else:
-                    time_str = str(ts) if ts else "—"
-                since = summaries.time_ago(ts)
-                mmsi = v.get("MMSI", "—")
-                boats_lines.append(f"{time_str} | {since} | MMSI {mmsi}")
-            boats_in_area_display = "\n".join(boats_lines)
-        else:
-            boats_in_area_display = "No recent AIS contacts."
-
-        # Vessel standoff (m) from mission overview - persists until user changes
-        vessel_standoff = getattr(mission_overview, "vessel_standoff_m", None) if mission_overview else None
-        vessel_standoff_display = str(vessel_standoff) if vessel_standoff is not None else ""
-
-        # Recent Errors (8h): time, time since, category, self-corrected
-        df_errors, _, _ = await data_service.load("errors", mission_id, current_user=current_user, source_preference="local")
-        if df_errors is None or df_errors.empty:
-            df_errors, _, _ = await data_service.load("errors", mission_id, current_user=current_user, source_preference="remote")
-        recent_errors_raw = (
-            summaries.get_recent_errors(df_errors, max_age_hours=8)
-            if df_errors is not None and not df_errors.empty
-            else []
-        )
-        from app.services.error_classification_service import classify_error_message
-        errors_lines = []
-        for err in recent_errors_raw:
-            ts = err.get("Timestamp")
-            if ts is not None and hasattr(ts, "strftime"):
-                time_str = ts.strftime("%Y-%m-%d %H:%M UTC")
-            else:
-                time_str = str(ts) if ts else "—"
-            since = summaries.time_ago(ts) if ts else "—"
-            category = "unknown"
-            if err.get("ErrorMessage"):
-                cat_val, _, _ = classify_error_message(err["ErrorMessage"])
-                category = cat_val.value
-            self_corr = err.get("SelfCorrected")
-            sc_str = "Yes" if self_corr in (True, "true", "True", "yes", 1) else "No" if self_corr is not None else "—"
-            errors_lines.append(f"{time_str} | {since} | {category} | Self-corrected: {sc_str}")
-        recent_errors_display = "\n".join(errors_lines) if errors_lines else "No recent errors."
-
-        # Science sensor status rows: only for sensors in Enabled Sensor Cards
-        science_sensors = ["ctd", "weather", "waves", "vr2c", "fluorometer", "wg_vm4"]
-        sensor_labels = {
-            "ctd": "CTD",
-            "weather": "Weather",
-            "waves": "Waves",
-            "vr2c": "VR2C",
-            "fluorometer": "Fluorometer",
-            "wg_vm4": "WG-VM4",
-        }
-        status_functions = {
-            "ctd": summaries.get_ctd_status,
-            "weather": summaries.get_weather_status,
-            "waves": summaries.get_wave_status,
-            "vr2c": summaries.get_vr2c_status,
-            "fluorometer": summaries.get_fluorometer_status,
-            "wg_vm4": summaries.get_wg_vm4_status,
-        }
-        enabled_cards = []
-        if mission_overview and mission_overview.enabled_sensor_cards:
-            try:
-                enabled_cards = json.loads(mission_overview.enabled_sensor_cards)
-            except (json.JSONDecodeError, TypeError):
-                enabled_cards = []
-        pic_handoff_optional_sensors = []
-        if mission_overview and mission_overview.pic_handoff_optional_sensors:
-            try:
-                pic_handoff_optional_sensors = json.loads(mission_overview.pic_handoff_optional_sensors)
-            except (json.JSONDecodeError, TypeError):
-                pic_handoff_optional_sensors = []
-        now_utc = datetime.now(timezone.utc)
-        sensor_items_to_inject = []
-        for card in science_sensors:
-            if card not in enabled_cards:
-                continue
-            report_type = card
-            df_sensor, _, _ = await data_service.load(
-                report_type, mission_id, current_user=current_user, source_preference="local"
-            )
-            if df_sensor is None or df_sensor.empty:
-                df_sensor, _, _ = await data_service.load(
-                    report_type, mission_id, current_user=current_user, source_preference="remote"
-                )
-            status_fn = status_functions.get(card)
-            status = (
-                status_fn(df_sensor, None)
-                if status_fn and df_sensor is not None and not df_sensor.empty
-                else {}
-            )
-            latest_timestamp_str = status.get("latest_timestamp_str") or "N/A"
-            last_ts = None
-            if df_sensor is not None and not df_sensor.empty and "Timestamp" in df_sensor.columns:
-                last_ts = df_sensor["Timestamp"].max()
-                if hasattr(last_ts, "to_pydatetime"):
-                    last_ts = last_ts.to_pydatetime()
-                if last_ts is not None and (last_ts.tzinfo is None or last_ts.tzinfo.utcoffset(last_ts) is None):
-                    last_ts = last_ts.replace(tzinfo=timezone.utc)
-            default_on = (
-                (now_utc - last_ts).total_seconds() < 3600
-                if last_ts is not None
-                else False
-            )
-            item_id = f"sensor_{card}_status"
-            value_dict = {
-                "last_time_str": latest_timestamp_str,
-                "value": "On" if default_on else "Off",
-            }
-            sensor_items_to_inject.append({
-                "id": item_id,
-                "label": sensor_labels.get(card, card.upper()),
-                "item_type": models.FormItemTypeEnum.SENSOR_STATUS.value,
-                "value": json.dumps(value_dict),
-            })
-
-        for sensor_key in pic_handoff_optional_sensors:
-            if sensor_key not in PIC_HANDOFF_OPTIONAL_SENSOR_REGISTRY:
-                continue
-            item_id = f"sensor_{sensor_key}_status"
-            if any(item["id"] == item_id for item in sensor_items_to_inject):
-                continue
-            sensor_items_to_inject.append({
-                "id": item_id,
-                "label": PIC_HANDOFF_OPTIONAL_SENSOR_REGISTRY[sensor_key],
-                "item_type": models.FormItemTypeEnum.SENSOR_STATUS.value,
-                "value": "Off",
-            })
-
-        # Use schema IDs for autofill (including static_text for Total Battery Capacity)
-        autofill_map = {
-            "glider_id_val": lambda: mission_id,
-            "current_battery_wh_val": lambda: battery_wh,
-            "percent_battery_val": lambda: battery_pct,
-            "total_battery_val": lambda: total_capacity_display,
-        }
-
-        for section in schema.get("sections", []):
-            for item in section.get("items", []):
-                item_id = item.get("id")
-                if item_id == "total_battery_val":
-                    item["value"] = total_capacity_display
-                if item_id == "mission_title_val":
-                    item["value"] = mission_title
-                if item_id == "boats_in_area_val":
-                    item["value"] = boats_in_area_display
-                if item_id == "vessel_standoff_m_val":
-                    item["value"] = vessel_standoff_display
-                if item_id == "recent_errors_val":
-                    item["value"] = recent_errors_display
-                if item.get("item_type") == "autofilled_value":
-                    autofill_func = autofill_map.get(item_id)
-                    if autofill_func:
-                        item["value"] = autofill_func()
-                    if item_id == "percent_battery_val":
-                        item["hint"] = percent_battery_hint
-
-        # Inject science sensor status rows after recent_errors_val in general_status
-        # When WG-VM4 is enabled, also inject Current Station, Offload Status, Next Station
-        wg_vm4_form_items = []
-        if "wg_vm4" in enabled_cards:
-            wg_vm4_form_items = [
-                {
-                    "id": "wg_vm4_current_station_val",
-                    "label": "Current Station",
-                    "item_type": models.FormItemTypeEnum.TEXT_INPUT.value,
-                    "value": "N/A",
-                    "placeholder": "e.g. HFX031",
-                },
-                {
-                    "id": "wg_vm4_offload_status_val",
-                    "label": "Offload Status",
-                    "item_type": models.FormItemTypeEnum.DROPDOWN.value,
-                    "options": [
-                        "N/A",
-                        "Connecting to Station",
-                        "Connected to Station",
-                        "Offloading Station",
-                        "Aborting Offload",
-                    ],
-                    "value": "N/A",
-                },
-                {
-                    "id": "wg_vm4_next_station_val",
-                    "label": "Next Station",
-                    "item_type": models.FormItemTypeEnum.TEXT_INPUT.value,
-                    "value": "N/A",
-                    "placeholder": "e.g. HFX032",
-                },
-            ]
-
-        # Sensor sampling rates (editable, persist until changed). Only for sensors with configurable rates; exclude WG-VM4.
-        sampling_sensor_keys = ["ctd", "fluorometer", "waves", "weather", "vr2c"]
-        item_id_by_key = {
-            "ctd": "sensor_ctd_sampling_val",
-            "fluorometer": "sensor_fluorometer_sampling_val",
-            "waves": "sensor_waves_sampling_val",
-            "weather": "sensor_weather_sampling_val",
-            "vr2c": "sensor_vr2c_sampling_val",
-        }
-        rates_json = None
-        if mission_overview and mission_overview.sensor_sampling_rates:
-            try:
-                rates_json = json.loads(mission_overview.sensor_sampling_rates)
-            except (json.JSONDecodeError, TypeError):
-                rates_json = {}
-        # Storage key for display (fluorometer form row uses "c3" in JSON)
-        sampling_storage_key = {"fluorometer": "c3"}
-        # Keyed by sensor card for insertion under respective sensor status row
-        sampling_item_by_key = {}
-        for sk in sampling_sensor_keys:
-            if sk not in enabled_cards:
-                continue
-            cfg = SENSOR_SAMPLING_CONFIG.get(sk)
-            if not cfg:
-                continue
-            iid = item_id_by_key.get(sk)
-            if not iid:
-                continue
-            storage_key = sampling_storage_key.get(sk, sk)
-            display_val = _format_sensor_sampling_display(rates_json, storage_key)
-            sampling_item_by_key[sk] = {
-                "id": iid,
-                "label": cfg["label"],
-                "item_type": models.FormItemTypeEnum.TEXT_INPUT.value,
-                "value": display_val,
-                "placeholder": cfg.get("placeholder", ""),
-                "hint": cfg.get("hint"),
-            }
-
-        if sensor_items_to_inject or wg_vm4_form_items or sampling_item_by_key:
-            for section in schema.get("sections", []):
-                if section.get("id") != "general_status":
-                    continue
-                items = section.get("items") or []
-                insert_idx = None
-                for i, it in enumerate(items):
-                    if it.get("id") == "recent_errors_val":
-                        insert_idx = i + 1
-                        break
-                if insert_idx is not None:
-                    # Insert sensor status rows (with sampling where applicable). WG-VM4 is placed
-                    # just above Current Station / Offload Status / Next Station so all VM4 fields stay together.
-                    sensor_without_vm4 = [s for s in sensor_items_to_inject if s["id"] != "sensor_wg_vm4_status"]
-                    wg_vm4_status_item = next((s for s in sensor_items_to_inject if s["id"] == "sensor_wg_vm4_status"), None)
-                    for sensor_item in reversed(sensor_without_vm4):
-                        items.insert(insert_idx, sensor_item)
-                        insert_idx += 1
-                        card = sensor_item["id"].replace("sensor_", "").replace("_status", "")
-                        sampling_item = sampling_item_by_key.get(card)
-                        if sampling_item:
-                            items.insert(insert_idx, sampling_item)
-                            insert_idx += 1
-                    if wg_vm4_status_item:
-                        items.insert(insert_idx, wg_vm4_status_item)
-                        insert_idx += 1
-                    for wg_item in wg_vm4_form_items:
-                        items.insert(insert_idx, wg_item)
-                        insert_idx += 1
-                break
-
-        _inject_pic_handoff_rosters(schema)
-        return schema
+        return schema_obj.model_dump(mode="python")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Error in get_form_template")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
-
-def _parse_vessel_standoff_from_sections(sections_data: Optional[List[dict]]) -> Optional[int]:
-    """Extract vessel_standoff_m_val from submitted form sections_data."""
-    if not sections_data:
-        return None
-    for section in sections_data:
-        for item in (section.get("items") or []):
-            if item.get("id") == "vessel_standoff_m_val" and item.get("value") not in (None, ""):
-                try:
-                    return int(str(item["value"]).strip())
-                except (ValueError, TypeError):
-                    pass
-    return None
-
-
-# Sensor sampling rate form item IDs and storage keys (WG-VM4 has no user-configurable rates)
-# "hint" is shown as a hover tooltip on the input.
-SENSOR_SAMPLING_CONFIG = {
-    "ctd": {
-        "label": "CTD Sample Rate",
-        "hint": "period (sec), samples/block, flush (sec), off (sec). Period cannot exceed 14 sec if O2 sensor installed.",
-        "placeholder": "e.g. 10, 10, 100, 400",
-        "default": "10, 10, 100, 400",
-    },
-    "c3": {
-        "label": "Fluorometer Sample Rate",
-        "hint": "UsePump (true/false), Flush (sec), AvgPeriod/Block (sec), OffTime (sec).",
-        "placeholder": "e.g. True, 100, 100, 400",
-        "default": "False, 45, 30, 0",
-    },
-    "fluorometer": {
-        "label": "Fluorometer Sample Rate",
-        "hint": "UsePump (true/false), Flush (sec), AvgPeriod/Block (sec), OffTime (sec).",
-        "placeholder": "e.g. True, 100, 100, 400",
-        "default": "False, 45, 30, 0",
-    },
-    "waves": {
-        "label": "Waves Interval",
-        "hint": "Collection interval in minutes (default 30).",
-        "placeholder": "e.g. 30",
-        "default": "30",
-    },
-    "weather": {
-        "label": "Weather Interval",
-        "hint": "Collection period in minutes (default 10).",
-        "placeholder": "e.g. 10",
-        "default": "10",
-    },
-    "vr2c": {
-        "label": "VR2C Status Interval",
-        "hint": "Status output interval in minutes (default 60).",
-        "placeholder": "e.g. 60",
-        "default": "60",
-    },
-}
-# Form item id suffix -> storage key (c3 = fluorometer)
-SENSOR_SAMPLING_ITEM_ID_TO_KEY = {
-    "sensor_ctd_sampling_val": "ctd",
-    "sensor_fluorometer_sampling_val": "c3",
-    "sensor_waves_sampling_val": "waves",
-    "sensor_weather_sampling_val": "weather",
-    "sensor_vr2c_sampling_val": "vr2c",
-}
-
-
-def _format_sensor_sampling_display(rates: Optional[dict], sensor_key: str) -> str:
-    """Format stored JSON for a sensor into the form display string."""
-    if not rates or sensor_key not in rates:
-        return SENSOR_SAMPLING_CONFIG.get(sensor_key, {}).get("default", "")
-    d = rates[sensor_key]
-    if not isinstance(d, dict):
-        return str(d) if d is not None else ""
-    if sensor_key == "ctd":
-        return ", ".join(
-            str(d.get(k, ""))
-            for k in ("period_sec", "samples_per_block", "flush_time_sec", "off_time_sec")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal server error: {e} (request {get_request_id()})",
         )
-    if sensor_key == "c3":
-        use_pump = d.get("use_pump", False)
-        return ", ".join(
-            [str(use_pump).lower()]
-            + [str(d.get(k, "")) for k in ("flush_sec", "avg_period_block_sec", "off_time_sec")]
-        )
-    if sensor_key in ("waves", "weather", "vr2c"):
-        return str(d.get("interval_min", ""))
-    return ""
-
-
-def _parse_sensor_sampling_value(sensor_key: str, value: str) -> Optional[dict]:
-    """Parse one sensor's form value string into a dict for JSON storage."""
-    value = (value or "").strip()
-    if not value:
-        return None
-    parts = [p.strip() for p in value.split(",")]
-    try:
-        if sensor_key == "ctd":
-            if len(parts) < 4:
-                return None
-            return {
-                "period_sec": int(parts[0]),
-                "samples_per_block": int(parts[1]),
-                "flush_time_sec": int(parts[2]),
-                "off_time_sec": int(parts[3]),
-            }
-        if sensor_key == "c3":
-            if len(parts) < 4:
-                return None
-            use_pump = str(parts[0]).lower() in ("true", "1", "yes")
-            return {
-                "use_pump": use_pump,
-                "flush_sec": int(parts[1]),
-                "avg_period_block_sec": int(parts[2]),
-                "off_time_sec": int(parts[3]),
-            }
-        if sensor_key in ("waves", "weather", "vr2c"):
-            if not parts:
-                return None
-            return {"interval_min": int(parts[0])}
-    except (ValueError, TypeError):
-        return None
-    return None
-
-
-def _parse_sensor_sampling_from_sections(sections_data: Optional[List[dict]]) -> Optional[dict]:
-    """Extract sensor sampling rates from form sections_data. Returns dict keyed by sensor for JSON storage."""
-    if not sections_data:
-        return None
-    collected = {}
-    for section in sections_data:
-        for item in (section.get("items") or []):
-            iid = item.get("id")
-            key = SENSOR_SAMPLING_ITEM_ID_TO_KEY.get(iid)
-            if not key:
-                continue
-            val = item.get("value")
-            parsed = _parse_sensor_sampling_value(key, str(val) if val is not None else "")
-            if parsed is not None:
-                collected[key] = parsed
-    return collected if collected else None
-
-
-def _persist_mission_overview_side_effects(
-    session: SQLModelSession,
-    mission_id: str,
-    sections_data: Optional[List[dict]],
-) -> None:
-    """Persist vessel standoff and sensor sampling rates from form sections to mission overview."""
-    mission_overview = session.get(models.MissionOverview, mission_id)
-    if mission_overview is None and "-" in mission_id:
-        mission_overview = session.get(
-            models.MissionOverview, utils.deployment_mission_code_from_mission_id(mission_id)
-        )
-    if mission_overview is None:
-        return
-
-    updated = False
-    standoff_m = _parse_vessel_standoff_from_sections(sections_data)
-    if standoff_m is not None and standoff_m >= 0:
-        mission_overview.vessel_standoff_m = standoff_m
-        updated = True
-    sampling_rates = _parse_sensor_sampling_from_sections(sections_data)
-    if sampling_rates is not None:
-        mission_overview.sensor_sampling_rates = json.dumps(sampling_rates)
-        updated = True
-    if updated:
-        mission_overview.updated_at_utc = datetime.now(timezone.utc)
-        session.add(mission_overview)
 
 
 def _can_edit_submitted_form(db_form: models.SubmittedForm, current_user: models.User) -> bool:
@@ -839,7 +310,7 @@ def _can_edit_submitted_form(db_form: models.SubmittedForm, current_user: models
 @router.put("/api/forms/id/{form_db_id}", response_model=models.SubmittedForm)
 async def update_submitted_form(
     form_db_id: int,
-    form_data: dict = Body(...),
+    form_data: models.SubmittedFormUpdate,
     session: SQLModelSession = Depends(get_db_session),
     current_user: models.User = Depends(get_current_active_user),
 ):
@@ -850,85 +321,71 @@ async def update_submitted_form(
     if not _can_edit_submitted_form(db_form, current_user):
         raise HTTPException(status_code=403, detail="Not authorized to edit this form")
 
-    sections_data = form_data.get("sections_data")
-    if sections_data is None:
-        raise HTTPException(status_code=400, detail="sections_data is required")
+    try:
+        return update_form_submission(
+            session,
+            db_form,
+            sections_data=form_data.sections_data,
+            form_title=form_data.form_title,
+            current_user=current_user,
+        )
+    except FormSubmitValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error updating submitted form")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to update form (request {get_request_id()})",
+        ) from exc
 
-    if form_data.get("form_title"):
-        db_form.form_title = form_data.get("form_title")
-    db_form.sections_data = sections_data
-    db_form.edited_by_username = current_user.username
-    db_form.last_edited_timestamp = datetime.now(timezone.utc)
-    session.add(db_form)
 
-    _persist_mission_overview_side_effects(session, db_form.mission_id, sections_data)
-    session.commit()
-    session.refresh(db_form)
-    return db_form
-
-
-@router.post("/api/forms/{mission_id}")
+@router.post("/api/forms/{mission_id}", response_model=models.SubmittedFormSubmitResponse)
 async def submit_form(
     mission_id: str,
-    form_data: dict = Body(...),
-    session=Depends(get_db_session),
-    current_user: models.User = Depends(get_current_active_user)
+    form_data: models.SubmittedFormCreate,
+    session: SQLModelSession = Depends(get_db_session),
+    current_user: models.User = Depends(get_current_active_user),
 ):
     """
-    Accepts a submitted form for a mission and saves it to the SQL database.
-    Assumes form_data matches the structure of models.SubmittedForm (or can be adapted).
-    Persists vessel_standoff_m to MissionOverview when present in PIC handoff form.
-    Supports catalog UUID mission_id / catalog_mission_id dual-key writes.
+    Accept a submitted form for a mission and save it to SQLite.
+
+    Idempotent when ``client_submission_id`` is provided (scoped to submitter).
+    Maps SQLite lock exhaustion to HTTP 503 with Retry-After.
     """
     try:
-        sections_data = form_data.get("sections_data")
-        catalog_mission_id = form_data.get("catalog_mission_id")
-        legacy_mission_id = mission_id
-        # Allow catalog UUID as the path key for planned workspaces.
-        if len(mission_id) >= 32 and "-" in mission_id and not catalog_mission_id:
-            if session.get(models.CatalogMission, mission_id) is not None:
-                catalog_mission_id = mission_id
-                legacy_mission_id = None
-
-        from app.core.mission_catalog.workspace import resolve_form_mission_keys
-
-        keys = resolve_form_mission_keys(
+        submitted_form = persist_form_submission(
             session,
-            mission_id=legacy_mission_id,
-            catalog_mission_id=catalog_mission_id,
+            mission_id=mission_id,
+            form_type=form_data.form_type,
+            form_title=form_data.form_title,
+            sections_data=form_data.sections_data,
+            current_user=current_user,
+            catalog_mission_id=form_data.catalog_mission_id,
+            client_submission_id=form_data.client_submission_id,
         )
-        legacy_mission_id = keys.get("mission_id") or legacy_mission_id
-        catalog_mission_id = keys.get("catalog_mission_id") or catalog_mission_id
-
-        # Build the SubmittedForm object
-        submitted_form = models.SubmittedForm(
-            mission_id=legacy_mission_id,
-            catalog_mission_id=catalog_mission_id,
-            form_type=form_data.get("form_type"),
-            form_title=form_data.get("form_title"),
-            submitted_by_username=current_user.username,
-            submission_timestamp=datetime.now(timezone.utc),
-            sections_data=sections_data,
+        return models.SubmittedFormSubmitResponse(
+            message="Form submitted successfully",
+            id=int(submitted_form.id),
+            mission_id=submitted_form.mission_id,
+            catalog_mission_id=submitted_form.catalog_mission_id,
+            submitted_by_username=submitted_form.submitted_by_username,
+            submission_timestamp=submitted_form.submission_timestamp.isoformat(),
+            client_submission_id=submitted_form.client_submission_id,
+            request_id=get_request_id(),
         )
-        session.add(submitted_form)
+    except FormSubmitValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Error saving submitted form")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to save form (request {get_request_id()})",
+        ) from exc
 
-        if legacy_mission_id:
-            _persist_mission_overview_side_effects(session, legacy_mission_id, sections_data)
-
-        session.commit()
-        session.refresh(submitted_form)
-        return {
-            "message": "Form submitted successfully",
-            "mission_id": legacy_mission_id,
-            "catalog_mission_id": catalog_mission_id,
-            "submitted_by_username": current_user.username,
-            "submission_timestamp": submitted_form.submission_timestamp.isoformat()
-        }
-    except Exception as e:
-        import logging
-        logging.exception("Error saving submitted form")
-        from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail=f"Failed to save form: {e}")
 
 # --- HTML Endpoints ---
 def _wg_forms_page(request: Request, current_user, template_name: str, log_path: str):
@@ -977,4 +434,4 @@ async def get_view_pic_handoffs_page(
 
 @router.get("/view_pic_handoffs.html", response_class=HTMLResponse, include_in_schema=False)
 async def get_view_pic_handoffs_page_legacy():
-    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "view_pic_handoffs.html"), status_code=302) 
+    return RedirectResponse(url=html_path_for(PLATFORM_WAVE_GLIDER, "view_pic_handoffs.html"), status_code=302)

@@ -136,6 +136,71 @@ export const appendPlatformParam = (url) => {
  * @returns {Promise<any>} A promise that resolves with the JSON response body.
  * @throws {Error} Throws an error if the request fails, with the message from the server.
  */
+/**
+ * Parse an error response body once (JSON preferred; HTML/text preserved).
+ * Attaches request_id from response header or JSON when present.
+ * @param {Response} response
+ * @returns {Promise<{message: string, requestId: string|null}>}
+ */
+export const parseApiErrorResponse = async (response) => {
+    const requestId =
+        response.headers.get('X-Request-ID') ||
+        response.headers.get('x-request-id') ||
+        null;
+    let errorMessage = `HTTP error! Status: ${response.status}`;
+    let bodyText = '';
+    try {
+        bodyText = await response.text();
+    } catch (_) {
+        bodyText = '';
+    }
+    if (bodyText) {
+        try {
+            const errorData = JSON.parse(bodyText);
+            console.error('API Error Response:', errorData);
+            if (typeof errorData === 'string') {
+                errorMessage = errorData;
+            } else if (errorData && typeof errorData === 'object') {
+                if (Array.isArray(errorData.detail)) {
+                    const validationErrors = errorData.detail.map((err) =>
+                        `${err.loc?.join('.')}: ${err.msg}`
+                    ).join('; ');
+                    errorMessage = `Validation error: ${validationErrors}`;
+                } else {
+                    errorMessage =
+                        errorData.detail ||
+                        errorData.message ||
+                        errorData.error ||
+                        JSON.stringify(errorData);
+                }
+                if (!requestId && errorData.request_id) {
+                    return {
+                        message: errorMessage,
+                        requestId: String(errorData.request_id),
+                    };
+                }
+            }
+        } catch (_) {
+            // Proxy/HTML or plain-text body — keep a short readable snippet.
+            const snippet = bodyText.replace(/\s+/g, ' ').trim().slice(0, 200);
+            if (snippet) errorMessage = snippet;
+        }
+    }
+    return { message: errorMessage, requestId };
+};
+
+/**
+ * @param {string} message
+ * @param {string|null} requestId
+ * @returns {Error}
+ */
+export const buildApiError = (message, requestId = null) => {
+    const suffix = requestId ? ` (request ${requestId})` : '';
+    const err = new Error(`${message}${suffix}`);
+    err.requestId = requestId;
+    return err;
+};
+
 export const apiRequest = async (url, method, body = null) => {
     url = withPlatformApiPrefix(url);
     const token = localStorage.getItem('accessToken');
@@ -144,6 +209,10 @@ export const apiRequest = async (url, method, body = null) => {
     };
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
+    }
+    // Correlate browser Network tab with journalctl [request_id] lines.
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        headers['X-Request-ID'] = crypto.randomUUID().replace(/-/g, '').slice(0, 12);
     }
 
     const options = { method, headers, credentials: 'include' };
@@ -159,35 +228,8 @@ export const apiRequest = async (url, method, body = null) => {
     }
 
     if (!response.ok) {
-        let errorMessage = `HTTP error! Status: ${response.status}`;
-        try {
-            const errorData = await response.json();
-            console.error('API Error Response:', errorData);
-            // Handle different error response formats
-            if (typeof errorData === 'string') {
-                errorMessage = errorData;
-            } else if (errorData && typeof errorData === 'object') {
-                // FastAPI validation errors have a specific structure
-                if (Array.isArray(errorData.detail)) {
-                    // Validation errors
-                    const validationErrors = errorData.detail.map(err => 
-                        `${err.loc?.join('.')}: ${err.msg}`
-                    ).join('; ');
-                    errorMessage = `Validation error: ${validationErrors}`;
-                } else {
-                    errorMessage = errorData.detail || errorData.message || errorData.error || JSON.stringify(errorData);
-                }
-            }
-        } catch (e) {
-            // If JSON parsing fails, try to get text
-            try {
-                const text = await response.text();
-                errorMessage = text || errorMessage;
-            } catch (textError) {
-                // Use default error message
-            }
-        }
-        throw new Error(errorMessage);
+        const { message, requestId } = await parseApiErrorResponse(response);
+        throw buildApiError(message, requestId);
     }
 
     return response.status === 204 ? null : await response.json();

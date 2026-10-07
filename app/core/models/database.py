@@ -473,6 +473,12 @@ class SubmittedForm(SQLModel, table=True):
         default=None,
         description="UTC timestamp when the form was last edited.",
     )
+    client_submission_id: Optional[str] = SQLModelField(
+        default=None,
+        max_length=64,
+        index=True,
+        description="Client-generated idempotency key for create retries (scoped with submitter).",
+    )
 
 
 # --- Mission Overview Database Model ---

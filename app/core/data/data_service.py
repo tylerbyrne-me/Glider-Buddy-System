@@ -171,12 +171,93 @@ def is_static_data_source(source_path: str, report_type: str, mission_id: str) -
     Returns:
         True if data source is static and should never expire
     """
-    # Local files are typically static
-    if "Local:" in source_path:
+    # Local / synced disk files are treated as static until an explicit force_refresh.
+    # Synced: avoids remote incremental probes on every PIC template load.
+    if "Local:" in source_path or "Synced:" in source_path:
         return True
     
     # Remote mission feeds are dynamic; allow refresh logic to run for all types.
     return False
+
+
+def resolve_synced_mission_dir(mission_id: str) -> Optional[Path]:
+    """
+    Resolve a mission directory under ``settings.local_data_base_path``.
+
+    Tries the raw mission_id, then the deployment mission code (e.g. m216 from
+    1070-m216). Rejects path traversal; never honors client-supplied paths.
+    """
+    if not mission_id or not str(mission_id).strip():
+        return None
+    base = settings.local_data_base_path.resolve()
+    candidates = [str(mission_id).strip()]
+    code = utils.deployment_mission_code_from_mission_id(mission_id)
+    if code and code not in candidates:
+        candidates.append(code)
+
+    for candidate in candidates:
+        # Reject any path-like or traversal input before joining.
+        if (
+            not candidate
+            or candidate in {".", ".."}
+            or ".." in candidate
+            or "/" in candidate
+            or "\\" in candidate
+        ):
+            continue
+        mission_dir = (base / candidate).resolve()
+        try:
+            if not mission_dir.is_relative_to(base):
+                continue
+        except AttributeError:
+            # Python < 3.9 fallback (not expected on WorkPython 3.12)
+            if not str(mission_dir).startswith(str(base)):
+                continue
+        if mission_dir.is_dir():
+            return mission_dir
+    return None
+
+
+async def _load_from_synced_storage(
+    report_type: str,
+    mission_id: str,
+) -> Tuple[Optional[pd.DataFrame], str, Optional[datetime]]:
+    """
+    Load a report from the leader-synced local tree only.
+
+    Safe for any authenticated user: reads only under configured
+    ``local_data_base_path``. Does not require the admin ``local_data_loading``
+    toggle and never accepts ``custom_local_path``.
+    """
+    mission_dir = resolve_synced_mission_dir(mission_id)
+    if mission_dir is None:
+        return None, f"Synced: not found under {settings.local_data_base_path}", None
+
+    base = settings.local_data_base_path.resolve()
+    folder_name = mission_dir.name
+    try:
+        df_attempt, file_mod_time = await loaders.load_report(
+            report_type, folder_name, base_path=base
+        )
+        if df_attempt is not None and not df_attempt.empty:
+            return df_attempt, f"Synced: {mission_dir}", file_mod_time
+        return None, f"Synced (empty): {mission_dir}", file_mod_time
+    except FileNotFoundError:
+        return None, f"Synced (missing file): {mission_dir}", None
+    except (IOError, pd.errors.ParserError, pd.errors.EmptyDataError) as exc:
+        logger.warning(
+            "Synced load/parse error for %s (%s): %s", report_type, mission_id, exc
+        )
+        return None, f"Synced (parse error): {mission_dir}", None
+    except Exception as exc:
+        logger.error(
+            "Unexpected synced load error for %s (%s): %s",
+            report_type,
+            mission_id,
+            exc,
+            exc_info=True,
+        )
+        return None, f"Synced (error): {mission_dir}", None
 
 
 def get_cache_strategy(report_type: str) -> Dict[str, Any]:
@@ -876,7 +957,13 @@ async def load_data_with_overlap(
     
     load_attempted = False
     file_modification_time = None
-    if source_preference == "local":  # Local-only preference (admin only, feature toggle required)
+    if source_preference == "synced":
+        # Trusted leader-synced disk only (any authenticated caller; no remote fallback).
+        load_attempted = True
+        df, actual_source_path, file_modification_time = await _load_from_synced_storage(
+            report_type, mission_id
+        )
+    elif source_preference == "local":  # Local-only preference (admin only, feature toggle required)
         load_attempted = True
         df, actual_source_path, file_modification_time = await _load_from_local_sources(report_type, mission_id, custom_local_path, current_user, allow_system_access)
     elif source_preference == "remote":
@@ -1148,25 +1235,26 @@ class DataService:
         
         # Load data with overlap to prevent gaps
         # Priority: local first (fastest), then remote (fallback)
-        # If source_preference is "local", only try local
-        # If source_preference is "remote" or None, try local first, then remote
+        # If source_preference is "synced", only try leader-synced disk (no remote)
+        # If source_preference is "local", only try admin local paths
+        # If source_preference is "remote" or None, try remote
         df = None
         actual_source_path = "Data not loaded"
         file_modification_time = None
         
-        # Try local first only when explicitly requested (admin + feature toggle)
-        # When source_preference is "local", try local with current_user for admin check
-        if source_preference == "local":
+        if source_preference == "synced":
+            df, actual_source_path, file_modification_time = await _load_from_synced_storage(
+                report_type, mission_id
+            )
+        elif source_preference == "local":
+            # Try local first only when explicitly requested (admin + feature toggle)
             df, actual_source_path, file_modification_time = await _load_from_local_sources(
                 report_type, mission_id, custom_local_path, current_user, allow_system_access=False
             )
-        
-        # Fall back to remote if local failed or source_preference is "remote" or None
-        if df is None or df.empty:
-            if source_preference != "local":
-                df, actual_source_path, file_modification_time = await _load_from_remote_sources(
-                    report_type, mission_id, current_user
-                )
+        elif source_preference == "remote" or source_preference is None:
+            df, actual_source_path, file_modification_time = await _load_from_remote_sources(
+                report_type, mission_id, current_user
+            )
         
         # Store in cache with enhanced structure
         if df is not None and not df.empty:

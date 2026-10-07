@@ -737,6 +737,43 @@ class SubmittedFormListResponse(BaseModel):
     has_more: bool = False
 
 
+class SubmittedFormCreate(BaseModel):
+    """Payload for creating a submitted form (WG PIC / pre-deployment)."""
+
+    form_type: str = Field(description="Type of the form being submitted.")
+    form_title: str = Field(description="Title of this specific form instance.")
+    sections_data: List[dict] = Field(description="Filled-out form sections/items.")
+    catalog_mission_id: Optional[str] = Field(
+        default=None,
+        description="Optional catalog UUID when submitting against a planned workspace.",
+    )
+    client_submission_id: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Client UUID reused across retries to prevent duplicate creates.",
+    )
+
+
+class SubmittedFormUpdate(BaseModel):
+    """Payload for editing an existing submitted form in place."""
+
+    sections_data: List[dict] = Field(description="Updated form sections/items.")
+    form_title: Optional[str] = Field(default=None, description="Optional updated title.")
+
+
+class SubmittedFormSubmitResponse(BaseModel):
+    """Response after a successful create (or idempotent replay)."""
+
+    message: str
+    id: int
+    mission_id: Optional[str] = None
+    catalog_mission_id: Optional[str] = None
+    submitted_by_username: str
+    submission_timestamp: str
+    client_submission_id: Optional[str] = None
+    request_id: Optional[str] = None
+
+
 # ============================================================================
 # Mission Info Models
 # ============================================================================
