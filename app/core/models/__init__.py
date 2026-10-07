@@ -92,6 +92,7 @@ from .database import (
     VmtUnitAuditLog,
     OraRequest,
     OraHullProfile,
+    WaveGliderMissionMetrics,
 )
 
 # Import Pydantic schemas
@@ -341,6 +342,7 @@ __all__ = [
     "VmtUnitAuditLog",
     "OraRequest",
     "OraHullProfile",
+    "WaveGliderMissionMetrics",
     
     # Pydantic schemas (add all schema names here)
     "ReportDataParams",

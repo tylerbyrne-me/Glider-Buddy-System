@@ -1799,3 +1799,50 @@ class OraHullProfile(SQLModel, table=True):
     smc_version: Optional[str] = SQLModelField(default=None)
     updated_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
     updated_by_username: Optional[str] = SQLModelField(default=None)
+
+
+class WaveGliderMissionMetrics(SQLModel, table=True):
+    """Persisted Wave Glider lifetime mission aggregates (distance, observed max power)."""
+
+    __tablename__ = "wave_glider_mission_metrics"
+
+    mission_id: str = SQLModelField(
+        primary_key=True,
+        description="Mission identifier matching MissionOverview / WGMS folder key.",
+    )
+    total_distance_nm: Optional[float] = SQLModelField(
+        default=None,
+        description="Mission total distance in nautical miles.",
+    )
+    distance_method: Optional[str] = SQLModelField(
+        default=None,
+        description="odometer (gliderDistance/DistanceOverGround) or great_circle.",
+    )
+    telemetry_data_through_ts: Optional[datetime] = SQLModelField(
+        default=None,
+        description="Latest telemetry Timestamp used for distance computation.",
+    )
+    telemetry_source_mtime: Optional[datetime] = SQLModelField(
+        default=None,
+        description="Synced telemetry CSV mtime when distance was last computed.",
+    )
+    observed_max_battery_wh: Optional[float] = SQLModelField(
+        default=None,
+        description="Mission peak BatteryWattHours from power summary.",
+    )
+    power_data_through_ts: Optional[datetime] = SQLModelField(
+        default=None,
+        description="Latest power Timestamp used for observed max Wh.",
+    )
+    power_source_mtime: Optional[datetime] = SQLModelField(
+        default=None,
+        description="Synced power CSV mtime when max Wh was last computed.",
+    )
+    calculation_version: int = SQLModelField(
+        default=1,
+        description="Bump when distance/power aggregate formulas change.",
+    )
+    computed_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="When this row was last written.",
+    )

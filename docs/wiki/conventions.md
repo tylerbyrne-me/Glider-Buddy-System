@@ -113,6 +113,7 @@ Shared UI classes: [`custom.css`](../../web/static/css/custom.css) (`.gbs-card`,
   3. `GET /api/{platform_id}/sensor-summaries/{resource_id}` (WG: prefer `/api/wave_glider/...`; handler may live at legacy `/api/sensor-summaries/...` via alias).
   4. On cache `last_data_timestamp` advance: quietly reload open charts **and** refresh summary cards/footers/mini-charts — no hard reload as the primary path.
   5. When changing left-nav cards or timestamps, ask: *does this update live, or only on SSR?* See [architecture](./architecture.md#dashboard-summary-soft-refresh).
+  6. Wave Glider: set `data-is-realtime` on the dashboard body for active missions; prefer lazy chart loads (active category first). Lifetime mission distance / observed max Wh come from `wave_glider_mission_metrics`, not full-history DataFrames on every request ([ADR 0012](../decisions/0012-wg-dashboard-synced-metrics.md)).
 
 ### Outlier suppress
 

@@ -19,8 +19,17 @@ import pandas as pd
 from app.core import models
 from app.core import utils
 from app.core.data import summaries as core_summaries
-from app.core.data.data_service import get_cache_timestamp, get_data_service
+from app.core.data.data_service import (
+    DASHBOARD_BOUNDED_HOURS,
+    get_cache_timestamp,
+    get_data_service,
+)
 from app.core.infra.db import SQLModelSession
+from app.core.infra.logging_config import get_request_id
+from app.platforms.wave_glider.mission_metrics import (
+    bootstrap_mission_metrics_if_needed,
+    get_mission_metrics,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +52,9 @@ SENSOR_TO_REPORT_MAPPING: Dict[str, str] = {
     "wg_vm4": "wg_vm4",
 }
 
-# Match _render_dashboard: full history for mission-peak / track-length metrics.
-FULL_HISTORY_REPORT_TYPES = frozenset({"ais", "errors", "telemetry", "power"})
+# AIS/errors keep full history for detail tables. Telemetry/power use bounded
+# windows; lifetime distance / observed max Wh come from persisted metrics.
+FULL_HISTORY_REPORT_TYPES = frozenset({"ais", "errors"})
 
 DEFAULT_ENABLED_SENSOR_CARDS = [
     "navigation",
@@ -173,6 +183,8 @@ def _build_card_info(
     mission_id: Optional[str],
     source_preference: Optional[str],
     theoretical_max_wh: Optional[float],
+    lifetime_total_distance_nm: Optional[float] = None,
+    lifetime_observed_max_battery_wh: Optional[float] = None,
 ) -> Dict[str, Any]:
     spec = WG_SENSOR_SUMMARY_SPECS[card_name]
     report_type = spec["report_type"]
@@ -194,10 +206,15 @@ def _build_card_info(
                 data_frames.get("solar"),
                 file_mod_time,
                 theoretical_max_wh=theoretical_max_wh,
+                lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
             )
             info["mini_trend"] = core_summaries.get_power_mini_trend(df)
         elif card_name == "navigation":
-            info = core_summaries.get_navigation_status(df, file_mod_time)
+            info = core_summaries.get_navigation_status(
+                df,
+                file_mod_time,
+                lifetime_total_distance_nm=lifetime_total_distance_nm,
+            )
             info["mini_trend"] = core_summaries.get_navigation_mini_trend(df)
         elif card_name == "ctd":
             info = core_summaries.get_ctd_status(df, file_mod_time)
@@ -247,6 +264,9 @@ def build_wg_sensor_summaries_from_frames(
     mission_id: Optional[str] = None,
     source_preference: Optional[str] = None,
     theoretical_max_wh: Optional[float] = None,
+    lifetime_total_distance_nm: Optional[float] = None,
+    lifetime_observed_max_battery_wh: Optional[float] = None,
+    lifetime_distance_method: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Build template/API context for enabled Wave Glider sensor cards.
@@ -254,7 +274,14 @@ def build_wg_sensor_summaries_from_frames(
     Returns flat keys for SSR (``power_info``, ``ctd_info``, ...) plus a nested
     ``sensors`` map keyed by card name for the JSON API.
     """
-    context: Dict[str, Any] = {"sensors": {}}
+    context: Dict[str, Any] = {
+        "sensors": {},
+        "lifetime_metrics": {
+            "total_distance_nm": lifetime_total_distance_nm,
+            "distance_method": lifetime_distance_method,
+            "observed_max_battery_wh": lifetime_observed_max_battery_wh,
+        },
+    }
     data_frames = data_frames or {}
 
     if enabled_cards is None:
@@ -286,6 +313,8 @@ def build_wg_sensor_summaries_from_frames(
             mission_id,
             source_preference,
             theoretical_max_wh,
+            lifetime_total_distance_nm=lifetime_total_distance_nm,
+            lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
         )
         context[info_key] = info
         context[values_key] = info.get("values") or {}
@@ -335,16 +364,23 @@ async def build_wave_glider_sensor_summaries(
     custom_local_path: Optional[str] = None,
     current_user: Optional[models.User] = None,
     session: Optional[SQLModelSession] = None,
-    hours: int = 24,
+    hours: int = DASHBOARD_BOUNDED_HOURS,
 ) -> Dict[str, Any]:
     """
     Load mission data and build sensor-card summaries (same window rules as dashboard SSR).
     """
+    import os
+    import time
+
+    started = time.monotonic()
     report_types = report_types_for_enabled_cards(enabled_cards)
     # Summaries API only needs left-nav sensor cards (not ais/errors tables).
     report_types = [rt for rt in report_types if rt not in ("ais", "errors")]
 
     theoretical_max_wh: Optional[float] = None
+    lifetime_total_distance_nm: Optional[float] = None
+    lifetime_observed_max_battery_wh: Optional[float] = None
+    lifetime_distance_method: Optional[str] = None
     if session is not None:
         mission_overview = session.get(models.MissionOverview, mission_id)
         if mission_overview is None:
@@ -355,6 +391,19 @@ async def build_wave_glider_sensor_summaries(
             else None
         )
         theoretical_max_wh = core_summaries.theoretical_max_wh(battery_apu)
+        metrics = get_mission_metrics(session, mission_id)
+        if metrics is None or (
+            metrics.total_distance_nm is None and metrics.observed_max_battery_wh is None
+        ):
+            metrics = await bootstrap_mission_metrics_if_needed(session, mission_id)
+        if metrics is not None:
+            lifetime_total_distance_nm = metrics.total_distance_nm
+            lifetime_observed_max_battery_wh = metrics.observed_max_battery_wh
+            lifetime_distance_method = metrics.distance_method
+
+    # Explicit remote/local inspection may omit persisted metrics so operators see
+    # frame-derived peaks; auto/synced dashboard path uses persisted lifetime totals.
+    use_lifetime = source_preference not in ("remote", "local")
 
     data_service = get_data_service()
     results = await asyncio.gather(
@@ -402,11 +451,28 @@ async def build_wave_glider_sensor_summaries(
             data_frames[report_type] = None
             file_mod_times_map[report_type] = None
 
-    return build_wg_sensor_summaries_from_frames(
+    context = build_wg_sensor_summaries_from_frames(
         data_frames,
         enabled_cards=enabled_cards,
         file_mod_times_map=file_mod_times_map,
         mission_id=mission_id,
         source_preference=source_preference,
         theoretical_max_wh=theoretical_max_wh,
+        lifetime_total_distance_nm=lifetime_total_distance_nm if use_lifetime else None,
+        lifetime_observed_max_battery_wh=(
+            lifetime_observed_max_battery_wh if use_lifetime else None
+        ),
+        lifetime_distance_method=lifetime_distance_method if use_lifetime else None,
     )
+    logger.info(
+        "DASHBOARD_SUMMARIES mission=%s mode=%s hours=%s duration=%.2fs "
+        "reports=%s pid=%s request_id=%s",
+        mission_id,
+        source_preference or "auto",
+        hours,
+        time.monotonic() - started,
+        ",".join(report_types),
+        os.getpid(),
+        get_request_id(),
+    )
+    return context

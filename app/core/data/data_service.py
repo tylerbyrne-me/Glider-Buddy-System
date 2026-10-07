@@ -11,6 +11,8 @@ from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from pathlib import Path
 import logging
+import os
+import time
 
 import pandas as pd
 import httpx
@@ -21,8 +23,12 @@ from .. import utils
 from . import loaders
 from .. import models
 from ..infra.feature_toggles import is_feature_enabled
+from ..infra.logging_config import get_request_id
 
 logger = logging.getLogger(__name__)
+
+# Canonical dashboard chart / summary window (align SSR with client chart default).
+DASHBOARD_BOUNDED_HOURS = 72
 
 # ============================================================================
 # Cache Configuration and State
@@ -171,13 +177,64 @@ def is_static_data_source(source_path: str, report_type: str, mission_id: str) -
     Returns:
         True if data source is static and should never expire
     """
-    # Local / synced disk files are treated as static until an explicit force_refresh.
-    # Synced: avoids remote incremental probes on every PIC template load.
+    # Local / synced disk files are treated as static until an explicit force_refresh
+    # or (for Synced:) an on-disk mtime change is detected below.
+    # Synced: avoids remote incremental probes on every PIC / dashboard load.
     if "Local:" in source_path or "Synced:" in source_path:
         return True
     
     # Remote mission feeds are dynamic; allow refresh logic to run for all types.
     return False
+
+
+def _synced_file_mtime(report_type: str, mission_id: str) -> Optional[datetime]:
+    """Return on-disk mtime for a synced mission CSV, or None if missing."""
+    mission_dir = resolve_synced_mission_dir(mission_id)
+    if mission_dir is None:
+        return None
+    reports = {
+        "power": "Amps Power Summary Report.csv",
+        "solar": "Amps Solar Input Port Report.csv",
+        "ctd": "Seabird CTD Records with D.O..csv",
+        "weather": "Weather Records 2.csv",
+        "waves": "GPS Waves Sensor Data.csv",
+        "ais": "AIS Report.csv",
+        "telemetry": "Telemetry 6 Report by WGMS Datetime.csv",
+        "errors": "Vehicle Error Report.csv",
+        "vr2c": "Vemco VR2c Status.csv",
+        "fluorometer": "Fluorometer Samples 2.csv",
+        "wave_frequency_spectrum": "GPS Waves Frequency Spectrum.csv",
+        "wave_energy_spectrum": "GPS Waves Energy Spectrum.csv",
+        "wg_vm4": "Vemco VM4 Daily Local Health.csv",
+        "wg_vm4_info": "Vemco VM4 Information.csv",
+        "wg_vm4_remote_health": "Vemco VM4 Remote Health.csv",
+    }
+    filename = reports.get(report_type)
+    if not filename:
+        return None
+    path = mission_dir / filename
+    try:
+        if not path.is_file():
+            return None
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+    except OSError:
+        return None
+
+
+def get_synced_file_change_token(report_type: str, mission_id: str) -> Optional[str]:
+    """
+    Cheap change token for cache-status polling (no CSV parse).
+
+    Returns an ISO mtime string when the synced file exists.
+    """
+    mtime = _synced_file_mtime(report_type, mission_id)
+    return mtime.isoformat() if mtime else None
+
+
+def _mtime_matches(cached: Optional[datetime], current: Optional[datetime]) -> bool:
+    if cached is None or current is None:
+        return False
+    return abs((cached - current).total_seconds()) < 1.0
 
 
 def resolve_synced_mission_dir(mission_id: str) -> Optional[Path]:
@@ -1128,6 +1185,8 @@ class DataService:
                 except Exception:
                     pass
         
+        load_started = time.monotonic()
+
         # Check cache first (unless force refresh)
         if not force_refresh and cache_key in data_cache:
             cached_df, cached_source_path, cache_timestamp, last_data_timestamp, cached_file_mod_time = data_cache[cache_key]
@@ -1137,16 +1196,46 @@ class DataService:
             is_static = is_static_data_source(cached_source_path, report_type, mission_id)
             
             if is_static:
-                # Static data never expires - always return from cache
-                logger.debug(
-                    f"CACHE HIT (static): Returning {report_type} for {mission_id} "
-                    f"from cache. Source: {cached_source_path}"
-                )
-                # Update cache statistics
-                data_size_mb = len(cached_df) * cached_df.memory_usage(deep=True).sum() / (1024 * 1024) if not cached_df.empty else 0
-                update_cache_stats(report_type, mission_id, cache_hit=True, data_size_mb=data_size_mb)
-                # Trim to requested range and return
-                return trim_data_to_range(cached_df, start_date, end_date, hours_back), cached_source_path, cached_file_mod_time
+                # Synced disk: revalidate against on-disk mtime so non-leader workers
+                # pick up leader sync replacements without remote probes.
+                if "Synced:" in (cached_source_path or ""):
+                    disk_mtime = _synced_file_mtime(report_type, mission_id)
+                    if disk_mtime is not None and not _mtime_matches(cached_file_mod_time, disk_mtime):
+                        logger.info(
+                            "CACHE STALE (synced mtime): %s for %s cached=%s disk=%s — reloading",
+                            report_type,
+                            mission_id,
+                            cached_file_mod_time,
+                            disk_mtime,
+                        )
+                        # Fall through to load path below (do not return cached).
+                    else:
+                        logger.debug(
+                            "CACHE HIT (synced): Returning %s for %s from cache. Source: %s",
+                            report_type,
+                            mission_id,
+                            cached_source_path,
+                        )
+                        data_size_mb = (
+                            len(cached_df) * cached_df.memory_usage(deep=True).sum() / (1024 * 1024)
+                            if not cached_df.empty
+                            else 0
+                        )
+                        update_cache_stats(report_type, mission_id, cache_hit=True, data_size_mb=data_size_mb)
+                        return (
+                            trim_data_to_range(cached_df, start_date, end_date, hours_back),
+                            cached_source_path,
+                            cached_file_mod_time,
+                        )
+                else:
+                    # Admin Local: paths stay static until force_refresh.
+                    logger.debug(
+                        f"CACHE HIT (static): Returning {report_type} for {mission_id} "
+                        f"from cache. Source: {cached_source_path}"
+                    )
+                    data_size_mb = len(cached_df) * cached_df.memory_usage(deep=True).sum() / (1024 * 1024) if not cached_df.empty else 0
+                    update_cache_stats(report_type, mission_id, cache_hit=True, data_size_mb=data_size_mb)
+                    return trim_data_to_range(cached_df, start_date, end_date, hours_back), cached_source_path, cached_file_mod_time
             else:
                 # Dynamic data - always try incremental loading first if we have existing data
                 if cache_strategy["incremental"] and last_data_timestamp:
@@ -1234,10 +1323,10 @@ class DataService:
                     return trim_data_to_range(cached_df, start_date, end_date, hours_back), cached_source_path, cached_file_mod_time
         
         # Load data with overlap to prevent gaps
-        # Priority: local first (fastest), then remote (fallback)
-        # If source_preference is "synced", only try leader-synced disk (no remote)
-        # If source_preference is "local", only try admin local paths
-        # If source_preference is "remote" or None, try remote
+        # - synced: leader-synced disk only (PIC default)
+        # - local: admin local paths only
+        # - remote / force_refresh: upstream WGMS only
+        # - None (dashboard default): synced first, remote fallback when missing/empty
         df = None
         actual_source_path = "Data not loaded"
         file_modification_time = None
@@ -1251,10 +1340,19 @@ class DataService:
             df, actual_source_path, file_modification_time = await _load_from_local_sources(
                 report_type, mission_id, custom_local_path, current_user, allow_system_access=False
             )
-        elif source_preference == "remote" or source_preference is None:
+        elif source_preference == "remote" or force_refresh:
             df, actual_source_path, file_modification_time = await _load_from_remote_sources(
                 report_type, mission_id, current_user
             )
+        else:
+            # Dashboard / unspecified: prefer trusted synced disk, then remote.
+            df, actual_source_path, file_modification_time = await _load_from_synced_storage(
+                report_type, mission_id
+            )
+            if df is None or df.empty:
+                df, actual_source_path, file_modification_time = await _load_from_remote_sources(
+                    report_type, mission_id, current_user
+                )
         
         # Store in cache with enhanced structure
         if df is not None and not df.empty:
@@ -1278,7 +1376,23 @@ class DataService:
             update_cache_stats(report_type, mission_id, cache_hit=False, is_refresh=True)
         
         # Return trimmed data for the exact requested range
-        return trim_data_to_range(df if df is not None else pd.DataFrame(), start_date, end_date, hours_back), actual_source_path, file_modification_time
+        trimmed = trim_data_to_range(
+            df if df is not None else pd.DataFrame(), start_date, end_date, hours_back
+        )
+        logger.info(
+            "DATA_LOAD mission=%s report=%s mode=%s hours=%s duration=%.2fs "
+            "source=%s rows=%s pid=%s request_id=%s",
+            mission_id,
+            report_type,
+            source_preference or "auto",
+            hours_back,
+            time.monotonic() - load_started,
+            actual_source_path,
+            0 if trimmed is None or trimmed.empty else len(trimmed),
+            os.getpid(),
+            get_request_id(),
+        )
+        return trimmed, actual_source_path, file_modification_time
 
     async def load_and_validate(
         self,

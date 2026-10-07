@@ -73,16 +73,29 @@ def _incremental_odometer_nm(df: pd.DataFrame) -> Optional[float]:
     Sum vehicle-reported incremental ground distance (meters since prior fix).
     Prefer ``DistanceSinceLastFixM`` (raw ``gliderDistance``); else ``DistanceOverGroundM``.
     These are not range-to-waypoint; no distance-to-waypoint field is used here.
+
+    Rows are sorted and deduplicated by ``Timestamp`` when present so unordered
+    or overlapping CSV slices do not double-count.
     """
     if df is None or df.empty:
         return None
 
+    work = df
+    if "Timestamp" in df.columns:
+        work = (
+            df.dropna(subset=["Timestamp"])
+            .sort_values("Timestamp")
+            .drop_duplicates(subset=["Timestamp"], keep="last")
+        )
+        if work.empty:
+            return None
+
     for col in ("DistanceSinceLastFixM", "DistanceOverGroundM"):
-        if col not in df.columns:
+        if col not in work.columns:
             continue
-        if not pd.api.types.is_numeric_dtype(df[col]):
+        if not pd.api.types.is_numeric_dtype(work[col]):
             continue
-        series = pd.to_numeric(df[col], errors="coerce")
+        series = pd.to_numeric(work[col], errors="coerce")
         if not series.notna().any():
             continue
         total_m = float(series.fillna(0).clip(lower=0).sum())
@@ -286,6 +299,7 @@ def get_power_status(
     df_solar: Optional[pd.DataFrame] = None,
     last_update_timestamp: Optional[datetime] = None,
     theoretical_max_wh: Optional[float] = None,
+    lifetime_observed_max_battery_wh: Optional[float] = None,
 ) -> Dict:
     """Returns a summary dict for power status. Returns safe defaults and logs errors if data is missing or malformed."""
     try:
@@ -298,7 +312,21 @@ def get_power_status(
         theoretical_wh = theoretical_max_wh if theoretical_max_wh is not None else BATTERY_MAX_WH
         effective_max = theoretical_wh
         realistic_max_wh = None
-        if df_power_processed is not None and not df_power_processed.empty and "BatteryWattHours" in df_power_processed.columns:
+        # Prefer persisted mission peak when provided (bounded dashboard windows).
+        if lifetime_observed_max_battery_wh is not None:
+            try:
+                lifetime_val = float(lifetime_observed_max_battery_wh)
+                if lifetime_val > 0:
+                    realistic_max_wh = lifetime_val
+                    effective_max = lifetime_val
+            except (TypeError, ValueError):
+                pass
+        if (
+            realistic_max_wh is None
+            and df_power_processed is not None
+            and not df_power_processed.empty
+            and "BatteryWattHours" in df_power_processed.columns
+        ):
             try:
                 raw_max = df_power_processed["BatteryWattHours"].max()
                 if pd.notna(raw_max) and float(raw_max) > 0:
@@ -923,7 +951,8 @@ def get_vr2c_mini_trend(df_vr2c: Optional[pd.DataFrame]) -> List[Dict[str, Any]]
 
 def get_navigation_status(
     df_telemetry: Optional[pd.DataFrame],
-    last_update_timestamp: Optional[datetime] = None
+    last_update_timestamp: Optional[datetime] = None,
+    lifetime_total_distance_nm: Optional[float] = None,
 ) -> Dict:
     """Returns a summary dict for navigation status. Returns safe defaults and logs errors if data is missing or malformed."""
     try:
@@ -952,9 +981,16 @@ def get_navigation_status(
             else None
         )
 
-        # Distance traveled: sum incremental meters since prior fix (gliderDistance, then
-        # distanceOverGround); if absent, fall back to great-circle distance from lat/lon.
-        total_distance_mission_nm = _telemetry_track_distance_nm(df_telemetry_processed)
+        # Distance traveled: prefer persisted mission total when provided (bounded windows).
+        # 24h distance always uses the recent frame. Mission total falls back to frame
+        # computation only when no lifetime override is supplied.
+        if lifetime_total_distance_nm is not None:
+            try:
+                total_distance_mission_nm = float(lifetime_total_distance_nm)
+            except (TypeError, ValueError):
+                total_distance_mission_nm = _telemetry_track_distance_nm(df_telemetry_processed)
+        else:
+            total_distance_mission_nm = _telemetry_track_distance_nm(df_telemetry_processed)
         distance_traveled_24h_nm = _telemetry_track_distance_nm(df_last_24h)
 
         # Prefer last GPS fix that is not a (0,0) unlock sentinel.

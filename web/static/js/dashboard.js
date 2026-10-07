@@ -70,12 +70,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     const enabledSensorsStr = document.body.dataset.enabledSensors || '';
     const enabledSensors = enabledSensorsStr ? enabledSensorsStr.split(',') : [];
 
+    const distanceMethod = document.body.dataset.distanceMethod || '';
     const DATA_LINEAGE_TOOLTIPS = {
         navigation: {
             total_distance_traveled_mission: {
-                sourceType: 'raw',
-                rawHeader: 'gliderDistance',
-                description: 'Calculated as incremental distance accumulated across mission telemetry points.',
+                sourceType: distanceMethod === 'great_circle' ? 'derived' : 'raw',
+                rawHeader: distanceMethod === 'great_circle' ? null : 'gliderDistance',
+                description: distanceMethod === 'great_circle'
+                    ? 'Mission total from great-circle track (GPS lat/lon); persisted by leader sync.'
+                    : 'Mission total from vehicle incremental distance (gliderDistance / DistanceOverGround); persisted by leader sync. Falls back to great-circle when odometer columns are absent.',
             },
         },
     };
@@ -1284,10 +1287,13 @@ document.addEventListener('DOMContentLoaded', async function() {
         spinner.style.display = 'none';
     }
 
-    const currentSource = urlParams.get('source') || 'remote';
+    // Empty source = server auto path (synced-first, remote fallback).
+    const currentSource = urlParams.get('source') || '';
     const currentLocalPath = urlParams.get('local_path') || '';
     // auotrefresh timer and countdown
     const autoRefreshIntervalMinutes = 5;
+    const categoryLoadInflight = new Map(); // category -> Promise
+    let summaryRefreshInflight = null;
     let autoRefreshEnabled = true; // Default to true, will be updated by checkbox/localStorage
     let countdownTimer = null;
 
@@ -1510,7 +1516,12 @@ document.addEventListener('DOMContentLoaded', async function() {
             }
 
             const currentUrl = new URL(window.location.href);
-            currentUrl.searchParams.set('source', selectedSource);
+            if (selectedSource) {
+                currentUrl.searchParams.set('source', selectedSource);
+            } else {
+                // Auto path: omit source so the server uses synced-first.
+                currentUrl.searchParams.delete('source');
+            }
             if (newLocalPath) {
                 currentUrl.searchParams.set('local_path', newLocalPath);
             } else {
@@ -1656,25 +1667,31 @@ document.addEventListener('DOMContentLoaded', async function() {
 
     async function refreshWgSummaryCards() {
         if (!missionId) return;
-        try {
-            const params = new URLSearchParams();
-            if (currentSource) params.set('source', currentSource);
-            if (currentSource === 'local' && currentLocalPath) {
-                params.set('local_path', currentLocalPath);
+        if (summaryRefreshInflight) return summaryRefreshInflight;
+        summaryRefreshInflight = (async () => {
+            try {
+                const params = new URLSearchParams();
+                if (currentSource) params.set('source', currentSource);
+                if (currentSource === 'local' && currentLocalPath) {
+                    params.set('local_path', currentLocalPath);
+                }
+                const qs = params.toString();
+                const sensors = await apiRequest(
+                    `/api/wave_glider/sensor-summaries/${encodeURIComponent(missionId)}${qs ? `?${qs}` : ''}`,
+                    'GET',
+                );
+                if (!sensors || typeof sensors !== 'object') return;
+                Object.entries(sensors).forEach(([category, summary]) => {
+                    updateWgCardFromSummary(category, summary);
+                });
+                initializeMiniCharts();
+            } catch (err) {
+                console.debug('Wave Glider summary card refresh failed:', err);
+            } finally {
+                summaryRefreshInflight = null;
             }
-            const qs = params.toString();
-            const sensors = await apiRequest(
-                `/api/wave_glider/sensor-summaries/${encodeURIComponent(missionId)}${qs ? `?${qs}` : ''}`,
-                'GET',
-            );
-            if (!sensors || typeof sensors !== 'object') return;
-            Object.entries(sensors).forEach(([category, summary]) => {
-                updateWgCardFromSummary(category, summary);
-            });
-            initializeMiniCharts();
-        } catch (err) {
-            console.debug('Wave Glider summary card refresh failed:', err);
-        }
+        })();
+        return summaryRefreshInflight;
     }
 
     function refreshAllLoadedWgChartsQuiet() {
@@ -1718,6 +1735,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             );
             const cacheStatusQueryParams = new URLSearchParams();
             if (polledReportTypes.length > 0) cacheStatusQueryParams.set('report_types', polledReportTypes.join(','));
+            cacheStatusQueryParams.set('hours_back', '72');
             if (currentSource) cacheStatusQueryParams.set('source', currentSource);
             if (currentSource === 'local' && currentLocalPath) cacheStatusQueryParams.set('local_path', currentLocalPath);
 
@@ -1747,11 +1765,15 @@ document.addEventListener('DOMContentLoaded', async function() {
                         serverLastDataTime instanceof Date &&
                         !Number.isNaN(serverLastDataTime.getTime()) &&
                         serverLastDataTime > storedLastDataTime;
-                    
-                    // Prefer true data progression signal over cache refresh-attempt signal.
-                    // Fallback to cache timestamp only if we do not yet have last_data_timestamp.
-                    const shouldReloadFromCacheTimestamp = !storedLastDataTime && serverTime > storedTime;
-                    if (hasDataAdvanced || shouldReloadFromCacheTimestamp) {
+                    // cache_timestamp is preferably a synced-file change token (mtime),
+                    // so advancing it is a real disk update — not a no-new-data probe bump.
+                    const changeTokenAdvanced =
+                        storedTime instanceof Date &&
+                        !Number.isNaN(storedTime.getTime()) &&
+                        serverTime instanceof Date &&
+                        !Number.isNaN(serverTime.getTime()) &&
+                        serverTime > storedTime;
+                    if (hasDataAdvanced || changeTokenAdvanced) {
                         const timeDiff = (serverTime - storedTime) / 1000; // seconds
                         console.log(
                             `Cache updated for ${reportType}: stored=${stored.cache_timestamp}, `
@@ -1761,10 +1783,10 @@ document.addEventListener('DOMContentLoaded', async function() {
                         );
                         cacheUpdated = true;
                         updatedReportTypes.push(reportType);
-                        // Update stored timestamp
                         cacheTimestamps.set(reportType, {
                             cache_timestamp: status.cache_timestamp,
-                            last_data_timestamp: status.last_data_timestamp
+                            last_data_timestamp: status.last_data_timestamp,
+                            synced_change_token: status.synced_change_token || null,
                         });
                     } else {
                         console.debug(`Cache for ${reportType} unchanged: stored=${stored.cache_timestamp}, server=${status.cache_timestamp}`);
@@ -1774,7 +1796,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                     console.debug(`Initializing cache timestamp for ${reportType}: ${status.cache_timestamp}`);
                     cacheTimestamps.set(reportType, {
                         cache_timestamp: status.cache_timestamp,
-                        last_data_timestamp: status.last_data_timestamp
+                        last_data_timestamp: status.last_data_timestamp,
+                        synced_change_token: status.synced_change_token || null,
                     });
                 } else if (!status.cache_timestamp) {
                     console.debug(`No cache timestamp available for ${reportType}`);
@@ -1893,11 +1916,13 @@ document.addEventListener('DOMContentLoaded', async function() {
                 
                 // Date range mode
             } else {
-                // Use hours back mode
+                // Use hours back mode (default 72 aligns with SSR DASHBOARD_BOUNDED_HOURS)
                 apiUrl = `/api/data/${reportType}/${mission}?hours_back=${hours}&granularity_minutes=${granularity}`;
             }
             
-            apiUrl += `&source=${currentSource}`;
+            if (currentSource) {
+                apiUrl += `&source=${encodeURIComponent(currentSource)}`;
+            }
             if (currentSource === 'local' && currentLocalPath) {
                 apiUrl += `&local_path=${encodeURIComponent(currentLocalPath)}`;
             }
@@ -1960,7 +1985,8 @@ document.addEventListener('DOMContentLoaded', async function() {
 
             let forecastApiUrl = `/api/forecast/${mission}`;
             const forecastParams = new URLSearchParams();
-            forecastParams.append('source', currentSource);
+            // Omit empty source — SourceEnum rejects "" with HTTP 422.
+            if (currentSource) forecastParams.append('source', currentSource);
             if (currentSource === 'local' && currentLocalPath) {
                 forecastParams.append('local_path', currentLocalPath);
             }
@@ -1984,7 +2010,11 @@ document.addEventListener('DOMContentLoaded', async function() {
                     forecastParams.append('end_date', endISO);
                 }
             }
-            const forecastData = await apiRequest(`${forecastApiUrl}?${forecastParams.toString()}`, 'GET');
+            const forecastQuery = forecastParams.toString();
+            const forecastUrl = forecastQuery
+                ? `${forecastApiUrl}?${forecastQuery}`
+                : forecastApiUrl;
+            const forecastData = await apiRequest(forecastUrl, 'GET');
             return forecastData;
         } catch (error) {
             showToast(`Error loading forecast: ${error.message}`, 'danger');
@@ -2171,7 +2201,7 @@ document.addEventListener('DOMContentLoaded', async function() {
             //    forecastParams.append('lat', currentGliderLat);
             //    forecastParams.append('lon', currentGliderLon);
             // }
-            forecastParams.append('source', currentSource); // Keep consistent with other data calls
+            if (currentSource) forecastParams.append('source', currentSource);
             if (currentSource === 'local' && currentLocalPath) {
                 forecastParams.append('local_path', currentLocalPath);
             }
@@ -2356,7 +2386,7 @@ document.addEventListener('DOMContentLoaded', async function() {
         try {
             let apiUrl = `/api/wave_spectrum/${mission}`;
             const spectrumParams = new URLSearchParams();
-            spectrumParams.append('source', currentSource);
+            if (currentSource) spectrumParams.append('source', currentSource);
             if (currentSource === 'local' && currentLocalPath) {
                 spectrumParams.append('local_path', currentLocalPath);
             }
@@ -2589,17 +2619,31 @@ document.addEventListener('DOMContentLoaded', async function() {
         });
     }
 
+    function loadCategoryOnce(category, loader) {
+        if (!loader) return Promise.resolve();
+        const existing = categoryLoadInflight.get(category);
+        if (existing) return existing;
+        const promise = Promise.resolve()
+            .then(() => loader())
+            .finally(() => {
+                categoryLoadInflight.delete(category);
+            });
+        categoryLoadInflight.set(category, promise);
+        return promise;
+    }
+
     function getSensorLoader(reportType) {
         // Map UI category 'navigation' for any legacy callers; configs use UI keys directly.
         if (reportType === 'telemetry') {
             reportType = 'navigation';
         }
         if (WG_TIME_SERIES_CARD_CONFIGS[reportType]) {
-            return () => loadWgTimeSeriesCategory(reportType);
+            const category = reportType;
+            return () => loadCategoryOnce(category, () => loadWgTimeSeriesCategory(category));
         }
         if (reportType === 'errors') {
             return () => isSensorEnabled('errors')
-                ? Promise.resolve().then(() => { renderErrorCategoryChart(); })
+                ? loadCategoryOnce('errors', () => Promise.resolve().then(() => { renderErrorCategoryChart(); }))
                 : Promise.resolve();
         }
         return undefined;
@@ -2894,17 +2938,24 @@ document.addEventListener('DOMContentLoaded', async function() {
     initializeAllDateRangeStates();
 
 
-    // Eager-load time-series categories that previously prefetched on page load.
-    // Spectrum still loads only when the waves detail is shown / refreshed.
-    ['navigation', 'power', 'ctd', 'weather', 'waves', 'vr2c', 'fluorometer', 'wg_vm4'].forEach((category) => {
-        if (isSensorEnabled(WG_TIME_SERIES_CARD_CONFIGS[category]?.enabledSensor || category)) {
-            loadWgTimeSeriesCategory(category);
-            loadedCategories.add(category);
+    // Lazy-load: only fetch the initially active time-series category on first paint.
+    // Other categories load on first left-nav selection (handleLeftPanelClicks).
+    const defaultActiveCategory = document.querySelector('#left-nav-panel .summary-card.active-card')?.dataset.category;
+    if (
+        defaultActiveCategory
+        && WG_TIME_SERIES_CARD_CONFIGS[defaultActiveCategory]
+        && isSensorEnabled(
+            WG_TIME_SERIES_CARD_CONFIGS[defaultActiveCategory]?.enabledSensor || defaultActiveCategory
+        )
+    ) {
+        const loader = getSensorLoader(defaultActiveCategory);
+        if (loader) {
+            loadedCategories.add(defaultActiveCategory);
+            loader();
         }
-    });
+    }
 
     // Default active view extras (spectrum / marine for waves)
-    const defaultActiveCategory = document.querySelector('#left-nav-panel .summary-card.active-card')?.dataset.category;
     if (defaultActiveCategory === 'waves') {
         fetchAndRenderWaveSpectrum(missionId);
         fetchMarineForecastData(missionId).then(data => renderMarineForecast(data));

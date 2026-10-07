@@ -2502,6 +2502,9 @@ async def _process_loaded_data_for_home_view(
     mission_id: str,
     current_user: Optional[models.User] = None,
     theoretical_max_wh: Optional[float] = None,
+    lifetime_total_distance_nm: Optional[float] = None,
+    lifetime_observed_max_battery_wh: Optional[float] = None,
+    lifetime_distance_method: Optional[str] = None,
 ) -> dict:
     """
     Processes the loaded data results, calculates summaries, and determines
@@ -2543,6 +2546,7 @@ async def _process_loaded_data_for_home_view(
     display_source_path = "Information unavailable or all loads failed"
     found_primary_path_for_display = False
     priority_paths_checks = [
+        (lambda p: "Synced:" in p and "Data not loaded" not in p and "Error during load" not in p),
         (lambda p: "Remote:" in p and "output_realtime_missions" in p and "Data not loaded" not in p and "Error during load" not in p),
         # (lambda p: "Remote:" in p and "output_past_missions" in p and "Data not loaded" not in p and "Error during load" not in p),  # Commented out - focusing on active missions only
         (lambda p: "Local (Custom):" in p and "Data not loaded" not in p and "Error during load" not in p),
@@ -2565,21 +2569,29 @@ async def _process_loaded_data_for_home_view(
     from .core.data.data_service import get_cache_timestamp
     from app.platforms.wave_glider.summaries import build_wg_sensor_summaries_from_frames
 
-    source_preference = None
+    derived_source_preference = None
     for path in source_paths_map.values():
-        if "Remote:" in path:
-            source_preference = "remote"
+        if "Synced:" in path:
+            derived_source_preference = None
             break
-        elif "Local:" in path:
-            source_preference = "local"
+        if "Remote:" in path:
+            derived_source_preference = "remote"
+            break
+        elif "Local:" in path or "Local (" in path:
+            derived_source_preference = "local"
 
+    # Caller supplies lifetime_* when the request path should use persisted totals
+    # (auto/synced). Do not drop them just because auto fell back to remote files.
     sensor_summary_context = build_wg_sensor_summaries_from_frames(
         data_frames,
         enabled_cards=None,  # build for every report type present in loaded frames
         file_mod_times_map=file_mod_times_map,
         mission_id=mission_id,
-        source_preference=source_preference,
+        source_preference=derived_source_preference,
         theoretical_max_wh=theoretical_max_wh,
+        lifetime_total_distance_nm=lifetime_total_distance_nm,
+        lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
+        lifetime_distance_method=lifetime_distance_method,
     )
     power_info = sensor_summary_context.get("power_info") or {
         "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
@@ -2625,7 +2637,7 @@ async def _process_loaded_data_for_home_view(
             }
         else:
             # Fall back to get_cache_timestamp if file_mod_times_map doesn't have it
-            ais_file_mod_time = get_cache_timestamp("ais", mission_id, source_preference)
+            ais_file_mod_time = get_cache_timestamp("ais", mission_id, derived_source_preference)
             if ais_file_mod_time is not None:
                 ais_update_info = {
                     "latest_timestamp_str": ais_file_mod_time.strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -2707,7 +2719,7 @@ async def _process_loaded_data_for_home_view(
         # Get recent errors for text display (24 hours)
         recent_errors_list = summaries.get_recent_errors(data_frames.get("errors"), max_age_hours=hours)[:20]
         # Use cache timestamp (when data was fetched) instead of max timestamp in data
-        errors_cache_timestamp = get_cache_timestamp("errors", mission_id, source_preference)
+        errors_cache_timestamp = get_cache_timestamp("errors", mission_id, derived_source_preference)
         if errors_cache_timestamp is not None:
             errors_update_info = {
                 "latest_timestamp_str": errors_cache_timestamp.strftime("%Y-%m-%d %H:%M:%S UTC"),
@@ -2715,7 +2727,10 @@ async def _process_loaded_data_for_home_view(
             }
             logger.debug(f"Errors 'last data' using cache timestamp: {errors_update_info['latest_timestamp_str']}")
         else:
-            logger.debug(f"Errors cache timestamp not found for mission {mission_id}, source_preference {source_preference}, falling back to data timestamp")
+            logger.debug(
+                f"Errors cache timestamp not found for mission {mission_id}, "
+                f"source_preference {derived_source_preference}, falling back to data timestamp"
+            )
             # Fall back to max timestamp in data if cache timestamp not available
             # Preprocess the errors data first to ensure "Timestamp" column exists
             from .core.data.processors import preprocess_error_df
@@ -2956,20 +2971,33 @@ async def _render_dashboard(request: Request, mission: str, current_user: models
     
     logger.info(f"DASHBOARD: Loading data for mission {mission} with report types: {report_types_to_load}")
     
-    hours = 24  # Default time window for summaries/mini-trends
+    from .core.data.data_service import DASHBOARD_BOUNDED_HOURS
+    from app.platforms.wave_glider.mission_metrics import (
+        bootstrap_mission_metrics_if_needed,
+        get_mission_metrics,
+    )
+    from .core.infra.logging_config import get_request_id
+    import os
+    import time as time_module
 
-    # Use source preference from URL so server-rendered summaries/sensor cards/mini-trends match charts
-    source_preference = request.query_params.get("source") or None
+    dashboard_started = time_module.monotonic()
+    hours = DASHBOARD_BOUNDED_HOURS  # Align SSR with client chart default cache keys
+
+    # Use source preference from URL so server-rendered summaries/sensor cards/mini-trends match charts.
+    # Empty/absent → auto (synced-first). Explicit remote/local preserved.
+    raw_source = request.query_params.get("source")
+    source_preference = raw_source if raw_source in ("remote", "local", "synced") else None
     custom_local_path = request.query_params.get("local_path") or None
+    force_refresh = request.query_params.get("refresh") == "true"
+    if force_refresh and source_preference is None:
+        source_preference = "remote"
 
     # Load only the data sources for enabled sensor cards.
     # Keep full history for AIS/errors so dashboard detail tables remain populated
-    # even when there is no activity in the last 24h window.
-    # Full telemetry so navigation "mission" track length uses the whole mission; the
-    # navigation mini-trend still windows to 24h inside summaries._generate_mini_trend.
-    # `power` is included so RealisticMaxBatteryWh = BatteryWattHours.max() reflects the mission peak,
-    # not just the last 24h. Solar stays windowed since it is only matched against the latest power row.
-    full_history_report_types = {"ais", "errors", "telemetry", "power"}
+    # even when there is no activity in the bounded window.
+    # Telemetry/power use the bounded window; mission distance and observed max Wh
+    # come from persisted wave_glider_mission_metrics (leader sync).
+    full_history_report_types = {"ais", "errors"}
     results = await asyncio.gather(
         *[
             load_data_source(
@@ -2977,6 +3005,7 @@ async def _render_dashboard(request: Request, mission: str, current_user: models
                 source_preference=source_preference,
                 custom_local_path=custom_local_path,
                 current_user=current_user,
+                force_refresh=force_refresh,
                 hours_back=None if rt in full_history_report_types else hours,
             )
             for rt in report_types_to_load
@@ -2991,10 +3020,27 @@ async def _render_dashboard(request: Request, mission: str, current_user: models
     battery_apu = getattr(mission_overview_for_battery, "battery_apu_count", None) if mission_overview_for_battery else None
     theoretical_max_wh = summaries.theoretical_max_wh(battery_apu)
 
+    lifetime_total_distance_nm = None
+    lifetime_observed_max_battery_wh = None
+    lifetime_distance_method = None
+    if source_preference not in ("remote", "local"):
+        metrics = get_mission_metrics(session, mission)
+        if metrics is None or (
+            metrics.total_distance_nm is None and metrics.observed_max_battery_wh is None
+        ):
+            metrics = await bootstrap_mission_metrics_if_needed(session, mission)
+        if metrics is not None:
+            lifetime_total_distance_nm = metrics.total_distance_nm
+            lifetime_observed_max_battery_wh = metrics.observed_max_battery_wh
+            lifetime_distance_method = metrics.distance_method
+
     # Process the loaded data for summaries and mini-trends
     context = await _process_loaded_data_for_home_view(
         results, report_types_to_load, hours, mission, current_user,
         theoretical_max_wh=theoretical_max_wh,
+        lifetime_total_distance_nm=lifetime_total_distance_nm,
+        lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
+        lifetime_distance_method=lifetime_distance_method,
     )
     context.update(get_template_context(
         request=request,
@@ -3032,11 +3078,26 @@ async def _render_dashboard(request: Request, mission: str, current_user: models
     context["is_current_mission_realtime"] = is_realtime
     context["is_historical_mission"] = is_historical
     
-    # Data source preference from URL (for data source modal and button)
-    context["current_source_preference"] = request.query_params.get("source") or "remote"
+    # Data source preference from URL (for data source modal and button).
+    # Empty string means auto (synced-first); modal may still offer remote/local.
+    context["current_source_preference"] = raw_source or ""
     context["current_source"] = context["current_source_preference"]
     context["current_local_path"] = request.query_params.get("local_path") or ""
     context["default_local_path"] = str(settings.local_data_base_path)
+    context["lifetime_distance_method"] = lifetime_distance_method
+
+    logger.info(
+        "DASHBOARD_SSR mission=%s historical=%s mode=%s hours=%s duration=%.2fs "
+        "reports=%s pid=%s request_id=%s",
+        mission,
+        is_historical,
+        source_preference or "auto",
+        hours,
+        time_module.monotonic() - dashboard_started,
+        ",".join(report_types_to_load),
+        os.getpid(),
+        get_request_id(),
+    )
 
     return templates.TemplateResponse("index.html", context)
 
@@ -3545,8 +3606,11 @@ async def get_cache_status(
     candidate_sources = []
     if source:
         candidate_sources.append(source)
-    candidate_sources.extend([None, "remote"])
+    # Include auto (None) and synced keys used by the default dashboard path.
+    candidate_sources.extend([None, "synced", "remote"])
     candidate_sources = list(dict.fromkeys(candidate_sources))
+
+    from .core.data.data_service import get_synced_file_change_token
 
     cache_status = {}
 
@@ -3554,6 +3618,7 @@ async def get_cache_status(
     for report_type in requested_report_types:
         matched_cache_timestamp = None
         matched_last_data_timestamp = None
+        matched_file_mod_time = None
         matched_cache_key = None
         matched_last_data_epoch = float("-inf")
         matched_cache_epoch = float("-inf")
@@ -3573,7 +3638,7 @@ async def get_cache_status(
                 if cache_key not in data_cache:
                     continue
 
-                _, _, cache_timestamp, last_data_timestamp, _ = data_cache[cache_key]
+                _, _, cache_timestamp, last_data_timestamp, file_mod_time = data_cache[cache_key]
                 last_data_epoch = (
                     last_data_timestamp.timestamp() if last_data_timestamp else float("-inf")
                 )
@@ -3590,12 +3655,28 @@ async def get_cache_status(
                     matched_cache_epoch = cache_epoch
                     matched_cache_timestamp = cache_timestamp
                     matched_last_data_timestamp = last_data_timestamp
+                    matched_file_mod_time = file_mod_time
                     matched_cache_key = cache_key
 
+        # Prefer cheap synced-disk mtime as the change signal so soft refresh
+        # fires when the leader replaces CSVs, without treating no-new-data
+        # remote probe timestamps as updates.
+        synced_change_token = get_synced_file_change_token(report_type, mission_id)
+        change_token = synced_change_token or (
+            matched_file_mod_time.isoformat() if matched_file_mod_time else None
+        )
+        # Use file change token as cache_timestamp when available so clients
+        # compare a stable disk signal rather than in-memory refresh attempts.
+        effective_cache_timestamp = change_token or (
+            matched_cache_timestamp.isoformat() if matched_cache_timestamp else None
+        )
+
         cache_status[report_type] = {
-            "cache_timestamp": matched_cache_timestamp.isoformat() if matched_cache_timestamp else None,
+            "cache_timestamp": effective_cache_timestamp,
             "last_data_timestamp": matched_last_data_timestamp.isoformat() if matched_last_data_timestamp else None,
-            "cached": matched_cache_timestamp is not None,
+            "file_modification_time": matched_file_mod_time.isoformat() if matched_file_mod_time else None,
+            "synced_change_token": synced_change_token,
+            "cached": matched_cache_timestamp is not None or synced_change_token is not None,
             "cache_key": matched_cache_key,
         }
     

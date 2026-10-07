@@ -219,6 +219,7 @@ async def sync_mission(
     
     # Create shared HTTP client for efficiency
     retry_transport = httpx.AsyncHTTPTransport(retries=loaders.RETRY_COUNT)
+    synced_report_types: List[str] = []
     async with httpx.AsyncClient(transport=retry_transport, timeout=loaders.DEFAULT_TIMEOUT) as client:
         successful = 0
         failed = 0
@@ -229,8 +230,20 @@ async def sync_mission(
             )
             if success:
                 successful += 1
+                synced_report_types.append(report_type)
             else:
                 failed += 1
+
+    # Refresh persisted lifetime aggregates (distance / observed max Wh) after sync.
+    # Also bootstraps when CSVs were already up-to-date but metrics row is missing.
+    try:
+        from app.platforms.wave_glider.mission_metrics import refresh_after_sync
+
+        await refresh_after_sync(mission_id, synced_report_types)
+    except Exception as exc:
+        logger.warning(
+            "SYNC: Mission metrics refresh failed for %s: %s", mission_id, exc
+        )
     
     logger.info(
         f"SYNC: Completed sync for {mission_id}: {successful} successful, {failed} failed"

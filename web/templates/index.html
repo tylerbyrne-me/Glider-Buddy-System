@@ -11,7 +11,9 @@
 {% block body_data_attributes %}
   data-mission-id="{{ mission }}"
   data-is-historical="{{ 'true' if is_historical_mission else 'false' }}"
+  data-is-realtime="{{ 'true' if is_current_mission_realtime else 'false' }}"
   data-enabled-sensors="{{ enabled_sensor_cards | join(',') }}"
+  data-distance-method="{{ lifetime_distance_method or '' }}"
 {% endblock %}
 
 {% block content %}
@@ -31,13 +33,21 @@
             <span class="font-monospace">{{ display_source_path }}</span>
             {% if current_source_preference %}
               <br><strong>Requested Source Type:</strong> {{ "Local" if current_source_preference == 'local' else "Remote" }}
+            {% else %}
+              <br><strong>Requested Source Type:</strong> Auto (synced disk first)
             {% endif %}
           </div>
           <hr>
+          <div class="form-check mb-2">
+            <input class="form-check-input" type="radio" name="dataSourceOption" id="sourceAuto" value="" {% if not current_source_preference %}checked{% endif %}>
+            <label class="form-check-label" for="sourceAuto">
+              Auto (default: leader-synced disk, then remote)
+            </label>
+          </div>
           <div class="form-check mb-2"> {# Added margin-bottom #}
-            <input class="form-check-input" type="radio" name="dataSourceOption" id="sourceRemote" value="remote" {% if not current_source_preference or current_source_preference == 'remote' %}checked{% endif %}>
+            <input class="form-check-input" type="radio" name="dataSourceOption" id="sourceRemote" value="remote" {% if current_source_preference == 'remote' %}checked{% endif %}>
             <label class="form-check-label" for="sourceRemote">
-              Remote Data (Default: Remote first, then local fallback)
+              Remote Data Only
             </label>
           </div>
           <div class="form-check mb-2"> {# Added margin-bottom #}
@@ -69,8 +79,8 @@
   {% if features.local_data_loading %}
   <div class="mb-2 d-flex align-items-center">
     <span class="text-muted small me-2">Data source:</span>
-    <button type="button" class="btn btn-outline-secondary btn-sm" id="openDataSourceModalBtn" data-bs-toggle="modal" data-bs-target="#dataSourceModal" title="Choose where to load sensor data from (Remote or Local). Local is admin-only.">
-      <i class="fas fa-database me-1"></i> <span id="dataSourceButtonLabel">{{ "Local" if (current_source_preference or 'remote') == 'local' else "Remote" }}</span>
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="openDataSourceModalBtn" data-bs-toggle="modal" data-bs-target="#dataSourceModal" title="Choose where to load sensor data from (Auto synced-first, Remote, or Local). Local is admin-only.">
+      <i class="fas fa-database me-1"></i> <span id="dataSourceButtonLabel">{% if current_source_preference == 'local' %}Local{% elif current_source_preference == 'remote' %}Remote{% else %}Auto{% endif %}</span>
     </button>
     <small class="text-muted ms-2">Click to change</small>
   </div>
