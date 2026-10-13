@@ -1245,22 +1245,36 @@ async def force_sync_slocum_mirror(
 async def poke_slocum_erddap(
     dataset_id: Optional[str] = Query(
         None,
-        description="Poke one dataset (alias OK). Omit to poke all active warm keys.",
+        description="Poke one dataset (alias OK). Omit to poke all active warm keys (admin only).",
     ),
     sync_if_new: bool = Query(
         True,
         description="Run an incremental mirror sync when allDatasets maxTime advanced.",
     ),
     hours_back: Optional[int] = Query(None, ge=1, le=8760),
-    current_admin: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(get_current_active_user),
 ):
-    """Admin: cheap ERDDAP maxTime poke; sync only when Ocean Track has new data."""
+    """
+    Cheap ERDDAP maxTime poke; sync only when Ocean Track has new data.
+
+    Dataset-specific poke is available to any authenticated Slocum user (dashboard
+    Check ERDDAP). Fleet-wide poke (no dataset_id) remains admin-only.
+    """
     if not is_feature_enabled("slocum_platform"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Slocum platform is disabled.")
     from app.platforms.slocum.erddap_poke import poke_active_slocum_datasets, poke_dataset
 
+    role_value = getattr(current_user.role, "value", None) or str(current_user.role)
+    is_admin = role_value == "admin"
+    has_dataset = bool(dataset_id and dataset_id.strip())
+    if not has_dataset and not is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Fleet-wide ERDDAP poke requires admin. Pass dataset_id for a single mission.",
+        )
+
     try:
-        if dataset_id and dataset_id.strip():
+        if has_dataset:
             result = await poke_dataset(
                 dataset_id.strip(),
                 hours_back=hours_back,
@@ -1281,11 +1295,11 @@ async def poke_slocum_erddap(
                 use_cache=False,
             )
     except Exception as err:
-        logger.exception("Admin ERDDAP poke failed (dataset_id=%s)", dataset_id)
+        logger.exception("ERDDAP poke failed (dataset_id=%s)", dataset_id)
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(err)) from err
     logger.info(
-        "Admin '%s' ERDDAP poke (dataset_id=%s, sync_if_new=%s, synced=%s)",
-        current_admin.username,
+        "User '%s' ERDDAP poke (dataset_id=%s, sync_if_new=%s, synced=%s)",
+        current_user.username,
         dataset_id,
         sync_if_new,
         summary.get("synced"),

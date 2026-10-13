@@ -37,7 +37,7 @@ Left-nav summary cards soft-refresh via `GET /api/slocum/sensor-summaries/{datas
 
 ### Data path
 
-Dashboard charts load from the rolling **dashboard** mirror under `data_store/slocum_cache/` (with overage cache for windows the mirror does not fully cover). After startup warm, a leader **ERDDAP poke** (`slocum_erddap_poke_job`, default every 90 min via `SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES`) reads `allDatasets` `maxTime` and only then incremental-syncs when Ocean Track’s tail advanced. Admin **Check ERDDAP now** on Manage Slocum Mission Overviews runs the same poke for the selected dataset. Wave Glider realtime is not on ERDDAP yet — future split is in [erddap_poke.md](./erddap_poke.md). Variables must be present in:
+Dashboard charts load from the rolling **dashboard** mirror under `data_store/slocum_cache/` (with overage cache for windows the mirror does not fully cover). After startup warm, a leader **ERDDAP poke** (`slocum_erddap_poke_job`, default every 90 min via `SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES`) reads `allDatasets` `maxTime` and only then incremental-syncs when Ocean Track’s tail advanced. Active realtime dashboards expose **Check ERDDAP** (dataset-specific poke for any Slocum user); Admin **Check ERDDAP now** on Manage Slocum Mission Overviews is the same endpoint (fleet-wide omit `dataset_id` stays admin-only). **Refresh charts** remains cache-only. Wave Glider realtime is not on ERDDAP yet — future split is in [erddap_poke.md](./erddap_poke.md). Variables must be present in:
 
 1. `SLOCUM_DASHBOARD_VARIABLES` ([`app/platforms/slocum/erddap_client.py`](../../app/platforms/slocum/erddap_client.py))
 2. Dashboard rename/stems + `preprocess_slocum_dashboard_df` std columns ([`app/core/data/processors.py`](../../app/core/data/processors.py))
@@ -55,6 +55,7 @@ Per-mission daily checklist (`/slocum/dataset/{dataset_id}/checklist.html`, also
 
 - Schema: [`app/platforms/slocum/checklist_definitions.py`](../../app/platforms/slocum/checklist_definitions.py)
 - Autofill / Plot-it registry: [`app/platforms/slocum/checklist_autofill.py`](../../app/platforms/slocum/checklist_autofill.py) (`CHECKLIST_PLOTTABLE_ITEMS`, `build_checklist_series_payload`)
+- **Water density range** (`density_range_val`): absolute reporting floor of **1005 kg/m³** in `compute_density_range` — samples below the floor are ignored for the displayed min/max/range; the reported minimum is the lowest retained sample (≥1005), not a hard substitute of 1005. Source mirror/ERDDAP/CTD series are never mutated.
 - Checklist ERDDAP wishlist includes digifin leak detect, thruster, and `sci_dmon_msg_byte_count`; preprocess via checklist rename/std columns
 - Plot modal (`web/static/js/slocum_checklist_form.js`): depth on left (`y`); value series on `y2`; digifin / thruster % on `y3` when needed
 - Plottable autofill rows include vacuum/attitude/buoyancy (legacy), plus **water depth**, **BMS currents**, **leak channels** (main/forward/science/digifin), combined **thruster** (`m_thruster_power` / `c_thruster_on`), and **DMON** `sci_dmon_msg_byte_count` when the DMON sensor card is enabled
@@ -101,7 +102,7 @@ All Slocum endpoints require authentication (same as Wave Glider). When `slocum_
 | `PUT /api/slocum/deployments/{id}/robots4whales-url` | Admin: set/clear deployment page URL (`dcs.whoi.edu` `*.shtml`). |
 | `GET /api/slocum/checklists/{dataset_id}/series?item_id=...` | Checklist Plot-it time series (depth + value / multi-series). |
 | `GET /api/slocum/checklists/compare?reference_id=&other_id=` | Form-to-form checklist diff (`changed_item_ids`). |
-| `POST /api/slocum/erddap-poke` | Admin: cheap `allDatasets` maxTime poke (`dataset_id` optional; `sync_if_new` default true). |
+| `POST /api/slocum/erddap-poke` | Cheap `allDatasets` maxTime poke (`sync_if_new` default true). With `dataset_id`: any Slocum user (dashboard **Check ERDDAP**). Omit `dataset_id`: admin fleet-wide poke. |
 
 Dataset ID format: `{glider}_{YYYYMMDD}_{mission_id}_{realtime|delayed}` (e.g. `peggy_20250522_206_delayed`). The map endpoint returns points with `lat`, `lon`, `timestamp` for use with existing map/KML tools.
 

@@ -25,6 +25,11 @@ CHECKLIST_FORM_TITLE = "Slocum Daily Pilot Checklist"
 CHECKLIST_HOURS_BACK = 48
 STORM_FORECAST_HOURS = 72
 DENSITY_RANGE_THRESHOLD_KG_M3 = 6.0
+# Absolute lowest density considered for checklist autofill display. Samples below
+# this are ignored for reported min/max/range only — mirror/ERDDAP data is never
+# mutated. Covers implausible surface outliers (<1000) while leaving realistic
+# mins (always ≥ this floor) unchanged.
+DENSITY_REPORTING_FLOOR_KG_M3 = 1005.0
 LEAK_RANGE_SPIKE_THRESHOLD_V = 0.5
 VMG_GOOD_THRESHOLD_M_S = 0.15
 # Altimeter (~100 m range) cannot see bottom in waters deeper than ~1100 m for a
@@ -468,18 +473,37 @@ def compute_leak_channel_stats(
 def compute_density_range(
     series: pd.Series,
     threshold_kg_m3: float = DENSITY_RANGE_THRESHOLD_KG_M3,
+    reporting_floor_kg_m3: float = DENSITY_REPORTING_FLOOR_KG_M3,
 ) -> dict[str, Any]:
+    """
+    Min/max/range for checklist autofill display.
+
+    Samples below ``reporting_floor_kg_m3`` are excluded from the reported
+    min/max/range only. The reported minimum is the lowest retained sample
+    (which is always ≥ the floor), not a hard substitute of the floor itself.
+    The source series is never mutated.
+    """
+    empty = {
+        "min": None,
+        "max": None,
+        "range": None,
+        "over_threshold": False,
+        "floor_applied": False,
+        "display": "N/A",
+    }
     numeric = pd.to_numeric(series, errors="coerce").dropna() if series is not None else pd.Series(dtype=float)
     if numeric.empty:
+        return empty
+    floor = float(reporting_floor_kg_m3)
+    floor_applied = bool((numeric < floor).any())
+    retained = numeric[numeric >= floor]
+    if retained.empty:
         return {
-            "min": None,
-            "max": None,
-            "range": None,
-            "over_threshold": False,
-            "display": "N/A",
+            **empty,
+            "floor_applied": True,
         }
-    vmin = float(numeric.min())
-    vmax = float(numeric.max())
+    vmin = float(retained.min())
+    vmax = float(retained.max())
     vrange = vmax - vmin
     over = vrange > float(threshold_kg_m3)
     return {
@@ -487,6 +511,7 @@ def compute_density_range(
         "max": vmax,
         "range": vrange,
         "over_threshold": over,
+        "floor_applied": floor_applied,
         "display": (
             f"{_fmt_num(vmin, 1)}–{_fmt_num(vmax, 1)} kg/m³ "
             f"(range {_fmt_num(vrange, 2)}; {'> ' if over else '≤ '}"

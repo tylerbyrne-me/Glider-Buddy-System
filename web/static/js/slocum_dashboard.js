@@ -1952,6 +1952,65 @@ function refreshAllLoadedChartsQuiet() {
     refreshLoadedChartTabs();
 }
 
+/**
+ * Manual ERDDAP poke for the current dataset: cheap maxTime check, incremental
+ * mirror sync only when Ocean Track’s tail advanced. Then soft-refresh charts/cards.
+ */
+async function checkErddapForNewData() {
+    const datasetId = getDatasetId();
+    const btn = document.getElementById('slocumCheckErddap');
+    if (!datasetId) {
+        showToast('Missing dataset.', 'warning');
+        return;
+    }
+    if (!isRealtimeMission()) {
+        showToast('ERDDAP check is only available for active realtime missions.', 'info');
+        return;
+    }
+    if (btn) btn.disabled = true;
+    try {
+        const hoursSelect = document.getElementById('slocumHoursBack');
+        const parsedHours = parseInt(hoursSelect?.value || '72', 10);
+        const hoursBack = Number.isNaN(parsedHours)
+            ? 72
+            : Math.max(1, Math.min(8760, parsedHours));
+        const summary = await apiRequest(
+            `/api/slocum/erddap-poke?dataset_id=${encodeURIComponent(datasetId)}&sync_if_new=true&hours_back=${hoursBack}`,
+            'POST',
+        );
+        const row = Array.isArray(summary?.datasets) ? summary.datasets[0] : null;
+        const action = row?.action || 'unknown';
+        const reason = row?.reason || '';
+        if (action === 'synced') {
+            showToast(
+                `New ERDDAP data — mirror synced${reason ? ` (${reason})` : ''}.`,
+                'success',
+            );
+            refreshAllLoadedChartsQuiet();
+            refreshSlocumSummaryCards();
+        } else if (action === 'skipped') {
+            showToast(
+                `No new ERDDAP data${reason ? ` (${reason})` : ''}.`,
+                'info',
+            );
+        } else if (action === 'error') {
+            showToast(
+                `ERDDAP check failed${row?.error ? `: ${row.error}` : reason ? ` (${reason})` : ''}.`,
+                'danger',
+            );
+        } else {
+            showToast(
+                `ERDDAP check: ${action}${reason ? ` (${reason})` : ''}.`,
+                'info',
+            );
+        }
+    } catch (err) {
+        showToast(`ERDDAP check failed: ${err.message || err}`, 'danger');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
 function startCountdownTimer() {
     const countdownElement = document.getElementById('refreshCountdown');
     if (!countdownElement) return;
@@ -2858,6 +2917,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const refreshBtn = document.getElementById('slocumRefreshCharts');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', refreshAllLoadedCharts);
+    }
+
+    const checkErddapBtn = document.getElementById('slocumCheckErddap');
+    if (checkErddapBtn) {
+        checkErddapBtn.addEventListener('click', checkErddapForNewData);
     }
 
     initSlocumDateRangeControls();

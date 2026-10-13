@@ -8,7 +8,8 @@ Cheap Ocean Track `allDatasets` `maxTime` check so Buddy only does a heavy cache
 |-------|--------|
 | Probe + Slocum refresh | [`app/platforms/slocum/erddap_poke.py`](../../../app/platforms/slocum/erddap_poke.py) |
 | Leader job | `slocum_erddap_poke_job` (default every **90** min, `SLOCUM_ERDDAP_POKE_INTERVAL_MINUTES`) |
-| Admin | Manage Slocum Mission Overviews → **Check ERDDAP now** → `POST /api/slocum/erddap-poke` |
+| Dashboard (users) | Active realtime mission → **Check ERDDAP** → `POST /api/slocum/erddap-poke?dataset_id=...` (Slocum platform access) |
+| Admin | Manage Slocum Mission Overviews → **Check ERDDAP now** (same endpoint; omit `dataset_id` for fleet-wide poke, admin only) |
 | Membership | Same warm keys as startup (`ACTIVE_SLOCUM_DATASETS` / aliases; optional catalog enablement) |
 | Known tail | Parquet `meta.json` `last_data_timestamp`, else last poked `erddap_max_time` |
 | On new data | Incremental `sync_dataset_mirror` (dashboard / CTD / checklist bundles) |

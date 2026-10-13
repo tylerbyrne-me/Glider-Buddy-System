@@ -440,6 +440,12 @@
               </ul>
             </div>
             <button type="button" class="btn btn-outline-primary btn-sm" id="slocumRefreshCharts">Refresh charts</button>
+            {% if is_current_mission_realtime %}
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="slocumCheckErddap"
+                    title="Check Ocean Track for new ERDDAP data and sync the local mirror if the dataset tail advanced.">
+              Check ERDDAP
+            </button>
+            {% endif %}
             <span id="slocumDataSourceBadge" class="badge text-bg-secondary ms-1" title="Where the displayed data was loaded from.">Source: —</span>
           </div>
           <p class="small text-muted mb-0 mt-2" id="slocumChartZoomHint">Ctrl+scroll to zoom · drag to pan · Reset zoom restores the full window.</p>
