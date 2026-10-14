@@ -238,8 +238,19 @@
                         <div class="mb-3" id="newStationIdContainer" style="display: none;">
                             <label for="formNewStationId" class="form-label">Station ID <span class="text-danger">*</span></label>
                             <input type="text" class="form-control" id="formNewStationId" placeholder="e.g., CBS01, NCAT05, etc.">
-                            <div class="form-text">This ID must be unique and cannot be changed after creation via this form.</div>
+                            <div class="form-text">Must be unique. After creation, admins can rename via the Station ID control below.</div>
                             <div class="invalid-feedback" id="formNewStationIdFeedback"></div>
+                        </div>
+                        <div class="mb-3 border border-secondary rounded p-2" id="renameStationIdContainer" style="display: none;">
+                            <label for="formRenameStationId" class="form-label mb-1">Station ID</label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="formRenameStationId" placeholder="Corrected station ID" autocomplete="off">
+                                <button type="button" class="btn btn-outline-primary" id="renameStationIdBtn" title="Admin: re-key station ID and keep logs">
+                                    <i class="fas fa-i-cursor me-1"></i> Rename ID
+                                </button>
+                            </div>
+                            <div class="form-text">Admin only. Moves offload logs and related history to the new ID. Does not merge if the target ID already exists.</div>
+                            <div class="invalid-feedback d-block" id="formRenameStationIdFeedback"></div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">

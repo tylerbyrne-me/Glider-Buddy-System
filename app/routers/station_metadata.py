@@ -38,6 +38,7 @@ from ..services.station_history_service import (
     resolve_hardware_at_time,
     station_mini_summary,
 )
+from ..services.station_rename_service import StationRenameError, rename_station_id
 from ..core.stations.station_registry_policy import (
     station_blocks_edits,
     offload_log_matches_season_year,
@@ -876,6 +877,76 @@ async def swap_station_hardware(
     session.commit()
     session.refresh(db_station)
     return db_station
+
+
+@router.post(
+    "/station_metadata/{station_id}/rename",
+    response_model=models.StationRenameResponse,
+    tags=["Station Metadata Admin"],
+)
+async def rename_station_metadata(
+    station_id: str,
+    body: models.StationRenameRequest,
+    session: Annotated[SQLModelSession, Depends(get_db_session)],
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+):
+    """
+    Admin-only: change station_id and re-key offload logs / related history.
+    Refuses when the target ID already exists (no merge).
+    """
+    logger.info(
+        "ROUTER: User '%s' renaming station '%s' -> '%s'",
+        current_user.username,
+        station_id,
+        body.new_station_id,
+    )
+    try:
+        result = rename_station_id(
+            session,
+            old_station_id=station_id,
+            new_station_id=body.new_station_id,
+            commit=True,
+        )
+    except StationRenameError as exc:
+        if exc.code == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=exc.message,
+            ) from exc
+        if exc.code == "conflict":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=exc.message,
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=exc.message,
+        ) from exc
+
+    logger.info(
+        "ROUTER: Station renamed %s -> %s by '%s' "
+        "(logs=%s flags=%s hardware=%s snapshots=%s refs=%s)",
+        result.old_station_id,
+        result.new_station_id,
+        current_user.username,
+        result.offload_logs_moved,
+        result.flag_events_moved,
+        result.hardware_history_moved,
+        result.season_snapshots_moved,
+        result.parser_session_refs_rewritten,
+    )
+    # StationMetadata ORM instance is not a StationMetadataRead; dump then validate.
+    station_read = models.StationMetadataRead.model_validate(result.station.model_dump())
+    return models.StationRenameResponse(
+        station=station_read,
+        old_station_id=result.old_station_id,
+        new_station_id=result.new_station_id,
+        offload_logs_moved=result.offload_logs_moved,
+        flag_events_moved=result.flag_events_moved,
+        hardware_history_moved=result.hardware_history_moved,
+        season_snapshots_moved=result.season_snapshots_moved,
+        parser_session_refs_rewritten=result.parser_session_refs_rewritten,
+    )
 
 
 # logger.debug("station_metadata_router.py - Defining GET /station_metadata/ (on router)") # Changed to logger

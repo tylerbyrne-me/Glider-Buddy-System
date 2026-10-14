@@ -535,6 +535,25 @@ class StationHardwareSwapRequest(SQLModel):
     change_note: Optional[str] = None
 
 
+class StationRenameRequest(SQLModel):
+    """Admin request to re-key a station_id without losing related history."""
+
+    new_station_id: str = Field(..., description="Corrected unique station identifier.")
+
+
+class StationRenameResponse(SQLModel):
+    """Result of a successful station_id rename."""
+
+    station: StationMetadataRead
+    old_station_id: str
+    new_station_id: str
+    offload_logs_moved: int = 0
+    flag_events_moved: int = 0
+    hardware_history_moved: int = 0
+    season_snapshots_moved: int = 0
+    parser_session_refs_rewritten: int = 0
+
+
 class OffloadLogRead(SQLModel):
     """Model for reading an offload log."""
     id: int

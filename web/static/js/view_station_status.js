@@ -832,6 +832,14 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (modalTitleAction) modalTitleAction.textContent = "Edit Station / Log Offload for:";
         if (modalStationIdDisplay) modalStationIdDisplay.textContent = stationId;
         if (newStationIdContainer) newStationIdContainer.style.display = 'none';
+        const renameStationIdContainer = document.getElementById('renameStationIdContainer');
+        const formRenameStationId = document.getElementById('formRenameStationId');
+        const formRenameStationIdFeedback = document.getElementById('formRenameStationIdFeedback');
+        if (renameStationIdContainer) {
+            renameStationIdContainer.style.display = isAdmin ? 'block' : 'none';
+        }
+        if (formRenameStationId) formRenameStationId.value = stationId;
+        if (formRenameStationIdFeedback) formRenameStationIdFeedback.textContent = '';
         if (logNewOffloadSection) logNewOffloadSection.style.display = 'block';
         
         // Show latest offload remote health (VM4) when available from overview row
@@ -995,6 +1003,77 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (noteEl) noteEl.value = '';
             if (nr) nr.innerHTML = '';
             swapHardwareModalInstance.show();
+        });
+    }
+
+    const renameStationIdBtn = document.getElementById('renameStationIdBtn');
+    if (renameStationIdBtn) {
+        renameStationIdBtn.addEventListener('click', async () => {
+            if (!isAdmin || !currentEditingStationId) return;
+            const formRenameStationId = document.getElementById('formRenameStationId');
+            const formRenameStationIdFeedback = document.getElementById('formRenameStationIdFeedback');
+            const newId = (formRenameStationId?.value || '').trim();
+            if (formRenameStationIdFeedback) formRenameStationIdFeedback.textContent = '';
+            if (!newId) {
+                if (formRenameStationIdFeedback) {
+                    formRenameStationIdFeedback.textContent = 'Enter the corrected station ID.';
+                }
+                formRenameStationId?.focus();
+                return;
+            }
+            if (newId === currentEditingStationId) {
+                if (formRenameStationIdFeedback) {
+                    formRenameStationIdFeedback.textContent = 'New ID must differ from the current station ID.';
+                }
+                formRenameStationId?.focus();
+                return;
+            }
+            const confirmed = window.confirm(
+                `Rename station "${currentEditingStationId}" to "${newId}"?\n\n` +
+                'Offload logs and related history move to the new ID. ' +
+                'This fails if the target ID already exists (no merge).'
+            );
+            if (!confirmed) return;
+            const typed = window.prompt(
+                `Type the new station ID exactly to confirm:\n${newId}`
+            );
+            if ((typed || '').trim() !== newId) {
+                showToast('Rename cancelled: confirmation text did not match.', 'warning');
+                return;
+            }
+            try {
+                const result = await apiRequest(
+                    `/api/station_metadata/${encodeURIComponent(currentEditingStationId)}/rename`,
+                    'POST',
+                    { new_station_id: newId }
+                );
+                const renamedTo = result?.new_station_id || newId;
+                const oldId = result?.old_station_id || currentEditingStationId;
+                currentEditingStationId = renamedTo;
+                const formStationIdEl = document.getElementById('formStationId');
+                if (formStationIdEl) formStationIdEl.value = renamedTo;
+                if (formRenameStationId) formRenameStationId.value = renamedTo;
+                if (modalStationIdDisplay) modalStationIdDisplay.textContent = renamedTo;
+                const logsMoved = result?.offload_logs_moved ?? 0;
+                showToast(
+                    `Renamed ${oldId} → ${renamedTo} (${logsMoved} offload log${logsMoved === 1 ? '' : 's'} moved)`,
+                    'success'
+                );
+                if (stationInfoResult) {
+                    stationInfoResult.innerHTML =
+                        `<div class="alert alert-success">Station ID renamed from ${oldId} to ${renamedTo}.</div>`;
+                }
+                const st = await apiRequest(
+                    `/api/station_metadata/${encodeURIComponent(renamedTo)}`,
+                    'GET'
+                );
+                renderRecentCardsFromStationPayload(st);
+                await fetchStationStatuses();
+            } catch (err) {
+                const msg = err.message || 'Rename failed';
+                if (formRenameStationIdFeedback) formRenameStationIdFeedback.textContent = msg;
+                showToast(msg, 'danger');
+            }
         });
     }
     const confirmSwapHardwareBtn = document.getElementById('confirmSwapHardwareBtn');
@@ -1437,6 +1516,8 @@ document.addEventListener('DOMContentLoaded', async function () {
             // Show the station ID input field for new stations
             if (newStationIdContainer) newStationIdContainer.style.display = 'block';
             if (formNewStationId) formNewStationId.value = '';
+            const renameStationIdContainerAdd = document.getElementById('renameStationIdContainer');
+            if (renameStationIdContainerAdd) renameStationIdContainerAdd.style.display = 'none';
 
             // Hide the "Log New Offload" section, as it's not applicable for a new station
             if (logNewOffloadSection) logNewOffloadSection.style.display = 'none';

@@ -133,6 +133,8 @@ from .schemas import (
     StationFlagUpdateRequest,
     StationFlagEventRead,
     StationHardwareSwapRequest,
+    StationRenameRequest,
+    StationRenameResponse,
     OffloadLogRead,
     StationHardwareHistoryRead,
     
@@ -374,6 +376,8 @@ __all__ = [
     "StationFlagUpdateRequest",
     "StationFlagEventRead",
     "StationHardwareSwapRequest",
+    "StationRenameRequest",
+    "StationRenameResponse",
     "OffloadLogRead",
     "StationHardwareHistoryRead",
     "FieldSeasonCreate",
