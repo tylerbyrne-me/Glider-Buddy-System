@@ -142,3 +142,26 @@ def test_archive_fields_on_station():
     assert row["is_retired"] is True
     assert row["retired_reason"] == "Recovered; VR4 redeployed on HFX"
     assert row["retired_at_utc"] is not None
+
+
+def test_station_metadata_read_from_orm_dump():
+    """Archive/unarchive responses must dump ORM rows before StationMetadataRead."""
+    from app.core.models.schemas import StationMetadataRead
+
+    session = _session()
+    station = StationMetadata(
+        station_id="GULMPA02",
+        notes="otn notes",
+        is_retired=True,
+        retired_at_utc=datetime.now(timezone.utc),
+        retired_reason="Recovered; VR4 redeployed on HFX",
+    )
+    session.add(station)
+    session.commit()
+    session.refresh(station)
+
+    read = StationMetadataRead.model_validate(station.model_dump())
+    assert read.station_id == "GULMPA02"
+    assert read.is_retired is True
+    assert read.retired_reason.startswith("Recovered")
+    assert read.otn_metadata == "otn notes"

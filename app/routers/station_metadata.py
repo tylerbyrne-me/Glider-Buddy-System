@@ -1076,7 +1076,8 @@ async def archive_station_metadata(
         current_user.username,
         reason,
     )
-    return models.StationMetadataRead.model_validate(db_station)
+    # StationMetadataRead is a plain Pydantic model (no from_attributes); dump first.
+    return models.StationMetadataRead.model_validate(db_station.model_dump())
 
 
 @router.post(
@@ -1111,7 +1112,7 @@ async def unarchive_station_metadata(
         station_id,
         current_user.username,
     )
-    return models.StationMetadataRead.model_validate(db_station)
+    return models.StationMetadataRead.model_validate(db_station.model_dump())
 
 
 # logger.debug("station_metadata_router.py - DELETE /station_metadata/{station_id} definition processed.") # Changed to logger
