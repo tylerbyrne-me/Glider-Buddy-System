@@ -5,7 +5,17 @@
 
 import { checkAuth, getUserProfile } from '/static/js/auth.js';
 import { apiRequest, fetchWithAuth, showToast } from '/static/js/api.js';
-import { formatUtcDateTime } from '/static/js/datetime_utils.js';
+import { formatUtcDateTime, utcDatetimeInputToIso } from '/static/js/datetime_utils.js';
+import {
+    saveDraft,
+    loadDraft,
+    clearDraft,
+    debounceDraftSave,
+    newClientSubmissionId,
+} from '/static/js/offload_draft.js';
+
+const SEARCH_STORAGE_KEY = 'gbs:stationOffloadSearch';
+const SORT_STORAGE_KEY = 'gbs:stationOffloadSort';
 
 function debounce(callback, delayMs) {
     let timeoutId;
@@ -56,8 +66,13 @@ function parseApiUtcDate(value) {
 function isoToDatetimeLocal(iso) {
     if (!iso) return '';
     const d = parseApiUtcDate(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toISOString().slice(0, 16);
+    if (!d || Number.isNaN(d.getTime())) return '';
+    // 24h UTC wall clock (space separator) — avoids browser AM/PM datetime-local UI.
+    return d.toISOString().slice(0, 16).replace('T', ' ');
+}
+
+function getUtcNowDatetimeLocalValue() {
+    return new Date().toISOString().slice(0, 16).replace('T', ' ');
 }
 
 function isoDateOnly(iso) {
@@ -100,7 +115,20 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     let allStationsData = [];
     let currentSort = { column: 'station_id', order: 'asc' };
+    try {
+        const savedSort = sessionStorage.getItem(SORT_STORAGE_KEY);
+        if (savedSort) {
+            const parsed = JSON.parse(savedSort);
+            if (parsed && typeof parsed.column === 'string' && (parsed.order === 'asc' || parsed.order === 'desc')) {
+                currentSort = parsed;
+            }
+        }
+    } catch (_) { /* ignore */ }
     let isAdmin = false;
+    let currentUsername = '';
+    let includeRetiredStations = false;
+    let currentStationIsRetired = false;
+    let pendingClientSubmissionId = null;
     const FEAT = window.APP_FEATURES || {};
     const isVm4OffloadParserEnabled = Boolean(FEAT.vm4_offload_parser);
     let analyticsLoadedOnce = false;
@@ -110,6 +138,24 @@ document.addEventListener('DOMContentLoaded', async function () {
     let allSeasons = [];
     let selectedSeasonYear = null; // null = active season
     let activeMissions = [];
+
+    const showArchivedStations = document.getElementById('showArchivedStations');
+    const showArchivedStationsWrap = document.getElementById('showArchivedStationsWrap');
+    const offloadDraftNotice = document.getElementById('offloadDraftNotice');
+    const offloadDraftNoticeText = document.getElementById('offloadDraftNoticeText');
+    const discardOffloadDraftBtn = document.getElementById('discardOffloadDraftBtn');
+    const skipReasonContainer = document.getElementById('skipReasonContainer');
+    const formDisplayStatusOverride = document.getElementById('formDisplayStatusOverride');
+    const formDisplayStatusOverrideNote = document.getElementById('formDisplayStatusOverrideNote');
+    const archiveStationBtn = document.getElementById('archiveStationBtn');
+    const unarchiveStationBtn = document.getElementById('unarchiveStationBtn');
+
+    if (searchInput) {
+        try {
+            const savedSearch = sessionStorage.getItem(SEARCH_STORAGE_KEY);
+            if (savedSearch) searchInput.value = savedSearch;
+        } catch (_) { /* ignore */ }
+    }
 
     function extractStationPrefix(stationId) {
         if (!stationId) return '';
@@ -219,17 +265,20 @@ document.addEventListener('DOMContentLoaded', async function () {
                 throw new Error("getUserProfile function is not available. auth.js might not be loaded correctly.");
             }
             const profile = await getUserProfile();
+            currentUsername = profile?.username || '';
             if (profile && profile.role === 'admin') {
                 isAdmin = true;
                 if (downloadCsvBtn) downloadCsvBtn.style.display = 'block'; // Show CSV download for admin
                 if (downloadCsvDropdownToggle) downloadCsvDropdownToggle.style.display = 'block';
                 if (uploadCsvBtn) uploadCsvBtn.style.display = 'block'; // Show upload button for admin
                 if (addStationBtn) addStationBtn.style.display = 'block'; // Show add station button for admin
+                if (showArchivedStationsWrap) showArchivedStationsWrap.style.display = 'block';
             } else {
                 isAdmin = false;
                 if (downloadCsvBtn) downloadCsvBtn.style.display = 'none'; // Hide for non-admin
                 if (downloadCsvDropdownToggle) downloadCsvDropdownToggle.style.display = 'none';
                 if (uploadCsvBtn) uploadCsvBtn.style.display = 'none'; // Hide for non-admin
+                if (showArchivedStationsWrap) showArchivedStationsWrap.style.display = 'none';
             }
         } catch (error) {
             console.warn("Could not determine user role for edit functionality.", error);
@@ -251,20 +300,94 @@ document.addEventListener('DOMContentLoaded', async function () {
             setupAnalyticsPanel();
             await loadConflictQueue();
         }
+
+        // Deep-link: reopen station modal after reload / re-login (?station=ID).
+        const params = new URLSearchParams(window.location.search);
+        const deepStationId = (params.get('station') || '').trim();
+        if (deepStationId) {
+            const row = allStationsData.find((s) => s.station_id === deepStationId);
+            openEditLogModal(deepStationId, row || null);
+        }
+    }
+
+    function persistSortPreference() {
+        try {
+            sessionStorage.setItem(SORT_STORAGE_KEY, JSON.stringify(currentSort));
+        } catch (_) { /* ignore */ }
+        document.querySelectorAll('.station-sort-btn').forEach((btn) => {
+            btn.classList.toggle('active', btn.dataset.sortKey === currentSort.column);
+        });
+    }
+
+    function applyCurrentSortInPlace() {
+        const column = currentSort.column || 'station_id';
+        const order = currentSort.order || 'asc';
+        const dataToSort = [...allStationsData];
+        dataToSort.sort((a, b) => {
+            if (column === 'deployment_latitude' || column === 'deployment_longitude') {
+                const rawA = a[column];
+                const rawB = b[column];
+                const missingA = rawA === null || rawA === undefined || Number.isNaN(Number(rawA));
+                const missingB = rawB === null || rawB === undefined || Number.isNaN(Number(rawB));
+                if (missingA && missingB) return 0;
+                if (missingA) return 1;
+                if (missingB) return -1;
+                const numA = Number(rawA);
+                const numB = Number(rawB);
+                // Latitude: desc = N→S; Longitude: asc = W→E (more negative first).
+                if (column === 'deployment_latitude') {
+                    return order === 'asc' ? numA - numB : numB - numA;
+                }
+                return order === 'asc' ? numA - numB : numB - numA;
+            }
+            if (column === 'vrl_file_name') {
+                const hasVrlA = !!(a.vrl_file_name && a.vrl_file_name !== '---');
+                const hasVrlB = !!(b.vrl_file_name && b.vrl_file_name !== '---');
+                const hasVrlRankA = hasVrlA ? 0 : 1;
+                const hasVrlRankB = hasVrlB ? 0 : 1;
+                if (hasVrlRankA !== hasVrlRankB) {
+                    return order === 'asc' ? hasVrlRankA - hasVrlRankB : hasVrlRankB - hasVrlRankA;
+                }
+            }
+            let valA = a[column];
+            let valB = b[column];
+            if (column === 'modem_address') {
+                valA = valA === null || valA === undefined ? -Infinity : Number(valA);
+                valB = valB === null || valB === undefined ? -Infinity : Number(valB);
+            } else {
+                valA = valA === null || valA === undefined ? '' : String(valA).toLowerCase();
+                valB = valB === null || valB === undefined ? '' : String(valB).toLowerCase();
+            }
+            if (valA < valB) return order === 'asc' ? -1 : 1;
+            if (valA > valB) return order === 'asc' ? 1 : -1;
+            return 0;
+        });
+        allStationsData = dataToSort;
     }
 
     async function fetchStationStatuses() {
         if (!stationStatusTableBody) return; // Guard if element not found
         if (loadingSpinner) loadingSpinner.style.display = 'block'; // Show spinner during fetch
+        const tableScrollEl = document.querySelector('.table-responsive');
+        const priorScrollTop = tableScrollEl ? tableScrollEl.scrollTop : 0;
 
         try {
-            let url = '/api/stations/status_overview';
+            const params = new URLSearchParams();
             if (selectedSeasonYear !== null) {
-                url += `?season_year=${selectedSeasonYear}`;
+                params.set('season_year', String(selectedSeasonYear));
             }
+            if (includeRetiredStations) {
+                params.set('include_retired', 'true');
+            }
+            const qs = params.toString();
+            const url = qs ? `/api/stations/status_overview?${qs}` : '/api/stations/status_overview';
             allStationsData = await apiRequest(url, 'GET');
+            applyCurrentSortInPlace();
+            persistSortPreference();
             renderArrayQuickSelectOptions();
-            renderTable(allStationsData);
+            const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+            filterAndRender(searchTerm);
+            if (tableScrollEl) tableScrollEl.scrollTop = priorScrollTop;
         } catch (error) {
             showToast(`Error loading station statuses: ${error.message}`, 'danger');
             stationStatusTableBody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">Error loading data: ${error.message}</td></tr>`;
@@ -290,6 +413,12 @@ document.addEventListener('DOMContentLoaded', async function () {
 
         stationsToRender.forEach(station => {
             const row = stationStatusTableBody.insertRow();
+            if (station.is_retired) {
+                row.classList.add('table-secondary', 'opacity-75');
+                row.title = station.retired_reason
+                    ? `Archived: ${station.retired_reason}`
+                    : 'Archived station';
+            }
 
             // Data cells (7 columns)
             row.insertCell().textContent = station.station_id || 'N/A';
@@ -298,6 +427,9 @@ document.addEventListener('DOMContentLoaded', async function () {
             row.insertCell().textContent = station.rv_wp_number || '---';
             const statusCell = row.insertCell();
             statusCell.textContent = station.status_text || 'N/A';
+            if (station.display_status_override_note) {
+                statusCell.title = station.display_status_override_note;
+            }
             row.insertCell().textContent = station.last_offload_timestamp_str || 'N/A';
             const vrlCell = row.insertCell();
             const vrlFileName = station.vrl_file_name || '';
@@ -395,68 +527,46 @@ document.addEventListener('DOMContentLoaded', async function () {
     function sortData(column) {
         const order = (currentSort.column === column && currentSort.order === 'asc') ? 'desc' : 'asc';
         currentSort = { column, order };
-
-        // Create a copy of allStationsData to sort, so filtering doesn't affect the master sort order of all data
-        const dataToSort = [...allStationsData];
-
-        dataToSort.sort((a, b) => {
-            if (column === 'vrl_file_name') {
-                const hasVrlA = !!(a.vrl_file_name && a.vrl_file_name !== '---');
-                const hasVrlB = !!(b.vrl_file_name && b.vrl_file_name !== '---');
-
-                const hasVrlRankA = hasVrlA ? 0 : 1;
-                const hasVrlRankB = hasVrlB ? 0 : 1;
-                if (hasVrlRankA !== hasVrlRankB) {
-                    return order === 'asc' ? hasVrlRankA - hasVrlRankB : hasVrlRankB - hasVrlRankA;
-                }
-
-                const verificationRank = (value) => {
-                    // Awaiting verification first: unchecked (false/null) before checked (true).
-                    if (value === true) return 1;
-                    return 0;
-                };
-                const verificationRankA = verificationRank(a.latest_vrl_verified_on_rudics);
-                const verificationRankB = verificationRank(b.latest_vrl_verified_on_rudics);
-
-                if (verificationRankA !== verificationRankB) {
-                    return order === 'asc'
-                        ? verificationRankA - verificationRankB
-                        : verificationRankB - verificationRankA;
-                }
-
-                const fileNameA = (a.vrl_file_name || '').toLowerCase();
-                const fileNameB = (b.vrl_file_name || '').toLowerCase();
-                if (fileNameA < fileNameB) return order === 'asc' ? -1 : 1;
-                if (fileNameA > fileNameB) return order === 'asc' ? 1 : -1;
-                return 0;
-            }
-
-            let valA = a[column];
-            let valB = b[column];
-
-            if (column === 'modem_address') {
-                valA = valA === null || valA === undefined ? -Infinity : Number(valA);
-                valB = valB === null || valB === undefined ? -Infinity : Number(valB);
-            } else if (column === 'last_offload_timestamp_str') {
-                // For timestamp string, rely on ISO format for string comparison.
-                // For more robust date sorting,
-                // it's better to sort by the original Date object if available, or parse these strings to Dates.
-                valA = valA === null || valA === undefined ? '' : String(valA);
-                valB = valB === null || valB === undefined ? '' : String(valB);
-            } else {
-                 valA = valA === null || valA === undefined ? '' : String(valA).toLowerCase();
-                 valB = valB === null || valB === undefined ? '' : String(valB).toLowerCase();
-            }
-            if (valA < valB) return order === 'asc' ? -1 : 1;
-            if (valA > valB) return order === 'asc' ? 1 : -1;
-            return 0;
-        });
-        
-        // Update allStationsData with the new sort order if we want the master list sorted
-        allStationsData = dataToSort; 
-        // Then re-apply filter if any, or render all
+        persistSortPreference();
+        applyCurrentSortInPlace();
         const searchTerm = searchInput ? searchInput.value.toLowerCase() : "";
         filterAndRender(searchTerm);
+    }
+
+    document.querySelectorAll('.station-sort-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const key = btn.dataset.sortKey;
+            if (!key) return;
+            if (key === 'deployment_latitude') {
+                // Default lat sort is N→S (desc); toggle on repeat click.
+                currentSort = {
+                    column: key,
+                    order: currentSort.column === key && currentSort.order === 'desc' ? 'asc' : 'desc',
+                };
+            } else if (key === 'deployment_longitude') {
+                // Default lon sort is W→E (asc); toggle on repeat click.
+                currentSort = {
+                    column: key,
+                    order: currentSort.column === key && currentSort.order === 'asc' ? 'desc' : 'asc',
+                };
+            } else {
+                currentSort = {
+                    column: key,
+                    order: currentSort.column === key && currentSort.order === 'asc' ? 'desc' : 'asc',
+                };
+            }
+            persistSortPreference();
+            applyCurrentSortInPlace();
+            const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+            filterAndRender(searchTerm);
+        });
+    });
+
+    if (showArchivedStations) {
+        showArchivedStations.addEventListener('change', async () => {
+            includeRetiredStations = Boolean(showArchivedStations.checked);
+            await fetchStationStatuses();
+        });
     }
 
     function updateSortIcons() {
@@ -491,6 +601,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     const debouncedFilterRender = debounce((term) => filterAndRender(term), 200);
     if (searchInput) {
         searchInput.addEventListener('input', function () {
+            try {
+                sessionStorage.setItem(SEARCH_STORAGE_KEY, this.value);
+            } catch (_) { /* ignore */ }
             debouncedFilterRender(this.value.toLowerCase());
         });
     }
@@ -536,7 +649,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         } // "Station ID", "Serial Number", "Modem Address", "RV WP #", "Status", "Last Log Update", "VRL File Name"
         const headers = [ // Keys from the station object
             "station_id", "serial_number", "modem_address", "rv_wp_number",
-            "status_text", "last_offload_timestamp_str", "vrl_file_name",
+            "status_text", "display_status_override_note", "last_offload_by_glider",
+            "last_offload_timestamp_str", "vrl_file_name",
             // New fields from the latest offload log
             "latest_arrival_date", "latest_distance_command_sent_m", 
             "latest_time_first_command_sent_utc", "latest_offload_start_time_utc",
@@ -549,7 +663,8 @@ document.addEventListener('DOMContentLoaded', async function () {
         ];
         const displayHeaders = [ // User-friendly headers for the CSV file
             "Station ID", "Serial Number", "Modem Address",
-            "RV WP #", "Status", "Last Log Update (UTC)", "VRL File Name",
+            "RV WP #", "Status", "Skip Reason", "Last Offload By Glider",
+            "Last Log Update (UTC)", "VRL File Name",
             // Display headers for new fields
             "Arrival Date (UTC)", "Distance Cmd Sent (m)",
             "Time First Cmd Sent (UTC)", "Offload Start (UTC)",
@@ -761,6 +876,16 @@ document.addEventListener('DOMContentLoaded', async function () {
         });
     }
 
+    function recentUtcField(label, className, value) {
+        return `<div class="col-md-6">
+  <label class="form-label small mb-0">${label}</label>
+  <div class="input-group input-group-sm">
+    <input type="text" class="form-control form-control-sm station-utc-datetime ${className}" value="${escapeHtml(isoToDatetimeLocal(value))}" inputmode="numeric" placeholder="YYYY-MM-DD HH:mm" title="Use UTC 24hr format: YYYY-MM-DD HH:mm" autocomplete="off">
+    <button type="button" class="btn btn-outline-secondary station-now-btn" data-target-selector=".${className}">Now</button>
+  </div>
+</div>`;
+    }
+
     function renderRecentOffloadCards(logs, stationMissionId = '') {
         return logs.map((p) => {
             const ok = p.was_offloaded === true;
@@ -775,11 +900,11 @@ document.addEventListener('DOMContentLoaded', async function () {
   <input type="text" class="form-control form-control-sm recent-vrl-file-name" value="${escapeHtml(p.vrl_file_name || '')}">
   ${p.parser_notes ? `<div class="small text-warning mt-1"><strong>Parser:</strong> ${escapeHtml(p.parser_notes)}</div>` : ''}
   <div class="row g-1 mt-1">
-    <div class="col-md-6"><label class="form-label small mb-0">Arrival (UTC)</label><input type="datetime-local" class="form-control form-control-sm recent-arrival" value="${isoToDatetimeLocal(p.arrival_date)}"></div>
-    <div class="col-md-6"><label class="form-label small mb-0">First command (UTC)</label><input type="datetime-local" class="form-control form-control-sm recent-first-cmd" value="${isoToDatetimeLocal(p.time_first_command_sent_utc)}"></div>
-    <div class="col-md-6"><label class="form-label small mb-0">Offload start (UTC)</label><input type="datetime-local" class="form-control form-control-sm recent-offload-start" value="${isoToDatetimeLocal(p.offload_start_time_utc)}"></div>
-    <div class="col-md-6"><label class="form-label small mb-0">Offload end (UTC)</label><input type="datetime-local" class="form-control form-control-sm recent-offload-end" value="${isoToDatetimeLocal(p.offload_end_time_utc)}"></div>
-    <div class="col-md-6"><label class="form-label small mb-0">Departure (UTC)</label><input type="datetime-local" class="form-control form-control-sm recent-departure" value="${isoToDatetimeLocal(p.departure_date)}"></div>
+    ${recentUtcField('Arrival (UTC)', 'recent-arrival', p.arrival_date)}
+    ${recentUtcField('First command (UTC)', 'recent-first-cmd', p.time_first_command_sent_utc)}
+    ${recentUtcField('Offload start (UTC)', 'recent-offload-start', p.offload_start_time_utc)}
+    ${recentUtcField('Offload end (UTC)', 'recent-offload-end', p.offload_end_time_utc)}
+    ${recentUtcField('Departure (UTC)', 'recent-departure', p.departure_date)}
     <div class="col-md-6"><label class="form-label small mb-0">Distance cmd sent (m)</label><input type="number" step="any" class="form-control form-control-sm recent-distance" value="${p.distance_command_sent_m ?? ''}"></div>
   </div>
   <label class="form-label small mb-0 mt-1">Station Offload Mission ID</label>
@@ -816,11 +941,105 @@ document.addEventListener('DOMContentLoaded', async function () {
         accBody.innerHTML = renderRecentOffloadCards(logs, stationData?.last_offload_by_glider || '');
     }
 
+    function syncStationDeepLink(stationId) {
+        try {
+            const url = new URL(window.location.href);
+            if (stationId) url.searchParams.set('station', stationId);
+            else url.searchParams.delete('station');
+            history.replaceState({}, '', url.pathname + url.search + url.hash);
+        } catch (_) { /* ignore */ }
+    }
+
+    function updateSkipReasonVisibility() {
+        if (!skipReasonContainer || !formDisplayStatusOverride) return;
+        const isSkipped = formDisplayStatusOverride.value === 'SKIPPED';
+        skipReasonContainer.style.display = isSkipped ? 'block' : 'none';
+        if (!isSkipped && formDisplayStatusOverrideNote) {
+            formDisplayStatusOverrideNote.value = '';
+        }
+    }
+
+    function updateArchiveButtons() {
+        if (archiveStationBtn) {
+            archiveStationBtn.style.display = isAdmin && currentEditingStationId && !currentStationIsRetired
+                ? 'inline-block'
+                : 'none';
+        }
+        if (unarchiveStationBtn) {
+            unarchiveStationBtn.style.display = isAdmin && currentEditingStationId && currentStationIsRetired
+                ? 'inline-block'
+                : 'none';
+        }
+    }
+
+    function collectNewOffloadDraftFields() {
+        return {
+            formArrivalDate: document.getElementById('formArrivalDate')?.value || '',
+            formDistanceSent: document.getElementById('formDistanceSent')?.value || '',
+            formTimeFirstCommand: document.getElementById('formTimeFirstCommand')?.value || '',
+            formOffloadStartTime: document.getElementById('formOffloadStartTime')?.value || '',
+            formOffloadEndTime: document.getElementById('formOffloadEndTime')?.value || '',
+            formDepartureDate: document.getElementById('formDepartureDate')?.value || '',
+            formOffloadMissionId: document.getElementById('formOffloadMissionId')?.value || '',
+            formVrlFileName: document.getElementById('formVrlFileName')?.value || '',
+            formOffloadComments: document.getElementById('formOffloadComments')?.value || '',
+            formWasOffloaded: Boolean(document.getElementById('formWasOffloaded')?.checked),
+            clientSubmissionId: pendingClientSubmissionId || null,
+        };
+    }
+
+    function applyNewOffloadDraftFields(fields) {
+        if (!fields || typeof fields !== 'object') return;
+        const setVal = (id, value) => {
+            const el = document.getElementById(id);
+            if (!el || value == null) return;
+            if (el.type === 'checkbox') el.checked = Boolean(value);
+            else el.value = value;
+        };
+        setVal('formArrivalDate', fields.formArrivalDate);
+        setVal('formDistanceSent', fields.formDistanceSent);
+        setVal('formTimeFirstCommand', fields.formTimeFirstCommand);
+        setVal('formOffloadStartTime', fields.formOffloadStartTime);
+        setVal('formOffloadEndTime', fields.formOffloadEndTime);
+        setVal('formDepartureDate', fields.formDepartureDate);
+        if (fields.formOffloadMissionId) {
+            populateOffloadMissionDropdown(fields.formOffloadMissionId);
+        }
+        setVal('formVrlFileName', fields.formVrlFileName);
+        setVal('formOffloadComments', fields.formOffloadComments);
+        setVal('formWasOffloaded', fields.formWasOffloaded);
+        if (fields.clientSubmissionId) {
+            pendingClientSubmissionId = fields.clientSubmissionId;
+        }
+    }
+
+    function showDraftNotice(savedAtUtc) {
+        if (!offloadDraftNotice || !offloadDraftNoticeText) return;
+        const label = savedAtUtc
+            ? `Restored unsaved draft from ${isoToDatetimeLocal(savedAtUtc)} UTC`
+            : 'Restored unsaved draft';
+        offloadDraftNoticeText.textContent = label;
+        offloadDraftNotice.style.display = 'block';
+    }
+
+    function hideDraftNotice() {
+        if (offloadDraftNotice) offloadDraftNotice.style.display = 'none';
+    }
+
+    const debouncedSaveOffloadDraft = debounceDraftSave((fields) => {
+        if (!currentEditingStationId) return;
+        saveDraft(currentUsername, currentEditingStationId, fields);
+    }, 500);
+
     async function openEditLogModal(stationId, stationRow) {
         // Any authenticated user can open the modal to log an offload.
         if (!editLogStationModalInstance) return;
 
         currentEditingStationId = stationId;
+        currentStationIsRetired = Boolean(stationRow?.is_retired);
+        pendingClientSubmissionId = newClientSubmissionId();
+        syncStationDeepLink(stationId);
+        hideDraftNotice();
         // Clear all validation feedback and result messages when opening modal
         clearValidationFeedback(formNewStationId, formNewStationIdFeedback);
         clearValidationFeedback(formModemAddress, formModemAddressFeedback);
@@ -876,7 +1095,12 @@ document.addEventListener('DOMContentLoaded', async function () {
             document.getElementById('formStationSettings').value = stationData.station_settings || '';
             document.getElementById('formStationNotes').value = stationData.otn_metadata || stationData.notes || '';
             document.getElementById('formDisplayStatusOverride').value = stationData.display_status_override || '';
+            if (formDisplayStatusOverrideNote) {
+                formDisplayStatusOverrideNote.value = stationData.display_status_override_note || '';
+            }
+            updateSkipReasonVisibility();
             document.getElementById('formSeasonFlagNote').value = stationRow?.flag_note || '';
+            currentStationIsRetired = Boolean(stationData.is_retired);
             
             // Clear Log New Offload fields (as they are for a new entry)
             document.getElementById('formArrivalDate').value = '';
@@ -892,8 +1116,15 @@ document.addEventListener('DOMContentLoaded', async function () {
 
             const swapBtn = document.getElementById('swapHardwareBtn');
             if (swapBtn) swapBtn.style.display = isAdmin ? 'inline-block' : 'none';
+            updateArchiveButtons();
 
             renderRecentCardsFromStationPayload(stationData);
+
+            const draft = loadDraft(currentUsername, stationId);
+            if (draft?.fields) {
+                applyNewOffloadDraftFields(draft.fields);
+                showDraftNotice(draft.savedAtUtc);
+            }
 
             editLogStationModalInstance.show();
         } catch (error) {
@@ -903,6 +1134,86 @@ document.addEventListener('DOMContentLoaded', async function () {
         } finally {
             if (loadingSpinner) loadingSpinner.style.display = 'none';
         }
+    }
+
+    if (formDisplayStatusOverride) {
+        formDisplayStatusOverride.addEventListener('change', updateSkipReasonVisibility);
+    }
+    if (discardOffloadDraftBtn) {
+        discardOffloadDraftBtn.addEventListener('click', () => {
+            if (!currentEditingStationId) return;
+            clearDraft(currentUsername, currentEditingStationId);
+            hideDraftNotice();
+            pendingClientSubmissionId = newClientSubmissionId();
+            document.getElementById('formArrivalDate').value = '';
+            document.getElementById('formDistanceSent').value = '';
+            document.getElementById('formTimeFirstCommand').value = '';
+            document.getElementById('formOffloadStartTime').value = '';
+            document.getElementById('formOffloadEndTime').value = '';
+            document.getElementById('formDepartureDate').value = '';
+            populateOffloadMissionDropdown();
+            document.getElementById('formVrlFileName').value = '';
+            document.getElementById('formOffloadComments').value = '';
+            document.getElementById('formWasOffloaded').checked = false;
+        });
+    }
+    if (logNewOffloadSection) {
+        logNewOffloadSection.addEventListener('input', () => {
+            if (!currentEditingStationId) return;
+            debouncedSaveOffloadDraft(collectNewOffloadDraftFields());
+        });
+        logNewOffloadSection.addEventListener('change', () => {
+            if (!currentEditingStationId) return;
+            debouncedSaveOffloadDraft(collectNewOffloadDraftFields());
+        });
+    }
+    if (editLogStationModalEl) {
+        editLogStationModalEl.addEventListener('hidden.bs.modal', () => {
+            syncStationDeepLink(null);
+            hideDraftNotice();
+        });
+    }
+    if (archiveStationBtn) {
+        archiveStationBtn.addEventListener('click', async () => {
+            if (!currentEditingStationId || !isAdmin) return;
+            const reason = window.prompt(
+                `Archive ${currentEditingStationId}? Enter a required reason (kept with the record):`
+            );
+            if (reason == null) return;
+            if (!reason.trim()) {
+                showToast('Archive reason is required.', 'warning');
+                return;
+            }
+            try {
+                await apiRequest(
+                    `/api/station_metadata/${encodeURIComponent(currentEditingStationId)}/archive`,
+                    'POST',
+                    { reason: reason.trim() }
+                );
+                showToast(`Station ${currentEditingStationId} archived`, 'success');
+                if (editLogStationModalInstance) editLogStationModalInstance.hide();
+                await fetchStationStatuses();
+            } catch (err) {
+                showToast(err.message || 'Archive failed', 'danger');
+            }
+        });
+    }
+    if (unarchiveStationBtn) {
+        unarchiveStationBtn.addEventListener('click', async () => {
+            if (!currentEditingStationId || !isAdmin) return;
+            try {
+                await apiRequest(
+                    `/api/station_metadata/${encodeURIComponent(currentEditingStationId)}/unarchive`,
+                    'POST'
+                );
+                showToast(`Station ${currentEditingStationId} restored`, 'success');
+                currentStationIsRetired = false;
+                updateArchiveButtons();
+                await fetchStationStatuses();
+            } catch (err) {
+                showToast(err.message || 'Restore failed', 'danger');
+            }
+        });
     }
 
     if (editLogStationModalEl) {
@@ -924,6 +1235,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                     showToast('Delete cancelled: confirmation text did not match.', 'warning');
                     return;
                 }
+                btn.disabled = true;
                 try {
                     await apiRequest(
                         `/api/station_metadata/${encodeURIComponent(currentEditingStationId)}/offload_logs/${logId}`,
@@ -935,9 +1247,14 @@ document.addEventListener('DOMContentLoaded', async function () {
                     await fetchStationStatuses();
                 } catch (err) {
                     showToast(err.message || 'Delete failed', 'danger');
+                } finally {
+                    btn.disabled = false;
                 }
                 return;
             }
+            const originalSaveLabel = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
             const commentsField = wrap.querySelector('.recent-offload-comments');
             const cb = wrap.querySelector('.recent-was-offloaded');
             const vrlFileName = wrap.querySelector('.recent-vrl-file-name');
@@ -946,9 +1263,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             const getRecentIso = (selector) => {
                 const input = wrap.querySelector(selector);
                 if (!input || !input.value) return null;
-                const dt = new Date(`${input.value}Z`);
-                if (Number.isNaN(dt.valueOf())) return null;
-                return dt.toISOString();
+                return utcDatetimeInputToIso(input.value);
             };
             const distanceRaw = distanceInput ? parseFloat(distanceInput.value) : null;
             const payload = {
@@ -981,6 +1296,9 @@ document.addEventListener('DOMContentLoaded', async function () {
                 await fetchStationStatuses();
             } catch (err) {
                 showToast(err.message || 'Save failed', 'danger');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalSaveLabel || 'Save changes';
             }
         });
     }
@@ -1109,24 +1427,11 @@ document.addEventListener('DOMContentLoaded', async function () {
         });
     }
 
-    // Helper to convert datetime-local string to UTC ISO string or null
+    // Helper to convert UTC wall-clock text (YYYY-MM-DD HH:mm) to ISO or null
     function getIsoFromDatetimeLocal(elementId) {
-        const val = document.getElementById(elementId).value;
-        if (val) {
-            // When a user enters a time into a datetime-local input based on a "(UTC)" label,
-            // we must interpret that time as UTC. Appending 'Z' to the string tells the
-            // Date constructor to parse it as UTC, not as the browser's local time.
-            const utcDate = new Date(val + 'Z');
-            // Check if the date is valid after parsing
-            if (!isNaN(utcDate.valueOf())) {
-                return utcDate.toISOString();
-            }
-        }
-        return null;
-    }
-
-    function getUtcNowDatetimeLocalValue() {
-        return new Date().toISOString().slice(0, 16);
+        const el = document.getElementById(elementId);
+        if (!el || !el.value) return null;
+        return utcDatetimeInputToIso(el.value);
     }
 
     if (editLogStationModalEl) {
@@ -1134,11 +1439,18 @@ document.addEventListener('DOMContentLoaded', async function () {
             const nowBtn = event.target.closest('.station-now-btn');
             if (!nowBtn) return;
             const targetInputId = nowBtn.dataset.targetInputId;
-            if (!targetInputId) return;
-            const input = document.getElementById(targetInputId);
-            if (!input || input.type !== 'datetime-local') return;
+            const targetSelector = nowBtn.dataset.targetSelector;
+            let input = null;
+            if (targetInputId) {
+                input = document.getElementById(targetInputId);
+            } else if (targetSelector) {
+                const card = nowBtn.closest('.recent-log-edit');
+                input = card ? card.querySelector(targetSelector) : null;
+            }
+            if (!input) return;
             input.value = getUtcNowDatetimeLocalValue();
             input.dispatchEvent(new Event('change', { bubbles: true }));
+            input.dispatchEvent(new Event('input', { bubbles: true }));
         });
     }
 
@@ -1154,14 +1466,23 @@ document.addEventListener('DOMContentLoaded', async function () {
             clearValidationFeedback(document.getElementById('formDeploymentLongitude'), document.getElementById('formDeploymentLongitudeFeedback'));
 
             if (loadingSpinner) loadingSpinner.style.display = 'block';
+            const originalSaveLabel = saveStationInfoBtn.textContent;
+            saveStationInfoBtn.disabled = true;
+            saveStationInfoBtn.textContent = 'Saving...';
 
             const isAdding = !currentEditingStationId;
             let stationId = isAdding ? formNewStationId.value.trim() : currentEditingStationId;
 
             // --- Form Validation ---
+            const restoreSaveBtn = () => {
+                saveStationInfoBtn.disabled = false;
+                saveStationInfoBtn.textContent = originalSaveLabel || 'Save Station Info';
+                if (loadingSpinner) loadingSpinner.style.display = 'none';
+            };
+
             if (isAdding && !stationId) {
                 showValidationFeedback(formNewStationId, formNewStationIdFeedback, 'Station ID is required.');
-                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                restoreSaveBtn();
                 formNewStationId.focus();
                 return;
             }
@@ -1169,7 +1490,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             const modemAddressValue = document.getElementById('formModemAddress').value.trim();
             if (modemAddressValue !== '' && isNaN(parseInt(modemAddressValue, 10))) { // Check for non-empty string that's not a number
                 showValidationFeedback(formModemAddress, formModemAddressFeedback, 'Modem Address must be a valid number.');
-                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                restoreSaveBtn();
                 document.getElementById('formModemAddress').focus();
                 return;
             }
@@ -1177,7 +1498,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             const bottomDepthValue = document.getElementById('formBottomDepth').value.trim();
             if (bottomDepthValue !== '' && isNaN(parseFloat(bottomDepthValue))) { // Check for non-empty string that's not a number
                 showValidationFeedback(formBottomDepth, formBottomDepthFeedback, 'Bottom Depth must be a valid number.');
-                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                restoreSaveBtn();
                 document.getElementById('formBottomDepth').focus();
                 return;
             }
@@ -1185,7 +1506,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             const latitudeValue = document.getElementById('formDeploymentLatitude').value.trim();
             if (latitudeValue !== '' && (isNaN(parseFloat(latitudeValue)) || parseFloat(latitudeValue) < -90 || parseFloat(latitudeValue) > 90)) {
                 showValidationFeedback(document.getElementById('formDeploymentLatitude'), document.getElementById('formDeploymentLatitudeFeedback'), 'Latitude must be a valid number between -90 and 90.');
-                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                restoreSaveBtn();
                 document.getElementById('formDeploymentLatitude').focus();
                 return;
             }
@@ -1193,12 +1514,16 @@ document.addEventListener('DOMContentLoaded', async function () {
             const longitudeValue = document.getElementById('formDeploymentLongitude').value.trim();
             if (longitudeValue !== '' && (isNaN(parseFloat(longitudeValue)) || parseFloat(longitudeValue) < -180 || parseFloat(longitudeValue) > 180)) {
                 showValidationFeedback(document.getElementById('formDeploymentLongitude'), document.getElementById('formDeploymentLongitudeFeedback'), 'Longitude must be a valid number between -180 and 180.');
-                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                restoreSaveBtn();
                 document.getElementById('formDeploymentLongitude').focus();
                 return;
             }
             // --- End Validation ---
 
+            const overrideValue = document.getElementById('formDisplayStatusOverride').value || null;
+            const skipNote = formDisplayStatusOverrideNote
+                ? formDisplayStatusOverrideNote.value.trim() || null
+                : null;
             const payload = {
                 station_id: stationId,
                 serial_number: document.getElementById('formSerialNumber').value.trim() || null,
@@ -1210,11 +1535,19 @@ document.addEventListener('DOMContentLoaded', async function () {
                 last_offload_by_glider: document.getElementById('formLastOffloadByGlider').value.trim() || null,
                 station_settings: document.getElementById('formStationSettings').value.trim() || null,
                 otn_metadata: document.getElementById('formStationNotes').value.trim() || null,
-                display_status_override: document.getElementById('formDisplayStatusOverride').value || null
+                // Always include override fields so clearing SKIPPED / reason persists.
+                display_status_override: overrideValue,
+                display_status_override_note: overrideValue === 'SKIPPED' ? skipNote : null,
             };
 
-            // Clean up payload: remove nulls for cleaner API calls
+            // Clean up payload: remove nulls for most fields, but keep override keys
+            // so the server can clear them.
+            const keepNullKeys = new Set([
+                'display_status_override',
+                'display_status_override_note',
+            ]);
             Object.keys(payload).forEach(key => {
+                if (keepNullKeys.has(key)) return;
                 if (payload[key] === null || payload[key] === '') delete payload[key];
             });
             // The NaN check is now part of the initial validation, so this is less critical but safe to keep
@@ -1222,12 +1555,24 @@ document.addEventListener('DOMContentLoaded', async function () {
             if (payload.bottom_depth_m && isNaN(payload.bottom_depth_m)) delete payload.bottom_depth_m;
 
             try {
-                const resultData = await apiRequest('/api/station_metadata/', 'POST', payload);
-
-                // Use resultData.is_created from the backend response
-                const finalSuccessMessage = resultData.is_created ?
-                    'Station added successfully!' :
-                    'Station information updated successfully!';
+                // Prefer PUT for existing stations so partial updates (incl. clearing
+                // override/note) go through the sync path; POST upsert for new rows.
+                let finalSuccessMessage;
+                if (isAdding) {
+                    const resultData = await apiRequest('/api/station_metadata/', 'POST', payload);
+                    finalSuccessMessage = resultData.is_created
+                        ? 'Station added successfully!'
+                        : 'Station information updated successfully!';
+                } else {
+                    const putPayload = { ...payload };
+                    delete putPayload.station_id;
+                    await apiRequest(
+                        `/api/station_metadata/${encodeURIComponent(stationId)}`,
+                        'PUT',
+                        putPayload
+                    );
+                    finalSuccessMessage = 'Station information updated successfully!';
+                }
                 
                 showToast(finalSuccessMessage, 'success');
                 if (stationInfoResult) {
@@ -1242,7 +1587,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 showToast(`Error ${isAdding ? 'adding' : 'updating'} station: ${error.message}`, 'danger');
                 alert(`Error: ${error.message}`);
             } finally {
-                if (loadingSpinner) loadingSpinner.style.display = 'none';
+                restoreSaveBtn();
             }
         });
     }
@@ -1289,7 +1634,15 @@ document.addEventListener('DOMContentLoaded', async function () {
     if (logNewOffloadBtn) {
         logNewOffloadBtn.addEventListener('click', async () => {
             if (!currentEditingStationId) return;
+            if (logNewOffloadBtn.disabled) return;
             if (loadingSpinner) loadingSpinner.style.display = 'block';
+            const originalLabel = logNewOffloadBtn.textContent;
+            logNewOffloadBtn.disabled = true;
+            logNewOffloadBtn.textContent = 'Saving...';
+
+            if (!pendingClientSubmissionId) {
+                pendingClientSubmissionId = newClientSubmissionId();
+            }
 
             const payload = {
                 arrival_date: getIsoFromDatetimeLocal('formArrivalDate'),
@@ -1301,6 +1654,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 was_offloaded: document.getElementById('formWasOffloaded').checked,
                 vrl_file_name: document.getElementById('formVrlFileName').value.trim() || null,
                 offload_comments: document.getElementById('formOffloadComments').value.trim() || null,
+                client_submission_id: pendingClientSubmissionId,
             };
             const manualMissionId = (document.getElementById('formOffloadMissionId').value || '').trim();
              // Filter out null values if backend expects only provided fields
@@ -1316,6 +1670,8 @@ document.addEventListener('DOMContentLoaded', async function () {
                         { last_offload_by_glider: manualMissionId }
                     );
                 }
+                clearDraft(currentUsername, currentEditingStationId);
+                hideDraftNotice();
                 await fetchStationStatuses(); // Refresh table
                 showToast('New offload logged successfully!', 'success');
                 // Clear only the offload log form fields
@@ -1329,12 +1685,15 @@ document.addEventListener('DOMContentLoaded', async function () {
                 document.getElementById('formVrlFileName').value = '';
                 document.getElementById('formOffloadComments').value = '';
                 document.getElementById('formWasOffloaded').checked = false;
+                pendingClientSubmissionId = newClientSubmissionId();
                 // Keep modal open for potentially more logs or edits
             } catch (error) {
                 showToast(`Error logging offload: ${error.message}`, 'danger');
                 alert(`Error: ${error.message}`);
             } finally {
                 if (loadingSpinner) loadingSpinner.style.display = 'none';
+                logNewOffloadBtn.disabled = false;
+                logNewOffloadBtn.textContent = originalLabel || 'Log New Offload';
             }
         });
     }

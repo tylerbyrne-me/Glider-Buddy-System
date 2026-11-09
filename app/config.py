@@ -58,7 +58,9 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "CHANGE_THIS_IN_DOT_ENV_FOR_PRODUCTION_NEVER_USE_THIS_DEFAULT"
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 60 * 24
-    # 24 hours, adjust as needed
+    # 24 hours sliding window while the user is active; absolute cap below.
+    jwt_session_max_minutes: int = 60 * 24
+    # Hard maximum session lifetime from original login (auth_time), default 24h.
     forms_storage_mode: str = "local_json"  # Options: "local_json", "sqlite"
     sqlite_database_url: str = (
         "sqlite:///./data_store/app_data.sqlite" # Reverted to original default

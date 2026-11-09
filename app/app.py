@@ -1577,6 +1577,33 @@ async def run_slocum_erddap_poke_job():
         record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
 
 
+async def run_slocum_mission_metrics_job():
+    """Leader job: daily full-history Slocum mission distance snapshot refresh."""
+    job_id = "slocum_mission_metrics_job"
+    if not feature_toggles.is_feature_enabled("slocum_platform"):
+        record_job_outcome(job_id, JobRunOutcomeEnum.SKIPPED, "slocum_platform disabled")
+        return
+    try:
+        from app.platforms.slocum.mission_metrics import refresh_active_slocum_mission_metrics
+
+        logger.info("AUTOMATED: Refreshing Slocum mission distance metrics...")
+        summary = await refresh_active_slocum_mission_metrics()
+        logger.info("AUTOMATED: Slocum mission metrics finished: %s", summary)
+        record_job_outcome(
+            job_id,
+            JobRunOutcomeEnum.SUCCESS,
+            (
+                f"refreshed={summary.get('refreshed', 0)} "
+                f"skipped={summary.get('skipped', 0)} "
+                f"errors={summary.get('errors', 0)}"
+            ),
+            counts=summary,
+        )
+    except Exception as exc:
+        logger.error("AUTOMATED: Slocum mission metrics job failed: %s", exc, exc_info=True)
+        record_job_outcome(job_id, JobRunOutcomeEnum.ERROR, str(exc))
+
+
 async def run_slocum_weekly_reports_job():
     """Scheduled job to generate weekly Slocum PDF reports for active datasets."""
     job_id = "slocum_weekly_report_job"
@@ -2136,6 +2163,15 @@ async def startup_event():
             id="slocum_weekly_report_job",
         )
         scheduler.add_job(
+            run_slocum_mission_metrics_job,
+            "cron",
+            hour=6,
+            minute=40,
+            timezone="UTC",
+            id="slocum_mission_metrics_job",
+        )
+        logger.info("Slocum mission metrics refresh scheduled daily at 06:40 UTC")
+        scheduler.add_job(
             run_weather_map_prefetch_job,
             "cron",
             hour=settings.weather_map_prefetch_cron_hour,
@@ -2505,6 +2541,8 @@ async def _process_loaded_data_for_home_view(
     lifetime_total_distance_nm: Optional[float] = None,
     lifetime_observed_max_battery_wh: Optional[float] = None,
     lifetime_distance_method: Optional[str] = None,
+    *,
+    allow_frame_lifetime_fallback: Optional[bool] = None,
 ) -> dict:
     """
     Processes the loaded data results, calculates summaries, and determines
@@ -2582,6 +2620,12 @@ async def _process_loaded_data_for_home_view(
 
     # Caller supplies lifetime_* when the request path should use persisted totals
     # (auto/synced). Do not drop them just because auto fell back to remote files.
+    if allow_frame_lifetime_fallback is None:
+        # Prefer caller's lifetime injection over path-derived preference.
+        allow_frame_lifetime_fallback = (
+            lifetime_total_distance_nm is None
+            and lifetime_observed_max_battery_wh is None
+        )
     sensor_summary_context = build_wg_sensor_summaries_from_frames(
         data_frames,
         enabled_cards=None,  # build for every report type present in loaded frames
@@ -2592,6 +2636,7 @@ async def _process_loaded_data_for_home_view(
         lifetime_total_distance_nm=lifetime_total_distance_nm,
         lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
         lifetime_distance_method=lifetime_distance_method,
+        allow_frame_lifetime_fallback=allow_frame_lifetime_fallback,
     )
     power_info = sensor_summary_context.get("power_info") or {
         "values": {}, "time_ago_str": "N/A", "latest_timestamp_str": "N/A", "mini_trend": []
@@ -2973,8 +3018,8 @@ async def _render_dashboard(request: Request, mission: str, current_user: models
     
     from .core.data.data_service import DASHBOARD_BOUNDED_HOURS
     from app.platforms.wave_glider.mission_metrics import (
-        bootstrap_mission_metrics_if_needed,
-        get_mission_metrics,
+        resolve_wave_glider_lifetime_metrics,
+        should_use_persisted_lifetime,
     )
     from .core.infra.logging_config import get_request_id
     import os
@@ -3023,16 +3068,16 @@ async def _render_dashboard(request: Request, mission: str, current_user: models
     lifetime_total_distance_nm = None
     lifetime_observed_max_battery_wh = None
     lifetime_distance_method = None
-    if source_preference not in ("remote", "local"):
-        metrics = get_mission_metrics(session, mission)
-        if metrics is None or (
-            metrics.total_distance_nm is None and metrics.observed_max_battery_wh is None
-        ):
-            metrics = await bootstrap_mission_metrics_if_needed(session, mission)
-        if metrics is not None:
-            lifetime_total_distance_nm = metrics.total_distance_nm
-            lifetime_observed_max_battery_wh = metrics.observed_max_battery_wh
-            lifetime_distance_method = metrics.distance_method
+    if should_use_persisted_lifetime(source_preference):
+        lifetime = await resolve_wave_glider_lifetime_metrics(
+            session,
+            mission,
+            fields=("distance", "power"),
+            allow_bootstrap=True,
+        )
+        lifetime_total_distance_nm = lifetime.total_distance_nm
+        lifetime_observed_max_battery_wh = lifetime.observed_max_battery_wh
+        lifetime_distance_method = lifetime.distance_method
 
     # Process the loaded data for summaries and mini-trends
     context = await _process_loaded_data_for_home_view(
@@ -3041,6 +3086,9 @@ async def _render_dashboard(request: Request, mission: str, current_user: models
         lifetime_total_distance_nm=lifetime_total_distance_nm,
         lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
         lifetime_distance_method=lifetime_distance_method,
+        allow_frame_lifetime_fallback=not should_use_persisted_lifetime(
+            source_preference
+        ),
     )
     context.update(get_template_context(
         request=request,

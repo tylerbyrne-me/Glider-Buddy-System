@@ -138,6 +138,11 @@ class StationMetadata(SQLModel, table=True):
             "supersede the override until season close clears it."
         ),
     )
+    display_status_override_note: Optional[str] = SQLModelField(
+        default=None,
+        sa_column=Column(Text),
+        description="Optional reason for a display status override (e.g. why SKIPPED).",
+    )
     field_season_year: Optional[int] = SQLModelField(
         default=None,
         index=True,
@@ -151,6 +156,15 @@ class StationMetadata(SQLModel, table=True):
     archived_at_utc: Optional[datetime] = SQLModelField(
         default=None,
         description="UTC timestamp when this station was archived",
+    )
+    retired_at_utc: Optional[datetime] = SQLModelField(
+        default=None,
+        description="UTC timestamp when this station was retired (admin archive).",
+    )
+    retired_reason: Optional[str] = SQLModelField(
+        default=None,
+        sa_column=Column(Text),
+        description="Admin comment explaining why the station was retired/archived.",
     )
 
     offload_logs: List["OffloadLog"] = Relationship(
@@ -239,6 +253,12 @@ class OffloadLog(OffloadLogBase, table=True):
         default=None,
         index=True,
         description="Field season year this offload occurred in",
+    )
+    client_submission_id: Optional[str] = SQLModelField(
+        default=None,
+        max_length=64,
+        index=True,
+        description="Client-generated idempotency key for create retries (scoped with submitter).",
     )
 
     station: "StationMetadata" = Relationship(back_populates="offload_logs")
@@ -1841,6 +1861,45 @@ class WaveGliderMissionMetrics(SQLModel, table=True):
     calculation_version: int = SQLModelField(
         default=1,
         description="Bump when distance/power aggregate formulas change.",
+    )
+    computed_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="When this row was last written.",
+    )
+
+
+class SlocumMissionMetrics(SQLModel, table=True):
+    """Persisted Slocum lifetime mission aggregates (mission track distance)."""
+
+    __tablename__ = "slocum_mission_metrics"
+
+    mission_key: str = SQLModelField(
+        primary_key=True,
+        description="Stable suffix-neutral mission key (shared by realtime/delayed).",
+    )
+    total_distance_km: Optional[float] = SQLModelField(
+        default=None,
+        description="Mission total track distance in kilometres.",
+    )
+    distance_method: Optional[str] = SQLModelField(
+        default=None,
+        description="great_circle (haversine along filtered GPS track).",
+    )
+    track_data_through_ts: Optional[datetime] = SQLModelField(
+        default=None,
+        description="Latest track Timestamp used for distance computation.",
+    )
+    source_erddap_dataset_id: Optional[str] = SQLModelField(
+        default=None,
+        description="ERDDAP dataset id used for the last full-history load.",
+    )
+    dashboard_last_data_timestamp: Optional[datetime] = SQLModelField(
+        default=None,
+        description="Mirror/dashboard last_data_timestamp when distance was last computed.",
+    )
+    calculation_version: int = SQLModelField(
+        default=1,
+        description="Bump when distance aggregate formulas change.",
     )
     computed_at_utc: datetime = SQLModelField(
         default_factory=lambda: datetime.now(timezone.utc),

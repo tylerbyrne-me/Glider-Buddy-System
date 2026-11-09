@@ -106,6 +106,7 @@ def enrich_offload_log_read(log: Any) -> dict:
                 "updated_at_utc",
                 "parser_run_id",
                 "parser_session_ref",
+                "client_submission_id",
             )
             if hasattr(log, key)
         }

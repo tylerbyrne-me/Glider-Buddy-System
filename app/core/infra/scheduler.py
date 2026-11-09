@@ -39,6 +39,7 @@ JOB_PLATFORM_BY_ID: dict[str, JobPlatformEnum] = {
     "slocum_erddap_poke_job": JobPlatformEnum.SLOCUM,
     "slocum_warm_cache_job": JobPlatformEnum.SLOCUM,  # retired id; kept for leftover outcome files
     "slocum_weekly_report_job": JobPlatformEnum.SLOCUM,
+    "slocum_mission_metrics_job": JobPlatformEnum.SLOCUM,
     "slocum_overage_cleanup_job": JobPlatformEnum.SLOCUM,
     "slocum_sfmc_cache_refresh_job": JobPlatformEnum.SLOCUM,
     "slocum_auto_checklist_submit_job": JobPlatformEnum.SLOCUM,

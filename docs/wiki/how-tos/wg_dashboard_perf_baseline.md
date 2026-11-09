@@ -26,5 +26,5 @@ sudo journalctl -u gliderbuddy --since "10 min ago" | grep -E 'DASHBOARD_SSR|DAS
 ## Expected after 2026-10-07 changes
 
 - Default loads prefer `Synced:` when files exist under `data/{mission}/`.
-- SSR telemetry/power use `hours=72` (not full mission); lifetime distance / max Wh come from `wave_glider_mission_metrics`.
+- SSR telemetry/power use `hours=72` (not full mission); lifetime distance / max Wh come from `wave_glider_mission_metrics` (field-aware bootstrap). Synced/auto paths must not treat the 72h frame max as mission observed max.
 - Mission distance tooltip mentions odometer vs great-circle when `data-distance-method` is set.

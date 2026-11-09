@@ -18,8 +18,13 @@ import pandas as pd
 
 from app.core.data.processors import preprocess_slocum_ctd_df
 from app.core.data.summaries import _generate_mini_trend, _get_common_status_data
+from app.core.infra.db import SQLModelSession
 from app.core.infra.logging_config import get_request_id
 from app.core.mission_aliases import resolve_slocum_dataset_id
+from app.platforms.slocum.mission_metrics import (
+    compute_distance_24h_km_from_dashboard,
+    resolve_slocum_mission_distance_km,
+)
 from .mirror_service import load_mirror_df
 
 logger = logging.getLogger(__name__)
@@ -253,13 +258,23 @@ def get_slocum_flight_mini_trend(df: Optional[pd.DataFrame]) -> List[Dict[str, A
 def get_slocum_navigation_status(
     df: Optional[pd.DataFrame],
     last_update_timestamp: Optional[datetime] = None,
+    *,
+    distance_24h_km: Optional[float] = None,
+    distance_mission_km: Optional[float] = None,
 ) -> Dict[str, Any]:
-    return _status_from_last_row(
+    info = _status_from_last_row(
         df,
         value_keys=("MHeading", "MSpeed"),
         trend_name="Slocum Navigation",
         last_update_timestamp=last_update_timestamp,
     )
+    values = dict(info.get("values") or {})
+    if distance_24h_km is None:
+        distance_24h_km = compute_distance_24h_km_from_dashboard(df)
+    values["Distance24hKm"] = _to_python_scalar(distance_24h_km)
+    values["DistanceMissionKm"] = _to_python_scalar(distance_mission_km)
+    info["values"] = _sanitize_values(values)
+    return info
 
 
 def get_slocum_navigation_mini_trend(df: Optional[pd.DataFrame]) -> List[Dict[str, Any]]:
@@ -375,6 +390,8 @@ def _empty_sensor_payload() -> Dict[str, Any]:
 def build_slocum_sensor_summaries(
     dataset_id: str,
     enabled_cards: Sequence[str],
+    *,
+    session: Optional[SQLModelSession] = None,
 ) -> Dict[str, Any]:
     """
     Build template/API context for enabled Slocum sensor cards.
@@ -383,12 +400,24 @@ def build_slocum_sensor_summaries(
     ``sensors`` map keyed by card name for the JSON API.
 
     Each unique mirror bundle is loaded at most once per call (dashboard
-    cards share one frame; CTD uses its own).
+    cards share one frame; CTD uses its own). Mission distance is a DB-only
+    read from ``slocum_mission_metrics`` (never derived from the 72h mirror).
     """
     started = time.monotonic()
     dataset_id = resolve_slocum_dataset_id(dataset_id)
     context: Dict[str, Any] = {"sensors": {}}
     enabled = {str(card) for card in (enabled_cards or [])}
+
+    distance_mission_km: Optional[float] = None
+    if session is not None and "navigation" in enabled:
+        try:
+            distance_mission_km = resolve_slocum_mission_distance_km(session, dataset_id)
+        except Exception as e:
+            logger.warning(
+                "Failed to resolve Slocum mission distance for %s: %s",
+                dataset_id,
+                e,
+            )
 
     # Resolve enabled specs first so we know which bundles to load.
     enabled_specs: list[tuple[str, Dict[str, Any]]] = [
@@ -429,7 +458,13 @@ def build_slocum_sensor_summaries(
             df = pd.DataFrame()
 
         try:
-            info = status_fn(df)
+            if card_name == "navigation":
+                info = get_slocum_navigation_status(
+                    df,
+                    distance_mission_km=distance_mission_km,
+                )
+            else:
+                info = status_fn(df)
             mini_trend = mini_trend_fn(df)
             sanitized_trend = [
                 {

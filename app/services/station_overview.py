@@ -105,14 +105,19 @@ def sync_display_status_override_timestamp(
     )
     if current_key is None:
         station.display_status_override_set_at_utc = None
+        station.display_status_override_note = None
         return
     if current_key != previous_key:
         station.display_status_override_set_at_utc = datetime.now(timezone.utc)
+    if current_key != "SKIPPED":
+        # Skip reason only applies when the override is SKIPPED.
+        station.display_status_override_note = None
 
 
 def clear_display_status_override(station: Any) -> None:
     station.display_status_override = None
     station.display_status_override_set_at_utc = None
+    station.display_status_override_note = None
 
 
 def resolve_station_status_text_and_color(
@@ -328,10 +333,21 @@ def build_status_overview_row(
         "rv_wp_number": station.waypoint_number or "---",
         "deployment_latitude": station.deployment_latitude,
         "deployment_longitude": station.deployment_longitude,
+        "last_offload_by_glider": station.last_offload_by_glider,
         "last_offload_timestamp_str": last_offload_timestamp_str,
         "status_text": status_text,
         "status_color": status_color_key,
         "display_status_override": station.display_status_override,
+        "display_status_override_note": getattr(
+            station, "display_status_override_note", None
+        ),
+        "is_retired": bool(getattr(station, "is_retired", False)),
+        "retired_reason": getattr(station, "retired_reason", None),
+        "retired_at_utc": (
+            station.retired_at_utc.isoformat()
+            if getattr(station, "retired_at_utc", None) is not None
+            else None
+        ),
         "is_flagged_for_scope": is_flagged_for_scope,
         "flag_note": flag_note,
         "vrl_file_name": latest_vrl_file_name,

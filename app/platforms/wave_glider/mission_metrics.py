@@ -9,8 +9,9 @@ from __future__ import annotations
 import logging
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterable, Optional, Sequence, Tuple
+from typing import Iterable, Literal, Optional, Sequence, Tuple
 
 import pandas as pd
 from sqlmodel import Session
@@ -27,6 +28,36 @@ logger = logging.getLogger(__name__)
 
 CALCULATION_VERSION = 1
 METRIC_REPORT_TYPES = frozenset({"telemetry", "power"})
+LifetimeMetricField = Literal["distance", "power"]
+FIELD_TO_REPORT = {
+    "distance": "telemetry",
+    "power": "power",
+}
+
+
+@dataclass(frozen=True)
+class LifetimeMetricsView:
+    """Resolved lifetime aggregates for dashboard / PIC consumers."""
+
+    total_distance_nm: Optional[float] = None
+    distance_method: Optional[str] = None
+    observed_max_battery_wh: Optional[float] = None
+
+
+def should_use_persisted_lifetime(
+    source_preference: Optional[str] = None,
+    *,
+    refresh_upstream: bool = False,
+) -> bool:
+    """
+    Synced/auto/PIC default consumers use persisted mission aggregates.
+
+    Explicit admin ``remote`` / ``local`` inspection uses frame-derived values.
+    PIC ``refresh_upstream`` still prefers persisted lifetime peaks (Refresh Data
+    only refreshes bounded current Wh / charge fields).
+    """
+    del refresh_upstream  # Documented: does not disable persisted lifetime.
+    return source_preference not in ("remote", "local")
 
 
 def compute_total_distance_nm(
@@ -288,58 +319,142 @@ async def _refresh_power_metrics(
     session.add(row)
 
 
+def _missing_report_types(
+    row: Optional[WaveGliderMissionMetrics],
+    fields: Sequence[LifetimeMetricField],
+) -> list[str]:
+    """Return report types that still need a value for the requested fields."""
+    needed: list[str] = []
+    for field in fields:
+        report = FIELD_TO_REPORT[field]
+        if report in needed:
+            continue
+        if row is None:
+            needed.append(report)
+            continue
+        if field == "distance" and row.total_distance_nm is None:
+            # Avoid repeated full parses when we already probed telemetry and found nothing.
+            if row.telemetry_source_mtime is not None and (
+                (row.calculation_version or 0) >= CALCULATION_VERSION
+            ):
+                continue
+            needed.append(report)
+        elif field == "power" and row.observed_max_battery_wh is None:
+            if row.power_source_mtime is not None and (
+                (row.calculation_version or 0) >= CALCULATION_VERSION
+            ):
+                continue
+            needed.append(report)
+    return needed
+
+
+def _view_from_row(row: Optional[WaveGliderMissionMetrics]) -> LifetimeMetricsView:
+    if row is None:
+        return LifetimeMetricsView()
+    return LifetimeMetricsView(
+        total_distance_nm=row.total_distance_nm,
+        distance_method=row.distance_method,
+        observed_max_battery_wh=row.observed_max_battery_wh,
+    )
+
+
 async def bootstrap_mission_metrics_if_needed(
     session: Session,
     mission_id: str,
+    *,
+    fields: Sequence[LifetimeMetricField] = ("distance", "power"),
 ) -> Optional[WaveGliderMissionMetrics]:
     """
-    One-time lazy bootstrap when a dashboard needs lifetime totals and none exist.
+    Lazy bootstrap only for missing requested fields.
 
-    Does not re-parse on every request once a row is present.
+    A populated distance must not prevent a missing power max from rebuilding
+    (and vice versa). Does not re-parse once the requested values exist or a
+    prior probe recorded source mtimes with a current calculation_version.
     """
     existing = get_mission_metrics(session, mission_id)
-    if existing is not None and (
-        existing.total_distance_nm is not None or existing.observed_max_battery_wh is not None
-    ):
+    needed = _missing_report_types(existing, fields)
+    if not needed:
         return existing
-    if existing is not None and existing.calculation_version >= CALCULATION_VERSION:
-        # Row exists but both metrics null (no synced files yet) — avoid repeated full parses.
-        if existing.telemetry_source_mtime is not None or existing.power_source_mtime is not None:
-            return existing
     try:
+        # force=False: respect mtime skip when a field is already populated;
+        # missing fields recompute because their value is None.
         return await refresh_mission_metrics_for_reports(
-            mission_id, session=session, force=True
+            mission_id,
+            needed,
+            session=session,
+            force=False,
         )
     except Exception as exc:
         logger.warning(
-            "WG_MISSION_METRICS_BOOTSTRAP_FAIL mission=%s err=%s",
+            "WG_MISSION_METRICS_BOOTSTRAP_FAIL mission=%s fields=%s err=%s",
             mission_id,
+            ",".join(fields),
             exc,
         )
         return get_mission_metrics(session, mission_id)
+
+
+async def resolve_wave_glider_lifetime_metrics(
+    session: Session,
+    mission_id: str,
+    *,
+    fields: Sequence[LifetimeMetricField] = ("distance", "power"),
+    allow_bootstrap: bool = True,
+) -> LifetimeMetricsView:
+    """
+    Read persisted lifetime metrics, bootstrapping only missing requested fields.
+    """
+    if not mission_id:
+        return LifetimeMetricsView()
+    requested = tuple(fields) or ("distance", "power")
+    row = get_mission_metrics(session, mission_id)
+    if allow_bootstrap and _missing_report_types(row, requested):
+        row = await bootstrap_mission_metrics_if_needed(
+            session, mission_id, fields=requested
+        )
+    return _view_from_row(row)
 
 
 async def refresh_after_sync(
     mission_id: str,
     report_types: Iterable[str],
 ) -> None:
-    """Hook for sync_service: refresh only metric-relevant report types."""
+    """Hook for sync_service: refresh metric-relevant reports and fill gaps."""
     relevant = [rt for rt in report_types if rt in METRIC_REPORT_TYPES]
+    with Session(sqlite_engine) as session:
+        existing = get_mission_metrics(session, mission_id)
+        if existing is None and not relevant:
+            relevant = list(METRIC_REPORT_TYPES)
+        else:
+            # Reconcile partial-null rows even when only unrelated reports synced.
+            for field, report in FIELD_TO_REPORT.items():
+                if report in relevant:
+                    continue
+                if field == "distance" and (
+                    existing is None or existing.total_distance_nm is None
+                ):
+                    if existing is None or existing.telemetry_source_mtime is None:
+                        relevant.append(report)
+                elif field == "power" and (
+                    existing is None or existing.observed_max_battery_wh is None
+                ):
+                    if existing is None or existing.power_source_mtime is None:
+                        relevant.append(report)
     if not relevant:
-        # Still bootstrap missing snapshots after a full mission sync that
-        # may have skipped telemetry/power only because they were up-to-date.
-        with Session(sqlite_engine) as session:
-            existing = get_mission_metrics(session, mission_id)
-            if existing is None:
-                relevant = list(METRIC_REPORT_TYPES)
-            else:
-                return
+        return
+    # Deduplicate while preserving order.
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for rt in relevant:
+        if rt not in seen:
+            seen.add(rt)
+            ordered.append(rt)
     try:
-        await refresh_mission_metrics_for_reports(mission_id, relevant)
+        await refresh_mission_metrics_for_reports(mission_id, ordered)
     except Exception as exc:
         logger.warning(
             "WG_MISSION_METRICS_SYNC_HOOK_FAIL mission=%s reports=%s err=%s",
             mission_id,
-            relevant,
+            ordered,
             exc,
         )

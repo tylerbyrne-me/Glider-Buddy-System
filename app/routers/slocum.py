@@ -1166,7 +1166,9 @@ async def get_slocum_sensor_summaries(
         dataset_id,
         username=current_user.username if current_user else "system",
     )
-    summaries = build_slocum_sensor_summaries(dataset_id, enabled_cards)
+    summaries = build_slocum_sensor_summaries(
+        dataset_id, enabled_cards, session=session
+    )
     return summaries.get("sensors") or {}
 
 

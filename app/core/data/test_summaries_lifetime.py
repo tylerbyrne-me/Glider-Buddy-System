@@ -60,3 +60,50 @@ def test_power_uses_lifetime_observed_max():
     assert info["values"]["RealisticMaxBatteryWh"] == 500.0
     # Percentage uses effective max = lifetime observed max
     assert info["values"]["BatteryPercentage"] is not None
+
+
+def test_power_disables_frame_lifetime_fallback():
+    base = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    df = pd.DataFrame(
+        {
+            "Timestamp": [base, base + timedelta(hours=1)],
+            "BatteryWattHours": [100.0, 2398.0],
+            "SolarInputWatts": [50.0, 60.0],
+            "PowerDrawWatts": [10.0, 12.0],
+            "NetPowerWatts": [40.0, 48.0],
+            "battery_charging_power_w": [5.0, 6.0],
+            "output_port_power_w": [1.0, 2.0],
+        }
+    )
+    info = summaries.get_power_status(
+        df,
+        theoretical_max_wh=3920.0,
+        lifetime_observed_max_battery_wh=None,
+        allow_frame_lifetime_fallback=False,
+    )
+    assert info["values"]["RealisticMaxBatteryWh"] is None
+    # Percentage falls back to theoretical when no observed max is available.
+    assert info["values"]["EffectiveMaxBatteryWh"] == 3920.0
+
+
+def test_navigation_disables_frame_lifetime_fallback():
+    base = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    df = pd.DataFrame(
+        {
+            "Timestamp": [base, base + timedelta(hours=1)],
+            "Latitude": [44.0, 44.01],
+            "Longitude": [-63.0, -63.0],
+            "GliderHeading": [10.0, 20.0],
+            "SpeedOverGround": [1.0, 1.5],
+            "DistanceSinceLastFixM": [1852.0, 1852.0],
+            "OceanCurrentSpeed": [0.1, 0.2],
+            "OceanCurrentDirection": [1.0, 2.0],
+        }
+    )
+    info = summaries.get_navigation_status(
+        df,
+        lifetime_total_distance_nm=None,
+        allow_frame_lifetime_fallback=False,
+    )
+    assert info["values"]["TotalDistanceTraveledMissionNM"] is None
+    assert info["values"]["DistanceTraveled24hNM"] is not None

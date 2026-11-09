@@ -266,10 +266,25 @@ async def create_or_update_station_metadata_on_router(
             detail=f"Station {station_data.station_id} is retired or archived and cannot be modified",
         )
 
+    previous_override = (
+        existing_station.display_status_override if existing_station else None
+    )
+
     # The original logic is now in a reusable CRUD function
     db_station, is_created = station_metadata_crud.create_or_update_station(
         session=session, station_data=station_data
     )
+    sync_display_status_override_timestamp(
+        db_station,
+        previous_override=previous_override,
+    )
+    # Keep skip note only when override is SKIPPED (also clears on None/other).
+    override_key = (db_station.display_status_override or "").strip().upper()
+    if override_key != "SKIPPED":
+        db_station.display_status_override_note = None
+    session.add(db_station)
+    session.commit()
+    session.refresh(db_station)
     return models.StationMetadataCreateResponse(
         **db_station.model_dump(), # Unpack station data
         is_created=is_created # Add the new flag
@@ -1017,6 +1032,88 @@ async def delete_station_metadata_on_router(
     return
 
 
+@router.post(
+    "/station_metadata/{station_id}/archive",
+    response_model=models.StationMetadataRead,
+    tags=["Station Metadata Admin"],
+)
+async def archive_station_metadata(
+    station_id: str,
+    archive_in: models.StationArchiveRequest,
+    session: Annotated[SQLModelSession, Depends(get_db_session)],
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+):
+    """
+    Admin-only soft archive: sets is_retired so the station leaves the active list
+    while preserving offload history. Prefer this over hard delete.
+    """
+    reason = (archive_in.reason or "").strip()
+    if not reason:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Archive reason is required",
+        )
+    db_station = session.get(models.StationMetadata, station_id)
+    if not db_station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Station not found"
+        )
+    if db_station.is_retired:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Station {station_id} is already archived",
+        )
+    now_utc = datetime.now(timezone.utc)
+    db_station.is_retired = True
+    db_station.retired_at_utc = now_utc
+    db_station.retired_reason = reason
+    session.add(db_station)
+    session.commit()
+    session.refresh(db_station)
+    logger.info(
+        "ROUTER: Station '%s' archived by '%s' reason=%r",
+        station_id,
+        current_user.username,
+        reason,
+    )
+    return models.StationMetadataRead.model_validate(db_station)
+
+
+@router.post(
+    "/station_metadata/{station_id}/unarchive",
+    response_model=models.StationMetadataRead,
+    tags=["Station Metadata Admin"],
+)
+async def unarchive_station_metadata(
+    station_id: str,
+    session: Annotated[SQLModelSession, Depends(get_db_session)],
+    current_user: Annotated[UserModel, Depends(get_current_admin_user)],
+):
+    """Admin-only restore of a retired station back into the active list."""
+    db_station = session.get(models.StationMetadata, station_id)
+    if not db_station:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Station not found"
+        )
+    if not db_station.is_retired:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Station {station_id} is not archived",
+        )
+    db_station.is_retired = False
+    db_station.retired_at_utc = None
+    db_station.retired_reason = None
+    session.add(db_station)
+    session.commit()
+    session.refresh(db_station)
+    logger.info(
+        "ROUTER: Station '%s' unarchived by '%s'",
+        station_id,
+        current_user.username,
+    )
+    return models.StationMetadataRead.model_validate(db_station)
+
+
 # logger.debug("station_metadata_router.py - DELETE /station_metadata/{station_id} definition processed.") # Changed to logger
 # logger.debug("station_metadata_router.py - GET /station_metadata/ definition processed.") # Changed to logger
 
@@ -1054,6 +1151,27 @@ async def create_offload_log_for_station(
             detail=f"Station {station_id} is retired or archived and cannot be modified",
         )
 
+    # Idempotent create: same client_submission_id from the same user returns the
+    # existing row (HTTP 200 via FastAPI still reports 201 on this route's default;
+    # response body is the prior log — clients treat either as success).
+    client_submission_id = (offload_log_in.client_submission_id or "").strip() or None
+    if client_submission_id:
+        existing_stmt = select(models.OffloadLog).where(
+            models.OffloadLog.logged_by_username == current_user.username,
+            models.OffloadLog.client_submission_id == client_submission_id,
+        )
+        existing_log = session.exec(existing_stmt).first()
+        if existing_log is not None:
+            logger.info(
+                "ROUTER: Idempotent offload create for station '%s' user '%s' "
+                "client_submission_id=%s -> log id=%s",
+                station_id,
+                current_user.username,
+                client_submission_id,
+                existing_log.id,
+            )
+            return _serialize_offload_log_read(existing_log)
+
     # Get active season to set field_season_year
     active_season = StationSeasonService.get_active_season(session)
     field_season_year = active_season.year if active_season else None
@@ -1066,6 +1184,7 @@ async def create_offload_log_for_station(
     offload_log_data["created_by_source"] = "user"
     offload_log_data["updated_by_source"] = "user"
     offload_log_data["updated_at_utc"] = datetime.now(timezone.utc)
+    offload_log_data["client_submission_id"] = client_submission_id
 
     if not (offload_log_data.get("parser_session_ref") or "").strip():
         mid_sheet = (sheet_mission_id or "").strip()
@@ -1094,7 +1213,30 @@ async def create_offload_log_for_station(
 
     session.add(db_station_metadata)  # Add again to save changes to station metadata
 
-    session.commit()
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        # Race on unique (username, client_submission_id): return the winner.
+        if client_submission_id:
+            raced = session.exec(
+                select(models.OffloadLog).where(
+                    models.OffloadLog.logged_by_username == current_user.username,
+                    models.OffloadLog.client_submission_id == client_submission_id,
+                )
+            ).first()
+            if raced is not None:
+                logger.info(
+                    "ROUTER: Idempotent race win for station '%s' user '%s' "
+                    "client_submission_id=%s -> log id=%s",
+                    station_id,
+                    current_user.username,
+                    client_submission_id,
+                    raced.id,
+                )
+                return _serialize_offload_log_read(raced)
+        raise
+
     session.refresh(db_offload_log)
     # session.refresh(db_station_metadata) # Optional: refresh station if its updated state is immediately needed by caller
     logger.info(
@@ -1221,6 +1363,10 @@ async def get_station_offload_status_overview(
         None,
         description="Season tag for offload logs (None = active season context). Registry rows are always live.",
     ),
+    include_retired: bool = Query(
+        False,
+        description="When true, include retired (admin-archived) stations in the overview.",
+    ),
 ):
     """
     Live registry rows with offload status for the selected season context.
@@ -1230,18 +1376,20 @@ async def get_station_offload_status_overview(
     """
     logger.info(
         f"User '{current_user.username}' requesting station offload status overview"
-        f"{f' for season {season_year}' if season_year else ' (active season)'}."
+        f"{f' for season {season_year}' if season_year else ' (active season)'}"
+        f"{' including retired' if include_retired else ''}."
     )
 
     statement = (
         select(models.StationMetadata)
         .options(selectinload(models.StationMetadata.offload_logs))
         .where(
-            models.StationMetadata.is_retired == False,
             models.StationMetadata.is_archived == False,
         )
         .order_by(models.StationMetadata.station_id)
     )
+    if not include_retired:
+        statement = statement.where(models.StationMetadata.is_retired == False)
     stations_metadata = list(session.exec(statement).all())
 
     station_ids = [s.station_id for s in stations_metadata]
@@ -2530,6 +2678,15 @@ async def download_season_data(
             "Was Offloaded": "Yes" if log.was_offloaded is True else ("No" if log.was_offloaded is False else "---"),
             "VRL File Name": log.vrl_file_name if log.vrl_file_name else "---",
             "Offload Comments": get_offload_comments(log) or "---",
+            "Skip Reason": (
+                (getattr(station, "display_status_override_note", None) or "---")
+                if station
+                and str(getattr(station, "display_status_override", "") or "")
+                .strip()
+                .upper()
+                == "SKIPPED"
+                else "---"
+            ),
             # VM4 Remote Health (captured at connection time)
             "Remote Health Model ID": log.remote_health_model_id if getattr(log, "remote_health_model_id", None) is not None else "---",
             "Remote Health Serial Number": log.remote_health_serial_number if getattr(log, "remote_health_serial_number", None) is not None else "---",

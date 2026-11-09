@@ -32,4 +32,4 @@ sudo journalctl -u gliderbuddy --since "10 min ago" | grep -E \
 - Cache status is metadata-only (`meta.json` + `stat()`); no `load_mirror_df` on poll.
 - Summaries load each unique mirror bundle once per request (dashboard cards share one frame).
 - Client single-flight / generation guards coalesce identical CTD, category, and summary refreshes; only the newest generation updates UI.
-- No Slocum lifetime-metrics table (distance / battery extrema stay report-time).
+- Mission distance comes from `slocum_mission_metrics` (DB read on summary paths; daily leader refresh + weekly-report upsert). Do **not** load full-history ERDDAP on SSR/soft refresh. Battery extrema remain report-time only.

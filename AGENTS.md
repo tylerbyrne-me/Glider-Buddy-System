@@ -197,6 +197,7 @@ With gunicorn `-w 2`, only the **leader** worker (fcntl lock on `data_store/.app
  - `system_navwarn_cleanup_job` (daily :30 UTC; stranded temps + catalog reconcile when feature on)
   - `system_dmon_review_prefetch_job` (every 12h; Robots4Whales DMON analyst-review cache for deployments with `dmon` card + `robots4whales_url`)
   - `slocum_erddap_poke_job` (every 90m default; allDatasets maxTime poke, incremental mirror sync only when the tail advanced)
+  - `slocum_mission_metrics_job` (daily 06:40 UTC; full-history mission distance into `slocum_mission_metrics`)
 
 The other worker serves HTTP; cache warms on demand. Admin **scheduler status** API returns an empty job list on non-leader workers (scheduler lives on the leader only).
 

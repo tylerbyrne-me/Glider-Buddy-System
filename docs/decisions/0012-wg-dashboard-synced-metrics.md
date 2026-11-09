@@ -25,6 +25,7 @@ Wave Glider mission dashboards were slow for the same reasons as early PIC forms
 
 ## Consequences
 
-- Fast paint depends on leader sync having populated `data/{mission}/` and metrics rows; missing metrics bootstrap once from synced files.
-- PIC observed max remains a **48h** window (ADR 0011); dashboard / metrics table use **mission** peak.
+- Fast paint depends on leader sync having populated `data/{mission}/` and metrics rows; missing fields bootstrap independently from synced files (amended 2026-10-20).
+- PIC observed max / % remaining use **mission** peak from `wave_glider_mission_metrics` (aligned with dashboard). PIC still loads a **48h** power window for current Wh only (ADR 0011). Synced/auto/PIC paths do **not** fall back to bounded-window peaks when the snapshot is missing (show theoretical / `N/A` instead). Explicit admin `remote`/`local` inspection retains frame-derived peaks.
+- Lifetime aggregates are recomputable full-history snapshots (corrections replace prior values), not irreversible accumulators.
 - Operators grep `DASHBOARD_SSR`, `DASHBOARD_SUMMARIES`, `DATA_LOAD`, `WG_MISSION_METRICS` alongside `SLOWREQ`.

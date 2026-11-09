@@ -13,6 +13,7 @@ These contain sensitive information and should **never** be committed to version
 JWT_SECRET_KEY=your-strong-random-secret-key-here-min-32-chars
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
+JWT_SESSION_MAX_MINUTES=1440
 
 # Email/SMTP Settings
 MAIL_USERNAME=your-email@example.com
@@ -146,9 +147,12 @@ Here's a complete template you can copy to your `.env` file:
 
 # JWT Authentication - Generate a strong random key for production!
 # Use: python -c "import secrets; print(secrets.token_urlsafe(32))"
+# Keep JWT_SECRET_KEY stable across restarts or all sessions invalidate.
+# ACCESS = sliding window while active; SESSION_MAX = hard cap from login (auth_time).
 JWT_SECRET_KEY=CHANGE_THIS_IN_DOT_ENV_FOR_PRODUCTION_NEVER_USE_THIS_DEFAULT
 JWT_ALGORITHM=HS256
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
+JWT_SESSION_MAX_MINUTES=1440
 
 # ============================================================================
 # EMAIL/SMTP SETTINGS

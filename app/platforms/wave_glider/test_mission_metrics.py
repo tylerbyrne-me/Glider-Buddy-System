@@ -191,3 +191,104 @@ def test_independent_partial_power_update():
     asyncio.run(_run())
     assert row.observed_max_battery_wh == pytest.approx(321.0)
     assert row.total_distance_nm == 10.0  # untouched
+
+
+def test_bootstrap_fills_only_missing_power_when_distance_present():
+    row = MagicMock()
+    row.total_distance_nm = 12.0
+    row.distance_method = "odometer"
+    row.telemetry_source_mtime = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    row.observed_max_battery_wh = None
+    row.power_source_mtime = None
+    row.calculation_version = mm.CALCULATION_VERSION
+
+    session = MagicMock()
+    session.get.return_value = row
+
+    power_df = pd.DataFrame(
+        {
+            "Timestamp": [datetime(2026, 6, 2, tzinfo=timezone.utc)],
+            "BatteryWattHours": [400.0],
+        }
+    )
+
+    async def _run():
+        with patch(
+            "app.platforms.wave_glider.mission_metrics.refresh_mission_metrics_for_reports",
+            new=AsyncMock(return_value=row),
+        ) as refresh:
+            await mm.bootstrap_mission_metrics_if_needed(
+                session, "m1", fields=("distance", "power")
+            )
+            refresh.assert_awaited_once()
+            args, kwargs = refresh.await_args
+            assert args[0] == "m1"
+            assert args[1] == ["power"]
+            assert kwargs.get("force") is False
+
+    asyncio.run(_run())
+
+
+def test_resolve_lifetime_uses_field_bootstrap():
+    row = MagicMock()
+    row.total_distance_nm = None
+    row.distance_method = None
+    row.observed_max_battery_wh = 3656.0
+    row.telemetry_source_mtime = None
+    row.power_source_mtime = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    row.calculation_version = mm.CALCULATION_VERSION
+
+    session = MagicMock()
+    session.get.return_value = row
+
+    async def _run():
+        with patch(
+            "app.platforms.wave_glider.mission_metrics.bootstrap_mission_metrics_if_needed",
+            new=AsyncMock(return_value=row),
+        ) as bootstrap:
+            view = await mm.resolve_wave_glider_lifetime_metrics(
+                session, "m1", fields=("power",)
+            )
+            bootstrap.assert_not_awaited()
+            assert view.observed_max_battery_wh == 3656.0
+
+            view2 = await mm.resolve_wave_glider_lifetime_metrics(
+                session, "m1", fields=("distance", "power")
+            )
+            bootstrap.assert_awaited_once()
+            assert view2.observed_max_battery_wh == 3656.0
+
+    asyncio.run(_run())
+
+
+def test_should_use_persisted_lifetime_policy():
+    assert mm.should_use_persisted_lifetime(None) is True
+    assert mm.should_use_persisted_lifetime("synced") is True
+    assert mm.should_use_persisted_lifetime("remote") is False
+    assert mm.should_use_persisted_lifetime("local") is False
+    assert mm.should_use_persisted_lifetime(None, refresh_upstream=True) is True
+
+
+def test_refresh_after_sync_reconciles_missing_power():
+    row = MagicMock()
+    row.total_distance_nm = 10.0
+    row.observed_max_battery_wh = None
+    row.telemetry_source_mtime = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    row.power_source_mtime = None
+
+    async def _run():
+        with patch(
+            "app.platforms.wave_glider.mission_metrics.Session"
+        ) as session_cls, patch(
+            "app.platforms.wave_glider.mission_metrics.get_mission_metrics",
+            return_value=row,
+        ), patch(
+            "app.platforms.wave_glider.mission_metrics.refresh_mission_metrics_for_reports",
+            new=AsyncMock(),
+        ) as refresh:
+            session_cls.return_value.__enter__.return_value = MagicMock()
+            await mm.refresh_after_sync("m1", ["ais"])
+            refresh.assert_awaited_once()
+            assert refresh.await_args.args[1] == ["power"]
+
+    asyncio.run(_run())

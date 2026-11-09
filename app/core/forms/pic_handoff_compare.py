@@ -25,6 +25,7 @@ from app.core.forms.pic_handoff_autofill import (
     parse_enabled_sensor_cards as _parse_enabled_sensor_cards,
     parse_optional_sensors as _parse_optional_sensors,
     recent_errors_display as _recent_errors_display,
+    resolve_lifetime_observed_max_battery_wh as _resolve_lifetime_observed_max_battery_wh,
     resolve_mission_overview as _resolve_mission_overview,
     sensor_on_off_value as _sensor_on_off_value,
     total_battery_display as _total_battery_display,
@@ -75,12 +76,18 @@ async def build_pic_handoff_compare_current_values(
         refresh_upstream=refresh_upstream,
     )
 
+    lifetime_observed_max_battery_wh = await _resolve_lifetime_observed_max_battery_wh(
+        session, mission_id
+    )
+
     standoff = getattr(mission_overview, "vessel_standoff_m", None) if mission_overview else None
     current_values: Dict[str, str] = {
         "glider_id_val": str(mission_id),
         "mission_title_val": _mission_title(session, mission_id),
         "total_battery_val": _total_battery_display(
-            loaded.get("power"), theoretical_max_wh=theoretical_max_wh
+            loaded.get("power"),
+            theoretical_max_wh=theoretical_max_wh,
+            lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
         ),
         "boats_in_area_val": _boats_in_area_display(loaded.get("ais")),
         "vessel_standoff_m_val": str(standoff) if standoff is not None else "",

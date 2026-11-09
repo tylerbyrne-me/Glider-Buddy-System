@@ -6,6 +6,13 @@
  */
 
 import { apiRequest, showToast } from '/static/js/api.js';
+import {
+    saveDraft,
+    loadDraft,
+    clearDraft,
+    debounceDraftSave,
+    newClientSubmissionId,
+} from '/static/js/offload_draft.js';
 
 /**
  * Initialize the WG-VM4 offload section
@@ -27,6 +34,44 @@ export function initializeWgVm4OffloadSection() {
 
     let currentStationData = null; // To store fetched station metadata
     let searchTimeout; // For debouncing search
+    let draftUsername = (typeof window !== 'undefined' && window.CURRENT_USERNAME) || 'pilot';
+    let pendingClientSubmissionId = newClientSubmissionId();
+
+    const markFormDirty = (isDirty) => {
+        wgVm4OffloadForm.dataset.dirty = isDirty ? 'true' : 'false';
+    };
+
+    const collectDraftFields = () => {
+        const formData = new FormData(wgVm4OffloadForm);
+        const fields = { clientSubmissionId: pendingClientSubmissionId };
+        for (const [key, value] of formData.entries()) {
+            fields[key] = value;
+        }
+        return fields;
+    };
+
+    const debouncedSave = debounceDraftSave((fields) => {
+        if (!currentStationData?.station_id) return;
+        saveDraft(draftUsername, currentStationData.station_id, fields);
+        markFormDirty(true);
+    }, 500);
+
+    const restoreDraftIfAny = (stationId) => {
+        const draft = loadDraft(draftUsername, stationId);
+        if (!draft?.fields) return;
+        Object.entries(draft.fields).forEach(([key, value]) => {
+            if (key === 'clientSubmissionId') {
+                if (value) pendingClientSubmissionId = String(value);
+                return;
+            }
+            const el = wgVm4OffloadForm.elements.namedItem(key);
+            if (!el) return;
+            if (el.type === 'checkbox') el.checked = Boolean(value);
+            else el.value = value == null ? '' : String(value);
+        });
+        markFormDirty(true);
+        showToast(`Restored unsaved offload draft for ${stationId}`, 'info');
+    };
 
     /**
      * Search for stations by query string
@@ -85,6 +130,9 @@ export function initializeWgVm4OffloadSection() {
             currentStationData.station_flag_state = flagState;
             displayStationMetadata(currentStationData);
             buildOffloadLogFormFields(currentStationData);
+            pendingClientSubmissionId = newClientSubmissionId();
+            restoreDraftIfAny(stationId);
+            markFormDirty(false);
             if(submitOffloadLogBtn) submitOffloadLogBtn.disabled = false;
         } catch (error) {
             showToast(`Error fetching station metadata: ${error.message}`, 'danger');
@@ -398,24 +446,26 @@ export function initializeWgVm4OffloadSection() {
             was_offloaded: normalizedWasOffloaded,
             vrl_file_name: toNullableTrimmed(formData.get('vrl_file_name_log')),
             offload_comments: notes,
+            client_submission_id: pendingClientSubmissionId,
             ...(missionIdForSheet ? { mission_id: missionIdForSheet } : {}),
         };
         Object.keys(payload).forEach((key) => {
             if (payload[key] === null || payload[key] === '') delete payload[key];
         });
 
+        const submittedStationId = currentStationData.station_id;
         try {
-            await apiRequest(`/api/station_metadata/${encodeURIComponent(currentStationData.station_id)}/offload_logs/`, 'POST', payload);
+            await apiRequest(`/api/station_metadata/${encodeURIComponent(submittedStationId)}/offload_logs/`, 'POST', payload);
             if (otnMetadata) {
                 await apiRequest(
-                    `/api/station_metadata/${encodeURIComponent(currentStationData.station_id)}`,
+                    `/api/station_metadata/${encodeURIComponent(submittedStationId)}`,
                     'PUT',
                     { otn_metadata: otnMetadata }
                 );
             }
             if (shouldFlagStation) {
                 await apiRequest(
-                    `/api/station_metadata/${encodeURIComponent(currentStationData.station_id)}/flag`,
+                    `/api/station_metadata/${encodeURIComponent(submittedStationId)}/flag`,
                     'POST',
                     { is_flagged: true, note: flagNote }
                 );
@@ -423,16 +473,19 @@ export function initializeWgVm4OffloadSection() {
             const missionId = missionIdForSheet;
             if (missionId) {
                 await apiRequest(
-                    `/api/station_metadata/${encodeURIComponent(currentStationData.station_id)}`,
+                    `/api/station_metadata/${encodeURIComponent(submittedStationId)}`,
                     'PUT',
                     { last_offload_by_glider: missionId }
                 );
             }
-            showToast(`Log for station ${currentStationData.station_id} submitted successfully!`, 'success');
-            if(offloadSubmissionStatus) offloadSubmissionStatus.innerHTML = `<div class="alert alert-success">Log for station ${currentStationData.station_id} submitted successfully!</div>`;
+            clearDraft(draftUsername, submittedStationId);
+            markFormDirty(false);
+            showToast(`Log for station ${submittedStationId} submitted successfully!`, 'success');
+            if(offloadSubmissionStatus) offloadSubmissionStatus.innerHTML = `<div class="alert alert-success">Log for station ${submittedStationId} submitted successfully!</div>`;
             wgVm4OffloadForm.reset();
             if(stationMetadataDisplay) stationMetadataDisplay.style.display = 'none';
             currentStationData = null;
+            pendingClientSubmissionId = newClientSubmissionId();
             if(submitOffloadLogBtn) submitOffloadLogBtn.disabled = true;
             if(stationIdSearchInput) stationIdSearchInput.value = '';
             buildOffloadLogFormFields(null); 
@@ -453,14 +506,30 @@ export function initializeWgVm4OffloadSection() {
         if (!input) return;
         input.value = getUtcNowDatetimeLocalValue();
         input.dispatchEvent(new Event('change', { bubbles: true }));
+        debouncedSave(collectDraftFields());
     });
     wgVm4OffloadForm.addEventListener('change', function(event) {
         if (event.target && event.target.id === 'offloaded_status_log') {
             updateConditionalOffloadRequirements();
         }
+        if (currentStationData?.station_id) {
+            debouncedSave(collectDraftFields());
+        }
+    });
+    wgVm4OffloadForm.addEventListener('input', function() {
+        if (currentStationData?.station_id) {
+            debouncedSave(collectDraftFields());
+        }
     });
     // Initial call to clear/setup form fields
     buildOffloadLogFormFields(null);
+
+    // Prefer authenticated username when available (async; drafts still work with fallback).
+    apiRequest('/api/users/me', 'GET')
+        .then((user) => {
+            if (user?.username) draftUsername = user.username;
+        })
+        .catch(() => {});
 }
 
 // Note: The call to initializeWgVm4OffloadSection() will be made from dashboard.js

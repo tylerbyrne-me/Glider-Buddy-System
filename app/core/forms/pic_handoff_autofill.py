@@ -23,6 +23,9 @@ from app.core.data.data_service import get_data_service
 from app.core.infra.logging_config import get_request_id
 from app.core.pic_handoff_optional_sensors import PIC_HANDOFF_OPTIONAL_SENSOR_REGISTRY
 from app.forms.form_definitions import get_static_form_schema
+from app.platforms.wave_glider.mission_metrics import (
+    resolve_wave_glider_lifetime_metrics,
+)
 from app.services.error_classification_service import classify_error_message
 
 logger = logging.getLogger(__name__)
@@ -191,15 +194,35 @@ def recent_errors_display(errors_df) -> str:
     return "\n".join(lines)
 
 
-def total_battery_display(df_power, *, theoretical_max_wh: Optional[float]) -> str:
+def total_battery_display(
+    df_power,
+    *,
+    theoretical_max_wh: Optional[float],
+    lifetime_observed_max_battery_wh: Optional[float] = None,
+    allow_frame_lifetime_fallback: bool = False,
+) -> str:
     power_info = (
-        summaries.get_power_status(df_power, None, theoretical_max_wh=theoretical_max_wh)
+        summaries.get_power_status(
+            df_power,
+            None,
+            theoretical_max_wh=theoretical_max_wh,
+            lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
+            allow_frame_lifetime_fallback=allow_frame_lifetime_fallback,
+        )
         if df_power is not None and not df_power.empty
         else {}
     )
     values = power_info.get("values", {})
     theoretical_wh = values.get("TheoreticalMaxBatteryWh")
     realistic_wh = values.get("RealisticMaxBatteryWh")
+    if theoretical_wh is None and lifetime_observed_max_battery_wh is not None:
+        # Empty power window still surfaces mission peak when metrics exist.
+        try:
+            realistic_wh = float(lifetime_observed_max_battery_wh)
+        except (TypeError, ValueError):
+            pass
+    if theoretical_wh is None and theoretical_max_wh is not None:
+        theoretical_wh = theoretical_max_wh
     if theoretical_wh is not None:
         display = f"Max (theoretical): {int(theoretical_wh)} Wh"
         if realistic_wh is not None:
@@ -212,11 +235,21 @@ def total_battery_display(df_power, *, theoretical_max_wh: Optional[float]) -> s
 
 
 def power_status_values(
-    df_power, *, theoretical_max_wh: Optional[float]
+    df_power,
+    *,
+    theoretical_max_wh: Optional[float],
+    lifetime_observed_max_battery_wh: Optional[float] = None,
+    allow_frame_lifetime_fallback: bool = False,
 ) -> Tuple[Any, Any, Optional[float], Optional[float], Optional[float], str]:
     """Return battery_wh, battery_pct, theoretical, realistic, effective, percent_hint."""
     power_info = (
-        summaries.get_power_status(df_power, None, theoretical_max_wh=theoretical_max_wh)
+        summaries.get_power_status(
+            df_power,
+            None,
+            theoretical_max_wh=theoretical_max_wh,
+            lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
+            allow_frame_lifetime_fallback=allow_frame_lifetime_fallback,
+        )
         if df_power is not None and not df_power.empty
         else {}
     )
@@ -420,6 +453,25 @@ def inject_pic_handoff_rosters(session: Session, schema_dict: dict) -> None:
                 item["options"] = pic_options
 
 
+async def resolve_lifetime_observed_max_battery_wh(
+    session: Session,
+    mission_id: str,
+) -> Optional[float]:
+    """
+    Mission-lifetime observed max Wh from wave_glider_mission_metrics.
+
+    Matches dashboard bootstrap: read persisted row, compute once from synced
+    power CSV when the power snapshot is missing.
+    """
+    lifetime = await resolve_wave_glider_lifetime_metrics(
+        session,
+        mission_id,
+        fields=("power",),
+        allow_bootstrap=True,
+    )
+    return lifetime.observed_max_battery_wh
+
+
 async def build_pic_handoff_autofilled_schema(
     mission_id: str,
     session: Session,
@@ -452,11 +504,21 @@ async def build_pic_handoff_autofilled_schema(
         refresh_upstream=refresh_upstream,
     )
 
+    lifetime_observed_max_battery_wh = await resolve_lifetime_observed_max_battery_wh(
+        session, mission_id
+    )
+
     battery_wh, battery_pct, theoretical_wh, realistic_wh, _effective_wh, percent_battery_hint = (
-        power_status_values(loaded.get("power"), theoretical_max_wh=theoretical_max_wh)
+        power_status_values(
+            loaded.get("power"),
+            theoretical_max_wh=theoretical_max_wh,
+            lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
+        )
     )
     total_capacity_display = total_battery_display(
-        loaded.get("power"), theoretical_max_wh=theoretical_max_wh
+        loaded.get("power"),
+        theoretical_max_wh=theoretical_max_wh,
+        lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
     )
     title = mission_title(session, mission_id)
     boats_in_area_display_val = boats_in_area_display(loaded.get("ais"))

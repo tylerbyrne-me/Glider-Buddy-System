@@ -25,5 +25,5 @@ Wave Glider PIC handoff form loads were timing out sporadically under gunicorn `
 ## Consequences
 
 - Fast form open depends on leader sync having populated `data/{mission}/`; missing files show `N/A` until Refresh Data.
-- Observed max battery Wh is computed over the 48h power window (not full mission history).
+- Observed max battery Wh and % remaining use mission-lifetime `wave_glider_mission_metrics` (same as the dashboard); the 48h power window still supplies current Wh only (amended 2026-10-20).
 - Operators correlate browser toast `request <id>` with journal `[request_id]` / `PIC_AUTOFILL_*` / `FORM_SUBMIT_*` lines.

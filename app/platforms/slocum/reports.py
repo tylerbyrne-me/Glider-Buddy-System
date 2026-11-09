@@ -545,6 +545,25 @@ def write_slocum_weekly_pdf(
     )
     dashboard_df = data_frames.get("dashboard", pd.DataFrame())
     ctd_df = data_frames.get("ctd", pd.DataFrame())
+    # Persist mission distance from the same full-history frame used for PDF KPIs.
+    if session is not None and not mission_telemetry_df.empty:
+        try:
+            from app.platforms.slocum.mission_metrics import upsert_from_track_frame
+
+            mission_key = resolved_slocum_mission_key(dataset_id)
+            if mission_key:
+                upsert_from_track_frame(
+                    session,
+                    mission_key=mission_key,
+                    dataset_id=dataset_id,
+                    track_df=mission_telemetry_df,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Slocum weekly PDF: mission metrics upsert skipped for %s: %s",
+                dataset_id,
+                exc,
+            )
     summaries = compute_slocum_report_summaries(
         telemetry_df=telemetry_df,
         mission_telemetry_df=mission_telemetry_df,

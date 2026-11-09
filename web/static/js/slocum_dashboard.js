@@ -1884,7 +1884,11 @@ function updateSlocumCardFromSummary(category, summary) {
     } else if (category === 'navigation' && miniSummary) {
         const hdg = formatCardSummaryValue(values.MHeading, 1);
         const spd = formatCardSummaryValue(values.MSpeed, 2);
-        miniSummary.innerHTML = `Hdg: ${hdg}°<br>Spd: ${spd} m/s`;
+        const dist24 = formatCardSummaryValue(values.Distance24hKm, 1);
+        const distMission = formatCardSummaryValue(values.DistanceMissionKm, 1);
+        miniSummary.innerHTML =
+            `Hdg: ${hdg}°<br>Spd: ${spd} m/s<br>` +
+            `Dist 24h: ${dist24} km<br>Dist mission: ${distMission} km`;
     } else if (category === 'vehicle_health' && miniSummary) {
         const vac = formatCardSummaryValue(values.MVacuum, 2);
         const leak = formatCardSummaryValue(values.MLeakdetectVoltage, 2);

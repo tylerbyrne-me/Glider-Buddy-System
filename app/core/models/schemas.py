@@ -349,6 +349,10 @@ class StationMetadataCore(BaseModel):
             "FAILED_OFFLOAD, or HARDWARE_SWAPPED_AWAITING_OFFLOAD."
         ),
     )
+    display_status_override_note: Optional[str] = Field(
+        None,
+        description="Optional reason for the display status override (e.g. why SKIPPED).",
+    )
 
     @model_validator(mode="after")
     def sync_otn_metadata_alias(self):
@@ -374,6 +378,14 @@ class StationMetadataBase(StationMetadataCore):
     is_retired: bool = Field(
         default=False,
         description="Station ID no longer in use; row retained for offload history.",
+    )
+    retired_at_utc: Optional[datetime] = Field(
+        default=None,
+        description="UTC timestamp when this station was retired (admin archive).",
+    )
+    retired_reason: Optional[str] = Field(
+        default=None,
+        description="Admin comment explaining why the station was retired/archived.",
     )
     registry_confirmed_at_utc: Optional[datetime] = Field(
         default=None,
@@ -415,8 +427,15 @@ class StationMetadataUpdate(SQLModel):
     notes: Optional[str] = None
     otn_metadata: Optional[str] = None
     display_status_override: Optional[str] = None
+    display_status_override_note: Optional[str] = None
     # last_offload_timestamp_utc and was_last_offload_successful are
     # typically updated via OffloadLog
+
+
+class StationArchiveRequest(SQLModel):
+    """Admin archive (retire) a station with a required reason."""
+
+    reason: str = Field(..., min_length=1, description="Why this station is being archived.")
 
 
 class StationMetadataRead(StationMetadataBase):
@@ -473,6 +492,11 @@ class OffloadLogCreate(SQLModel):
             "not stored on the row—used to set parser_session_ref as "
             "{mission_id}:station_offload_sheet:{station_id} for weekly report attribution."
         ),
+    )
+    client_submission_id: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Client-generated idempotency key for create retries (scoped to submitter).",
     )
 
 
@@ -589,6 +613,7 @@ class OffloadLogRead(SQLModel):
     updated_at_utc: Optional[datetime] = None
     parser_run_id: Optional[str] = None
     parser_session_ref: Optional[str] = None
+    client_submission_id: Optional[str] = None
 
 
 class StationHardwareHistoryRead(SQLModel):

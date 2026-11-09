@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 
@@ -107,14 +107,20 @@ def test_shared_dashboard_frame_powers_multiple_cards():
 
     with patch.object(summaries_mod, "resolve_slocum_dataset_id", side_effect=lambda v: v), patch.object(
         summaries_mod, "load_mirror_df", return_value=dashboard
+    ), patch.object(
+        summaries_mod, "resolve_slocum_mission_distance_km", return_value=456.7
+    ), patch.object(
+        summaries_mod, "compute_distance_24h_km_from_dashboard", return_value=12.3
     ):
         context = summaries_mod.build_slocum_sensor_summaries(
-            DATASET_ID, ["power", "flight", "navigation"]
+            DATASET_ID, ["power", "flight", "navigation"], session=MagicMock()
         )
 
     assert context["sensors"]["power"]["values"]["MBattery"] == 13.8
     assert context["sensors"]["flight"]["values"]["MPitch"] == 3.0
     assert context["sensors"]["navigation"]["values"]["MHeading"] == 92.0
+    assert context["sensors"]["navigation"]["values"]["Distance24hKm"] == 12.3
+    assert context["sensors"]["navigation"]["values"]["DistanceMissionKm"] == 456.7
     # Flat SSR keys match nested sensors map.
     assert context["power_values"] == context["sensors"]["power"]["values"]
     assert context["flight_info"]["values"] == context["sensors"]["flight"]["values"]

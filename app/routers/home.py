@@ -72,7 +72,9 @@ def _merge_slocum_summary_context(
     session: Optional[SQLModelSession] = None,
 ) -> None:
     """Attach CTD (and future sensor) summary card context for SSR."""
-    summaries = build_slocum_sensor_summaries(dataset_id, enabled_cards)
+    summaries = build_slocum_sensor_summaries(
+        dataset_id, enabled_cards, session=session
+    )
     for key, value in summaries.items():
         if key == "sensors":
             continue

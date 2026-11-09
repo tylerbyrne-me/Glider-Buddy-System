@@ -9,13 +9,29 @@ from pydantic import BaseModel, Field
 from ..core import auth  # Import auth module
 from ..core.auth import get_current_admin_user, get_current_active_user, get_optional_current_user
 from ..core import models
-from ..core.auth.security import create_access_token, verify_password
+from ..core.auth.security import (
+    create_access_token,
+    refresh_access_token,
+    verify_password,
+)
 from ..core.infra.db import get_db_session
 from ..config import settings
 from ..core.templates import templates
 from ..core.template_context import get_template_context
 
 router = APIRouter(tags=["Authentication"])
+
+
+def _set_access_token_cookie(response: Response, access_token: str, max_age_seconds: int) -> None:
+    response.set_cookie(
+        key="access_token_cookie",
+        value=access_token,
+        httponly=True,  # Prevents client-side JS from accessing the cookie
+        samesite="lax",  # Recommended for security
+        secure=settings.app_use_https,  # True when served over HTTPS (set APP_USE_HTTPS=true in .env)
+        max_age=max_age_seconds,
+        path="/",
+    )
 
 
 # Authentication Endpoint
@@ -58,18 +74,47 @@ async def login_for_access_token(
 
     # Set the access token in an HttpOnly cookie (max_age aligns with JWT exp)
     cookie_max_age_seconds = settings.jwt_access_token_expire_minutes * 60
-    response.set_cookie(
-        key="access_token_cookie",
-        value=access_token,
-        httponly=True,  # Prevents client-side JS from accessing the cookie
-        samesite="lax",  # Recommended for security
-        secure=settings.app_use_https,  # True when served over HTTPS (set APP_USE_HTTPS=true in .env)
-        max_age=cookie_max_age_seconds,
-        path="/",
-    )
+    _set_access_token_cookie(response, access_token, cookie_max_age_seconds)
 
     # Also return the token in the response body for client-side JS that needs it
     return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/api/auth/refresh")
+async def refresh_access_token_endpoint(
+    response: Response,
+    request: Request,
+):
+    """
+    Slide the access-token expiry while the user is active.
+
+    Hard-capped by jwt_session_max_minutes from the original login (auth_time).
+    Accepts Bearer header or access_token_cookie.
+    """
+    token = None
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header.split(" ", 1)[1].strip() or None
+    if not token:
+        token = request.cookies.get("access_token_cookie")
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    refreshed = refresh_access_token(token)
+    if not refreshed:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Session expired. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    new_token, cookie_max_age = refreshed
+    _set_access_token_cookie(response, new_token, cookie_max_age)
+    return {"access_token": new_token, "token_type": "bearer"}
 
 
 @router.post("/logout")

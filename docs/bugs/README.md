@@ -38,3 +38,5 @@ When fixed: set `status: fixed`, complete Resolution, and move the related line 
 | [BUG-007](./BUG-007-sensor-tracker-list-next-page.md) | fixed | Sensor Tracker browser Next repeated page 1 (did not follow Tracker `next`) |
 | [BUG-008](./BUG-008-slocum-interactive-overage-clipped.md) | fixed | Slocum interactive ranges clipped to 72h mirror (overage not used) |
 | [BUG-009](./BUG-009-sfmc-lognote-display-label.md) | fixed | SFMC log-note import failed on catalog display labels (`m226-Peggy`) |
+| [BUG-010](./BUG-010-pic-observed-max-48h-window.md) | fixed | PIC observed max / % battery used 48h peak instead of mission lifetime |
+| [BUG-011](./BUG-011-station-offload-draft-loss-and-triplicates.md) | fixed | Station offload draft loss, triplicate logs, search reset after save |

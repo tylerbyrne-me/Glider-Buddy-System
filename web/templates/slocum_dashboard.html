@@ -104,7 +104,9 @@
             <div class="mini-summary">
               {% if navigation_info and navigation_values %}
                 Hdg: {{ "%.1f"|format(navigation_values.get('MHeading')) if navigation_values.get('MHeading') is not none else 'N/A' }}°<br>
-                Spd: {{ "%.2f"|format(navigation_values.get('MSpeed')) if navigation_values.get('MSpeed') is not none else 'N/A' }} m/s
+                Spd: {{ "%.2f"|format(navigation_values.get('MSpeed')) if navigation_values.get('MSpeed') is not none else 'N/A' }} m/s<br>
+                Dist 24h: {{ "%.1f"|format(navigation_values.get('Distance24hKm')) if navigation_values.get('Distance24hKm') is not none else 'N/A' }} km<br>
+                Dist mission: {{ "%.1f"|format(navigation_values.get('DistanceMissionKm')) if navigation_values.get('DistanceMissionKm') is not none else 'N/A' }} km
               {% else %} N/A {% endif %}
             </div>
           </div>

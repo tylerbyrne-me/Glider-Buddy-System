@@ -30,8 +30,16 @@ document.addEventListener('DOMContentLoaded', async function () { // Made async 
 
     const loginForm = document.getElementById('loginForm'); // Keep this
     const loginErrorDiv = document.getElementById('loginError');
+    const sessionExpiredNotice = document.getElementById('sessionExpiredNotice');
     const registerForm = document.getElementById('registerForm');
     const registerMessageDiv = document.getElementById('registerMessage');
+
+    if (sessionExpiredNotice) {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('session_expired') === 'true') {
+            sessionExpiredNotice.style.display = 'block';
+        }
+    }
 
     if (loginForm) {
         loginForm.addEventListener('submit', async function (event) {

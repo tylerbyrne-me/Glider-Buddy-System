@@ -66,6 +66,9 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
+            <div id="sessionExpiredNotice" class="alert alert-warning" style="display: none;" role="status">
+              Your session expired. Please log in again — unsaved station offload drafts on this device are kept and will restore after login.
+            </div>
             <div id="loginError" class="alert alert-danger" style="display: none;" role="alert"></div>
             <form id="loginForm">
               <div class="mb-3">
@@ -89,6 +92,9 @@
         <div class="card login-card shadow">
             <div class="card-body p-4">
                 <h3 class="card-title text-center mb-4">{{ app_name_short }} Login</h3>
+                <div id="sessionExpiredNotice" class="alert alert-warning" style="display: none;" role="status">
+                  Your session expired. Please log in again — unsaved station offload drafts on this device are kept and will restore after login.
+                </div>
                 <div id="loginError" class="alert alert-danger" style="display: none;" role="alert"></div>
                 <form id="loginForm">
                     <div class="mb-3">

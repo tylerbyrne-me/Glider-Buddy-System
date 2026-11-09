@@ -49,6 +49,91 @@ const redirectToLoginOn401 = () => {
     window.location.href = `${LOGIN_PATH}?session_expired=true&next=${encodeURIComponent(nextPath)}`;
 };
 
+const REFRESH_MIN_INTERVAL_MS = 10 * 60 * 1000;
+let lastTokenRefreshAtMs = 0;
+let tokenRefreshInflight = null;
+
+/**
+ * Decode JWT payload without verifying (client-side expiry hint only).
+ * @param {string} token
+ * @returns {Record<string, unknown>|null}
+ */
+const decodeJwtPayload = (token) => {
+    if (!token || typeof token !== 'string') return null;
+    const parts = token.split('.');
+    if (parts.length < 2) return null;
+    try {
+        const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padded = b64 + '='.repeat((4 - (b64.length % 4)) % 4);
+        return JSON.parse(atob(padded));
+    } catch {
+        return null;
+    }
+};
+
+/**
+ * Slide the access token expiry while the user is active (hard-capped server-side).
+ * No-ops if the token still has more than half its lifetime remaining.
+ * @param {{force?: boolean}} [opts]
+ * @returns {Promise<boolean>} true if a new token was stored
+ */
+export const maybeRefreshAccessToken = async (opts = {}) => {
+    const force = Boolean(opts.force);
+    const token = localStorage.getItem('accessToken');
+    if (!token) return false;
+    const nowMs = Date.now();
+    if (!force && nowMs - lastTokenRefreshAtMs < REFRESH_MIN_INTERVAL_MS) {
+        return false;
+    }
+    const payload = decodeJwtPayload(token);
+    const expSec = payload && typeof payload.exp === 'number' ? payload.exp : null;
+    const iatSec = payload && typeof payload.iat === 'number' ? payload.iat : null;
+    if (expSec != null) {
+        const remainingMs = expSec * 1000 - nowMs;
+        if (remainingMs <= 0) return false;
+        if (!force) {
+            const lifetimeMs =
+                iatSec != null && expSec > iatSec
+                    ? (expSec - iatSec) * 1000
+                    : 24 * 60 * 60 * 1000;
+            if (remainingMs > lifetimeMs / 2) return false;
+        }
+    }
+    if (tokenRefreshInflight) return tokenRefreshInflight;
+
+    tokenRefreshInflight = (async () => {
+        try {
+            const response = await fetch('/api/auth/refresh', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                credentials: 'include',
+            });
+            if (!response.ok) return false;
+            const data = await response.json();
+            if (data && data.access_token) {
+                localStorage.setItem('accessToken', data.access_token);
+                lastTokenRefreshAtMs = Date.now();
+                return true;
+            }
+            return false;
+        } catch (err) {
+            console.warn('Token refresh failed:', err);
+            return false;
+        } finally {
+            tokenRefreshInflight = null;
+        }
+    })();
+    return tokenRefreshInflight;
+};
+
+if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            maybeRefreshAccessToken().catch(() => {});
+        }
+    });
+}
+
 /**
  * Shows a Bootstrap toast notification.
  * @param {string} message - The message to display in the toast.
@@ -230,6 +315,13 @@ export const apiRequest = async (url, method, body = null) => {
     if (!response.ok) {
         const { message, requestId } = await parseApiErrorResponse(response);
         throw buildApiError(message, requestId);
+    }
+
+    // Opportunistic sliding refresh after successful authenticated calls.
+    if (token && method !== 'GET') {
+        maybeRefreshAccessToken().catch(() => {});
+    } else if (token) {
+        maybeRefreshAccessToken().catch(() => {});
     }
 
     return response.status === 204 ? null : await response.json();

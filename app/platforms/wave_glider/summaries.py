@@ -27,8 +27,8 @@ from app.core.data.data_service import (
 from app.core.infra.db import SQLModelSession
 from app.core.infra.logging_config import get_request_id
 from app.platforms.wave_glider.mission_metrics import (
-    bootstrap_mission_metrics_if_needed,
-    get_mission_metrics,
+    resolve_wave_glider_lifetime_metrics,
+    should_use_persisted_lifetime,
 )
 
 logger = logging.getLogger(__name__)
@@ -185,6 +185,8 @@ def _build_card_info(
     theoretical_max_wh: Optional[float],
     lifetime_total_distance_nm: Optional[float] = None,
     lifetime_observed_max_battery_wh: Optional[float] = None,
+    *,
+    allow_frame_lifetime_fallback: bool = True,
 ) -> Dict[str, Any]:
     spec = WG_SENSOR_SUMMARY_SPECS[card_name]
     report_type = spec["report_type"]
@@ -207,6 +209,7 @@ def _build_card_info(
                 file_mod_time,
                 theoretical_max_wh=theoretical_max_wh,
                 lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
+                allow_frame_lifetime_fallback=allow_frame_lifetime_fallback,
             )
             info["mini_trend"] = core_summaries.get_power_mini_trend(df)
         elif card_name == "navigation":
@@ -214,6 +217,7 @@ def _build_card_info(
                 df,
                 file_mod_time,
                 lifetime_total_distance_nm=lifetime_total_distance_nm,
+                allow_frame_lifetime_fallback=allow_frame_lifetime_fallback,
             )
             info["mini_trend"] = core_summaries.get_navigation_mini_trend(df)
         elif card_name == "ctd":
@@ -267,6 +271,7 @@ def build_wg_sensor_summaries_from_frames(
     lifetime_total_distance_nm: Optional[float] = None,
     lifetime_observed_max_battery_wh: Optional[float] = None,
     lifetime_distance_method: Optional[str] = None,
+    allow_frame_lifetime_fallback: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """
     Build template/API context for enabled Wave Glider sensor cards.
@@ -274,6 +279,10 @@ def build_wg_sensor_summaries_from_frames(
     Returns flat keys for SSR (``power_info``, ``ctd_info``, ...) plus a nested
     ``sensors`` map keyed by card name for the JSON API.
     """
+    if allow_frame_lifetime_fallback is None:
+        allow_frame_lifetime_fallback = not should_use_persisted_lifetime(
+            source_preference
+        )
     context: Dict[str, Any] = {
         "sensors": {},
         "lifetime_metrics": {
@@ -315,6 +324,7 @@ def build_wg_sensor_summaries_from_frames(
             theoretical_max_wh,
             lifetime_total_distance_nm=lifetime_total_distance_nm,
             lifetime_observed_max_battery_wh=lifetime_observed_max_battery_wh,
+            allow_frame_lifetime_fallback=allow_frame_lifetime_fallback,
         )
         context[info_key] = info
         context[values_key] = info.get("values") or {}
@@ -381,6 +391,7 @@ async def build_wave_glider_sensor_summaries(
     lifetime_total_distance_nm: Optional[float] = None
     lifetime_observed_max_battery_wh: Optional[float] = None
     lifetime_distance_method: Optional[str] = None
+    use_lifetime = should_use_persisted_lifetime(source_preference)
     if session is not None:
         mission_overview = session.get(models.MissionOverview, mission_id)
         if mission_overview is None:
@@ -391,19 +402,16 @@ async def build_wave_glider_sensor_summaries(
             else None
         )
         theoretical_max_wh = core_summaries.theoretical_max_wh(battery_apu)
-        metrics = get_mission_metrics(session, mission_id)
-        if metrics is None or (
-            metrics.total_distance_nm is None and metrics.observed_max_battery_wh is None
-        ):
-            metrics = await bootstrap_mission_metrics_if_needed(session, mission_id)
-        if metrics is not None:
-            lifetime_total_distance_nm = metrics.total_distance_nm
-            lifetime_observed_max_battery_wh = metrics.observed_max_battery_wh
-            lifetime_distance_method = metrics.distance_method
-
-    # Explicit remote/local inspection may omit persisted metrics so operators see
-    # frame-derived peaks; auto/synced dashboard path uses persisted lifetime totals.
-    use_lifetime = source_preference not in ("remote", "local")
+        if use_lifetime:
+            lifetime = await resolve_wave_glider_lifetime_metrics(
+                session,
+                mission_id,
+                fields=("distance", "power"),
+                allow_bootstrap=True,
+            )
+            lifetime_total_distance_nm = lifetime.total_distance_nm
+            lifetime_observed_max_battery_wh = lifetime.observed_max_battery_wh
+            lifetime_distance_method = lifetime.distance_method
 
     data_service = get_data_service()
     results = await asyncio.gather(
@@ -463,6 +471,7 @@ async def build_wave_glider_sensor_summaries(
             lifetime_observed_max_battery_wh if use_lifetime else None
         ),
         lifetime_distance_method=lifetime_distance_method if use_lifetime else None,
+        allow_frame_lifetime_fallback=not use_lifetime,
     )
     logger.info(
         "DASHBOARD_SUMMARIES mission=%s mode=%s hours=%s duration=%.2fs "

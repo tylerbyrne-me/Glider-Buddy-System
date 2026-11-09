@@ -1862,11 +1862,15 @@ document.addEventListener('DOMContentLoaded', async function() {
     // Cache polling will handle most refreshes, but this ensures we refresh even if polling fails
     if (isRealtimeMission) {
         setTimeout(function() {
-            if (autoRefreshEnabled && !document.querySelector('.modal.show')) { 
+            const wgVm4Form = document.getElementById('wgVm4OffloadForm');
+            const wgVm4Dirty = wgVm4Form && wgVm4Form.dataset.dirty === 'true';
+            if (autoRefreshEnabled && !document.querySelector('.modal.show') && !wgVm4Dirty) {
                 // Fallback: refresh after the configured interval even if polling didn't detect changes
                 // This handles edge cases where cache timestamps might not change but data did
                 console.log('Fallback auto-refresh triggered after interval');
-                window.location.reload(true); 
+                window.location.reload(true);
+            } else if (wgVm4Dirty) {
+                console.log('Fallback auto-refresh skipped: WG-VM4 offload form has unsaved input');
             }
         }, autoRefreshIntervalMinutes * 60 * 1000);
     }

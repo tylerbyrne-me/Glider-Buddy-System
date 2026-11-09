@@ -300,6 +300,8 @@ def get_power_status(
     last_update_timestamp: Optional[datetime] = None,
     theoretical_max_wh: Optional[float] = None,
     lifetime_observed_max_battery_wh: Optional[float] = None,
+    *,
+    allow_frame_lifetime_fallback: bool = True,
 ) -> Dict:
     """Returns a summary dict for power status. Returns safe defaults and logs errors if data is missing or malformed."""
     try:
@@ -323,6 +325,7 @@ def get_power_status(
                 pass
         if (
             realistic_max_wh is None
+            and allow_frame_lifetime_fallback
             and df_power_processed is not None
             and not df_power_processed.empty
             and "BatteryWattHours" in df_power_processed.columns
@@ -953,6 +956,8 @@ def get_navigation_status(
     df_telemetry: Optional[pd.DataFrame],
     last_update_timestamp: Optional[datetime] = None,
     lifetime_total_distance_nm: Optional[float] = None,
+    *,
+    allow_frame_lifetime_fallback: bool = True,
 ) -> Dict:
     """Returns a summary dict for navigation status. Returns safe defaults and logs errors if data is missing or malformed."""
     try:
@@ -983,13 +988,14 @@ def get_navigation_status(
 
         # Distance traveled: prefer persisted mission total when provided (bounded windows).
         # 24h distance always uses the recent frame. Mission total falls back to frame
-        # computation only when no lifetime override is supplied.
+        # computation only when allowed (admin remote/local inspection).
+        total_distance_mission_nm = None
         if lifetime_total_distance_nm is not None:
             try:
                 total_distance_mission_nm = float(lifetime_total_distance_nm)
             except (TypeError, ValueError):
-                total_distance_mission_nm = _telemetry_track_distance_nm(df_telemetry_processed)
-        else:
+                total_distance_mission_nm = None
+        if total_distance_mission_nm is None and allow_frame_lifetime_fallback:
             total_distance_mission_nm = _telemetry_track_distance_nm(df_telemetry_processed)
         distance_traveled_24h_nm = _telemetry_track_distance_nm(df_last_24h)
 

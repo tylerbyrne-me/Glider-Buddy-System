@@ -15,6 +15,9 @@ Seeded 2026-07-29 from recent unfinished-work review
 
 ## Medium priority
 
+- [ ] Station Offloads: make the per-log **Offload Mission ID** (glider) selector more prominent in the edit modal header / new-log section so dual-glider offloads are harder to mix up — `#formOffloadMissionId` already exists but is easy to miss; idea from 2026-11 ops feedback — idea inbox 2026-11-09
+- [ ] Station Offloads: line-progress map of stations (turn green as offloaded) for multi-glider lines like HFX — complement lat/lon table sort shipped 2026-11-09; idea from 2026-11 ops feedback — idea inbox 2026-11-09
+- [ ] Station Offloads perf: `GET /api/stations/status_overview` `selectinload`s every offload log for every station — trim to latest-log-per-station (or a summary query) so saves after Log New Offload feel snappy — idea inbox 2026-11-09
 - [ ] Ops monitoring follow-ups (after glider-dev Phase A 2026-09-24): fix `gbs_journal_log_counts.sh` (gauge or true counter, not rolling 5m as `counter`); install + enable journal alerts; optional Alertmanager (email/Teams); apply `gliderbuddy-accounting.conf` and complete 7–14d observation before systemd memory soft/hard drop-ins — [HOST_PROFILES.md](../../ops/monitoring/HOST_PROFILES.md) / [PRODUCTION_ROLLOUT.md](../../ops/monitoring/PRODUCTION_ROLLOUT.md)
 
 - [ ] Repair CLI: `mission_catalog_repair_duplicates --apply` must delete (or clear) `slocum_sfmc_snapshots` before removing an orphan `SlocumDeployment` — ORM nulls `deployment_id` and hits NOT NULL (`IntegrityError` on prod 2026-09-16). Workaround: raw SQL delete snapshot then deployment — `app/cli/mission_catalog_repair_duplicates.py` — idea inbox 2026-09-16

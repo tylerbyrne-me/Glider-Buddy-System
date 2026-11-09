@@ -165,9 +165,18 @@
         </div>
         
         <hr class="mb-4">
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div class="flex-grow-1 me-2">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+            <div class="flex-grow-1 me-2" style="min-width: 220px;">
                 <input type="text" id="searchInput" class="form-control" placeholder="Filter by Station ID, Glider, or Serial...">
+            </div>
+            <div class="btn-group me-2" role="group" aria-label="Station list sort">
+                <button type="button" class="btn btn-outline-secondary btn-sm station-sort-btn active" data-sort-key="station_id" title="Sort by Station ID">Station ID</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm station-sort-btn" data-sort-key="deployment_latitude" title="Sort by latitude (N→S for HFX)">Latitude</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm station-sort-btn" data-sort-key="deployment_longitude" title="Sort by longitude (W→E for CBS)">Longitude</button>
+            </div>
+            <div class="form-check me-2 mb-0" id="showArchivedStationsWrap" style="display: none;">
+                <input class="form-check-input" type="checkbox" id="showArchivedStations">
+                <label class="form-check-label small" for="showArchivedStations">Show archived</label>
             </div>
             <div class="d-flex"> <!-- Wrapper for buttons -->
                 <button class="btn btn-primary me-2" id="addStationBtn" title="Add new Station" style="display: none;">
@@ -312,6 +321,10 @@
                             </select>
                             <div class="form-text">Overrides automatic status until a newer offload log is recorded or the season is closed.</div>
                         </div>
+                        <div class="mb-3" id="skipReasonContainer" style="display: none;">
+                            <label for="formDisplayStatusOverrideNote" class="form-label">Skipped Reason</label>
+                            <textarea class="form-control" id="formDisplayStatusOverrideNote" name="display_status_override_note" rows="2" placeholder="Why this station was skipped (included in CSV export)"></textarea>
+                        </div>
                         <div class="mb-3 border border-warning rounded p-2">
                             <label for="formSeasonFlagNote" class="form-label mb-1">Season Flag Note</label>
                             <textarea class="form-control" id="formSeasonFlagNote" rows="2" placeholder="Why this station needs attention this season"></textarea>
@@ -326,6 +339,12 @@
                             </div>
                         </div>
                         <button type="button" class="btn btn-primary mb-3" id="saveStationInfoBtn">Save Station Info</button>
+                        <button type="button" class="btn btn-outline-secondary mb-3 ms-2" id="archiveStationBtn" style="display: none;" title="Admin: archive station out of the active list">
+                            <i class="fas fa-box-archive me-1"></i> Archive station
+                        </button>
+                        <button type="button" class="btn btn-outline-success mb-3 ms-2" id="unarchiveStationBtn" style="display: none;" title="Admin: restore archived station">
+                            <i class="fas fa-box-open me-1"></i> Restore station
+                        </button>
                         <button type="button" class="btn btn-outline-warning mb-3 ms-2" id="swapHardwareBtn" style="display: none;" title="Admin: record serial/modem swap">
                             <i class="fas fa-microchip me-1"></i> Swap hardware
                         </button>
@@ -350,11 +369,15 @@
 
                         <div id="logNewOffloadSection">
                             <h4>Log New Offload</h4>
+                            <div id="offloadDraftNotice" class="alert alert-info py-2 small" style="display: none;" role="status">
+                                <span id="offloadDraftNoticeText"></span>
+                                <button type="button" class="btn btn-link btn-sm p-0 ms-2" id="discardOffloadDraftBtn">Discard</button>
+                            </div>
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="formArrivalDate" class="form-label">Arrival Date/Time (UTC)</label>
                                     <div class="input-group">
-                                        <input type="datetime-local" class="form-control" id="formArrivalDate" name="arrival_date" lang="en-GB">
+                                        <input type="text" class="form-control station-utc-datetime" id="formArrivalDate" name="arrival_date" inputmode="numeric" placeholder="YYYY-MM-DD HH:mm" pattern="^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$" title="Use UTC 24hr format: YYYY-MM-DD HH:mm" autocomplete="off">
                                         <button type="button" class="btn btn-outline-secondary station-now-btn" data-target-input-id="formArrivalDate">Now</button>
                                     </div>
                                 </div>
@@ -367,14 +390,14 @@
                                  <div class="col-md-6 mb-3">
                                     <label for="formTimeFirstCommand" class="form-label">Time first command sent (UTC)</label>
                                     <div class="input-group">
-                                        <input type="datetime-local" class="form-control" id="formTimeFirstCommand" name="time_first_command_sent_utc" lang="en-GB">
+                                        <input type="text" class="form-control station-utc-datetime" id="formTimeFirstCommand" name="time_first_command_sent_utc" inputmode="numeric" placeholder="YYYY-MM-DD HH:mm" pattern="^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$" title="Use UTC 24hr format: YYYY-MM-DD HH:mm" autocomplete="off">
                                         <button type="button" class="btn btn-outline-secondary station-now-btn" data-target-input-id="formTimeFirstCommand">Now</button>
                                     </div>
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="formOffloadStartTime" class="form-label">Offload Start Time (UTC)</label>
                                     <div class="input-group">
-                                        <input type="datetime-local" class="form-control" id="formOffloadStartTime" name="offload_start_time_utc" lang="en-GB">
+                                        <input type="text" class="form-control station-utc-datetime" id="formOffloadStartTime" name="offload_start_time_utc" inputmode="numeric" placeholder="YYYY-MM-DD HH:mm" pattern="^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$" title="Use UTC 24hr format: YYYY-MM-DD HH:mm" autocomplete="off">
                                         <button type="button" class="btn btn-outline-secondary station-now-btn" data-target-input-id="formOffloadStartTime">Now</button>
                                     </div>
                                 </div>
@@ -383,14 +406,14 @@
                                 <div class="col-md-6 mb-3">
                                     <label for="formOffloadEndTime" class="form-label">Offload End Time (UTC)</label>
                                     <div class="input-group">
-                                        <input type="datetime-local" class="form-control" id="formOffloadEndTime" name="offload_end_time_utc" lang="en-GB">
+                                        <input type="text" class="form-control station-utc-datetime" id="formOffloadEndTime" name="offload_end_time_utc" inputmode="numeric" placeholder="YYYY-MM-DD HH:mm" pattern="^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$" title="Use UTC 24hr format: YYYY-MM-DD HH:mm" autocomplete="off">
                                         <button type="button" class="btn btn-outline-secondary station-now-btn" data-target-input-id="formOffloadEndTime">Now</button>
                                     </div>
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label for="formDepartureDate" class="form-label">Departure Date/Time (UTC)</label>
                                     <div class="input-group">
-                                        <input type="datetime-local" class="form-control" id="formDepartureDate" name="departure_date" lang="en-GB">
+                                        <input type="text" class="form-control station-utc-datetime" id="formDepartureDate" name="departure_date" inputmode="numeric" placeholder="YYYY-MM-DD HH:mm" pattern="^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$" title="Use UTC 24hr format: YYYY-MM-DD HH:mm" autocomplete="off">
                                         <button type="button" class="btn btn-outline-secondary station-now-btn" data-target-input-id="formDepartureDate">Now</button>
                                     </div>
                                 </div>
