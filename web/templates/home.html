@@ -484,6 +484,28 @@
                         <small id="ciopsIceStatusLine" class="text-muted d-block"></small>
                     </div>
                     {% endif %}
+                    {% if feature_enabled('station_offloads') %}
+                    <!-- Station offload progress (VM4 registry status) -->
+                    <div id="stationOffloadOverlaySection" class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label small mb-0">Station Offloads</label>
+                            <a href="/wave-glider/station_progress_map.html" target="_blank" rel="noopener" class="text-decoration-none small">
+                                <i class="fas fa-external-link-alt"></i> Full map
+                            </a>
+                        </div>
+                        <div class="btn-group btn-group-sm mb-2" role="group" aria-label="Station offload overlay toggle">
+                            <input type="checkbox" class="btn-check" id="stationOffloadLayerToggle" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="stationOffloadLayerToggle">
+                                <i class="fas fa-map-marker-alt"></i> Offload status
+                            </label>
+                        </div>
+                        <small class="text-muted d-block mb-1">
+                            Green offloaded · yellow skipped/flagged · red failed · white awaiting.
+                            Stations without lat/lon are omitted.
+                        </small>
+                        <small id="stationOffloadStatusLine" class="text-muted d-block"></small>
+                    </div>
+                    {% endif %}
                     {% if feature_enabled('navwarn_map_layer') %}
                     <!-- CCG NAVWARN overlays (active warnings + area reference polygons) -->
                     <div id="navwarnOverlaySection" class="mb-3">

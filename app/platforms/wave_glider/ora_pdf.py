@@ -2,6 +2,7 @@
 
 Uses the shared report palette, paragraph styles, and data tables from
 ``app.core.reporting.styling``. The file is what gets emailed to Liquid Robotics.
+An optional operations-area map PNG (``ora_map``) sits just before the coordinates table.
 """
 
 from __future__ import annotations
@@ -11,8 +12,17 @@ import re
 from dataclasses import dataclass, field
 from typing import Iterable, Optional, Sequence
 
+from PIL import Image as PILImage
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import (
+    Image,
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
 from app.core.reporting.styling import (
     A4_PORTRAIT,
@@ -130,6 +140,34 @@ def _format_coord(value: Optional[float]) -> str:
     return f"{value:.6f}".rstrip("0").rstrip(".")
 
 
+def table_coordinates(fields: OraDocumentFields) -> list[OraCoordinate]:
+    """Coordinate rows printed in the PDF; the map numbers points in this order."""
+    return [
+        point
+        for point in fields.coordinates
+        if point.lat is not None or point.lon is not None or (point.comment or "").strip()
+    ]
+
+
+# Leaves room for the request header so the map stays on page 1.
+AREA_MAP_MAX_HEIGHT_PT = 150 * mm
+
+
+def _area_map_flowables(png: bytes, styles: dict) -> list:
+    heading = Paragraph("Operations area map", styles["Heading2"])
+    caption = Paragraph(
+        "Numbers match the # column of the Coordinates table below. "
+        "Stars are hold stations; shaded areas are boxes.",
+        styles["Caption"],
+    )
+    with PILImage.open(io.BytesIO(png)) as pil:
+        px_w, px_h = pil.size
+    aspect = px_h / max(px_w, 1)
+    width = min(PORTRAIT_CONTENT_WIDTH_PT, AREA_MAP_MAX_HEIGHT_PT / aspect)
+    image = Image(io.BytesIO(png), width=width, height=width * aspect)
+    return [KeepTogether([heading, caption, Spacer(1, 2 * mm), image])]
+
+
 def pdf_filename(title: Optional[str], hull_name: Optional[str]) -> str:
     raw = (title or hull_name or "ORA request").strip()
     safe = re.sub(r"[^A-Za-z0-9._ -]+", "", raw).strip()[:80] or "ORA request"
@@ -195,7 +233,9 @@ def _draw_page(canvas, doc) -> None:
     canvas.restoreState()
 
 
-def render_ora_pdf(fields: OraDocumentFields) -> bytes:
+def render_ora_pdf(
+    fields: OraDocumentFields, *, area_map_png: Optional[bytes] = None
+) -> bytes:
     styles = build_paragraph_styles()
     buffer = io.BytesIO()
     document = SimpleDocTemplate(
@@ -246,6 +286,10 @@ def render_ora_pdf(fields: OraDocumentFields) -> bytes:
         )
     )
 
+    if area_map_png:
+        story.append(Spacer(1, 4 * mm))
+        story.extend(_area_map_flowables(area_map_png, styles))
+
     story.append(Spacer(1, 4 * mm))
     story.append(Paragraph("Coordinates", styles["Heading2"]))
     story.append(
@@ -254,28 +298,27 @@ def render_ora_pdf(fields: OraDocumentFields) -> bytes:
             styles["Caption"],
         )
     )
-    coord_rows = []
-    for index, point in enumerate(fields.coordinates, start=1):
-        if point.lat is None and point.lon is None and not (point.comment or "").strip():
-            continue
-        coord_rows.append(
-            [
-                (point.label or "").strip() or f"Coordinate {index}",
-                _format_coord(point.lat),
-                _format_coord(point.lon),
-                point.comment or "",
-            ]
-        )
+    coord_rows = [
+        [
+            str(number),
+            (point.label or "").strip() or f"Coordinate {number}",
+            _format_coord(point.lat),
+            _format_coord(point.lon),
+            point.comment or "",
+        ]
+        for number, point in enumerate(table_coordinates(fields), start=1)
+    ]
     if coord_rows:
         story.append(
             styled_data_table(
-                ["Location", "Latitude", "Longitude", "Comments"],
+                ["#", "Location", "Latitude", "Longitude", "Comments"],
                 coord_rows,
                 styles=styles,
                 col_widths=[
-                    PORTRAIT_CONTENT_WIDTH_PT * 0.24,
-                    PORTRAIT_CONTENT_WIDTH_PT * 0.18,
-                    PORTRAIT_CONTENT_WIDTH_PT * 0.18,
+                    PORTRAIT_CONTENT_WIDTH_PT * 0.06,
+                    PORTRAIT_CONTENT_WIDTH_PT * 0.22,
+                    PORTRAIT_CONTENT_WIDTH_PT * 0.16,
+                    PORTRAIT_CONTENT_WIDTH_PT * 0.16,
                     PORTRAIT_CONTENT_WIDTH_PT * 0.40,
                 ],
             )

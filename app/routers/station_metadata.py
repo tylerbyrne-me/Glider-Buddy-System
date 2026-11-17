@@ -25,6 +25,7 @@ from ..services.station_overview import (
     resolve_station_status_text_and_color,
     sync_display_status_override_timestamp,
 )
+from ..services.station_offload_map import list_station_status_overview
 from ..services.station_season_service import StationSeasonService
 from ..services.station_history_service import (
     aggregate_offload_stats,
@@ -1381,88 +1382,14 @@ async def get_station_offload_status_overview(
         f"{' including retired' if include_retired else ''}."
     )
 
-    statement = (
-        select(models.StationMetadata)
-        .options(selectinload(models.StationMetadata.offload_logs))
-        .where(
-            models.StationMetadata.is_archived == False,
-        )
-        .order_by(models.StationMetadata.station_id)
+    overview_list = list_station_status_overview(
+        session,
+        season_year=season_year,
+        include_retired=include_retired,
     )
-    if not include_retired:
-        statement = statement.where(models.StationMetadata.is_retired == False)
-    stations_metadata = list(session.exec(statement).all())
-
-    station_ids = [s.station_id for s in stations_metadata]
-    latest_swap_by_station = latest_hardware_swap_ts_by_station(
-        _load_hardware_history_for_stations(session, station_ids)
-    )
-
-    if season_year is None:
-        active = StationSeasonService.get_active_season(session)
-        target_year: Optional[int] = active.year if active else None
-        season_is_closed = False
-    else:
-        target_year = season_year
-        season_row = StationSeasonService.get_season_by_year(session, season_year)
-        season_is_closed = bool(season_row and season_row.closed_at_utc) or (
-            season_row is None
-        )
-
-    all_flag_events = list(session.exec(select(models.StationFlagEvent)).all())
-    flag_state_by_station = _resolve_station_flag_state(
-        all_flag_events,
-        target_year=target_year,
-        season_is_closed=season_is_closed,
-    )
-
-    overview_list: List[Dict[str, Any]] = []
-    for station in stations_metadata:
-        if season_year is None:
-            if target_year is None:
-                relevant_logs = [
-                    log
-                    for log in station.offload_logs
-                    if log.field_season_year is None
-                ]
-            else:
-                relevant_logs = [
-                    log
-                    for log in station.offload_logs
-                    if offload_log_matches_season_year(
-                        log_season=log.field_season_year,
-                        target_year=target_year,
-                        season_is_closed=False,
-                    )
-                ]
-        else:
-            relevant_logs = [
-                log
-                for log in station.offload_logs
-                if target_year is not None
-                and offload_log_matches_season_year(
-                    log_season=log.field_season_year,
-                    target_year=target_year,
-                    season_is_closed=season_is_closed,
-                )
-            ]
-        flag_state = flag_state_by_station.get(station.station_id, {})
-        swap_ts = latest_swap_by_station.get(station.station_id)
-        overview_list.append(
-            build_status_overview_row(
-                station,
-                relevant_logs,
-                is_flagged_for_scope=bool(flag_state.get("is_flagged")),
-                flag_note=flag_state.get("flag_note"),
-                awaiting_first_offload_after_swap=is_awaiting_first_offload_after_swap(
-                    station.offload_logs,
-                    swap_ts,
-                ),
-            )
-        )
 
     logger.info(
-        f"Built status overview for {len(stations_metadata)} registry stations "
+        f"Built status overview for {len(overview_list)} registry stations "
         f"(season context={season_year!r})."
     )
     return overview_list

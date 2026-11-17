@@ -101,12 +101,16 @@ class UserSettings {
     populateUserData(userData) {
         const fullNameInput = document.getElementById('fullName');
         const emailInput = document.getElementById('email');
+        const telephoneInput = document.getElementById('telephone');
 
         if (fullNameInput) {
             fullNameInput.value = userData.full_name || '';
         }
         if (emailInput) {
             emailInput.value = userData.email || '';
+        }
+        if (telephoneInput) {
+            telephoneInput.value = userData.telephone || '';
         }
 
         if (userData.ui_preferences) {
@@ -180,6 +184,7 @@ class UserSettings {
             const formData = {
                 full_name: document.getElementById('fullName').value.trim() || null,
                 email: document.getElementById('email').value.trim() || null,
+                telephone: document.getElementById('telephone').value.trim() || null,
             };
 
             const tokenInput = document.getElementById('sensorTrackerToken');

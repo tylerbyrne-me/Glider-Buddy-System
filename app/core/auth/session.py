@@ -319,6 +319,30 @@ def require_platform_access(platform: Literal["wave_glider", "slocum"]):
     return _check
 
 
+def user_has_team_access(user: User) -> bool:
+    """Return True if the user may access the Team hub (admins always allowed)."""
+    if user.role == UserRoleEnum.admin:
+        return True
+    if not is_feature_enabled("team_hub"):
+        return False
+    return bool(getattr(user, "can_access_team", False))
+
+
+async def require_team_access(
+    current_user: User = Depends(get_current_active_user),
+) -> User:
+    """FastAPI dependency enforcing per-user Team hub access."""
+    if not user_has_team_access(current_user):
+        logger.warning(
+            f"User '{current_user.username}' denied access to Team hub."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access to Team hub is not permitted.",
+        )
+    return current_user
+
+
 # New dependency to optionally get the current user without raising 401
 async def get_optional_current_user(
     request: Request,

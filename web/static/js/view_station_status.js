@@ -205,6 +205,27 @@ document.addEventListener('DOMContentLoaded', async function () {
 
     const stationInfoResult = document.getElementById('stationInfoResult'); // For displaying save/add result
     const formOffloadMissionId = document.getElementById('formOffloadMissionId');
+    const modalOffloadMissionBadge = document.getElementById('modalOffloadMissionBadge');
+
+    function syncModalOffloadMissionBadge(visible = true) {
+        if (!modalOffloadMissionBadge) return;
+        if (!visible) {
+            modalOffloadMissionBadge.style.display = 'none';
+            return;
+        }
+        const selected = (formOffloadMissionId?.value || '').trim();
+        if (selected) {
+            modalOffloadMissionBadge.textContent = `Glider: ${selected}`;
+            modalOffloadMissionBadge.classList.remove('is-empty', 'text-bg-secondary');
+            modalOffloadMissionBadge.classList.add('text-bg-primary');
+        } else {
+            modalOffloadMissionBadge.textContent = 'Glider: not set';
+            modalOffloadMissionBadge.classList.add('is-empty');
+            modalOffloadMissionBadge.classList.remove('text-bg-primary');
+            modalOffloadMissionBadge.classList.add('text-bg-secondary');
+        }
+        modalOffloadMissionBadge.style.display = 'inline-block';
+    }
 
     function populateOffloadMissionDropdown(selectedMissionId = '') {
         if (!formOffloadMissionId) return;
@@ -217,6 +238,13 @@ document.addEventListener('DOMContentLoaded', async function () {
             formOffloadMissionId.appendChild(option);
         });
         formOffloadMissionId.value = activeMissions.includes(normalizedSelected) ? normalizedSelected : '';
+        syncModalOffloadMissionBadge(Boolean(currentEditingStationId));
+    }
+
+    if (formOffloadMissionId) {
+        formOffloadMissionId.addEventListener('change', () => {
+            syncModalOffloadMissionBadge(Boolean(currentEditingStationId));
+        });
     }
 
     async function loadActiveMissionsForOffloadDropdown() {
@@ -1880,6 +1908,7 @@ document.addEventListener('DOMContentLoaded', async function () {
 
             // Hide the "Log New Offload" section, as it's not applicable for a new station
             if (logNewOffloadSection) logNewOffloadSection.style.display = 'none';
+            syncModalOffloadMissionBadge(false);
             const accNew = document.getElementById('recentOffloadsAccordion');
             if (accNew) accNew.style.display = 'none';
             const swapBtnNew = document.getElementById('swapHardwareBtn');

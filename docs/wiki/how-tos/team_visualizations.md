@@ -1,13 +1,13 @@
 # Team Visualizations gallery
 
-Admin-only gallery of **named, static** fleet charts built from Sensor Tracker.
+Gallery of **named, static** fleet charts built from Sensor Tracker.
 Images sit on disk under `data_store/team_viz_outputs/` until you rebuild (UI or CLI).
 Inspired by [RU-COOL Glider Viz](https://marine.rutgers.edu/cool/data/gliders/viz/) hosting style; v1 is not public and not interactive d3.
 
 ## Access
 
 - Feature toggle: `team_hub`
-- Role: admin
+- ACL: `can_access_team` (admins always allowed; grant via User Management)
 - URL: `/team/visualizations` (also listed on `/team` as **Visualizations gallery**)
 
 ## Charts (v1)

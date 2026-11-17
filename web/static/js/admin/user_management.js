@@ -27,8 +27,30 @@ document.addEventListener('DOMContentLoaded', async function () {
     const editIsPicCheckbox = document.getElementById('editIsPic');
     const editCanAccessWaveGliderCheckbox = document.getElementById('editCanAccessWaveGlider');
     const editCanAccessSlocumCheckbox = document.getElementById('editCanAccessSlocum');
+    const editCanAccessTeamCheckbox = document.getElementById('editCanAccessTeam');
+    const editCanAccessTeamAdminNote = document.getElementById('editCanAccessTeamAdminNote');
     const saveUserChangesBtn = document.getElementById('saveUserChangesBtn');
     const editUserErrorDiv = document.getElementById('editUserError');
+    /** Stored Team flag for the user being edited (admins always have effective access). */
+    let editUserStoredCanAccessTeam = false;
+
+    function user_has_effective_team_access(user) {
+        return user.role === 'admin' || user.can_access_team === true;
+    }
+
+    function sync_team_access_controls_for_role(role) {
+        if (!editCanAccessTeamCheckbox) return;
+        const is_admin_role = role === 'admin';
+        if (is_admin_role) {
+            editCanAccessTeamCheckbox.checked = true;
+            editCanAccessTeamCheckbox.disabled = true;
+            if (editCanAccessTeamAdminNote) editCanAccessTeamAdminNote.classList.remove('d-none');
+        } else {
+            editCanAccessTeamCheckbox.disabled = false;
+            editCanAccessTeamCheckbox.checked = editUserStoredCanAccessTeam;
+            if (editCanAccessTeamAdminNote) editCanAccessTeamAdminNote.classList.add('d-none');
+        }
+    }
 
     const changePasswordModal = new bootstrap.Modal(document.getElementById('changePasswordModal'));
     const changePasswordForm = document.getElementById('changePasswordForm');
@@ -81,6 +103,13 @@ document.addEventListener('DOMContentLoaded', async function () {
                     row.insertCell().innerHTML = user.is_pic ? '<span class="badge bg-info sm-badge">PIC</span>' : '<span class="text-muted">—</span>';
                     row.insertCell().innerHTML = user.can_access_wave_glider !== false ? '<span class="badge bg-primary sm-badge">WG</span>' : '<span class="text-muted">—</span>';
                     row.insertCell().innerHTML = user.can_access_slocum !== false ? '<span class="badge bg-secondary sm-badge">SG</span>' : '<span class="text-muted">—</span>';
+                    const hasTeamAccess = user_has_effective_team_access(user);
+                    const teamTitle = user.role === 'admin'
+                        ? 'Admins always have Team hub access'
+                        : (hasTeamAccess ? 'Team hub access granted' : 'No Team hub access');
+                    row.insertCell().innerHTML = hasTeamAccess
+                        ? `<span class="badge bg-success sm-badge" title="${teamTitle}">Team</span>`
+                        : `<span class="text-muted" title="${teamTitle}">—</span>`;
                     
                     // Color cell with visual indicator
                     const colorCell = row.insertCell();
@@ -117,7 +146,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 userManagementTableContainer.style.display = 'block';
             }
         } catch (error) {
-            usersTableBody.innerHTML = `<tr><td colspan="11" class="text-center text-danger">Error loading users: ${error.message}</td></tr>`;
+            usersTableBody.innerHTML = `<tr><td colspan="12" class="text-center text-danger">Error loading users: ${error.message}</td></tr>`;
             userManagementTableContainer.style.display = 'block';
             noUsersMessage.style.display = 'none';
         } finally {
@@ -138,6 +167,12 @@ document.addEventListener('DOMContentLoaded', async function () {
         if (editIsPicCheckbox) editIsPicCheckbox.checked = !!user.is_pic;
         if (editCanAccessWaveGliderCheckbox) editCanAccessWaveGliderCheckbox.checked = user.can_access_wave_glider !== false;
         if (editCanAccessSlocumCheckbox) editCanAccessSlocumCheckbox.checked = user.can_access_slocum !== false;
+        editUserStoredCanAccessTeam = user.can_access_team === true;
+        sync_team_access_controls_for_role(user.role);
+
+        editRoleSelect.onchange = () => {
+            sync_team_access_controls_for_role(editRoleSelect.value);
+        };
 
         // Disable role change and disable checkbox for the current admin if they are editing themselves
         // to prevent self-lockout from the last admin account.
@@ -177,6 +212,10 @@ document.addEventListener('DOMContentLoaded', async function () {
             is_pic: editIsPicCheckbox ? editIsPicCheckbox.checked : false,
             can_access_wave_glider: editCanAccessWaveGliderCheckbox ? editCanAccessWaveGliderCheckbox.checked : true,
             can_access_slocum: editCanAccessSlocumCheckbox ? editCanAccessSlocumCheckbox.checked : true,
+            // Admins always have Team access; persist true so the stored flag matches effective access.
+            can_access_team: editRoleSelect.value === 'admin'
+                ? true
+                : (editCanAccessTeamCheckbox ? editCanAccessTeamCheckbox.checked : false),
         };
 
         try {

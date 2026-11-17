@@ -1,4 +1,4 @@
-/* Public login page (map + modal) — token-driven */
+/* Public login page (map + Active Deployments sidebar + modal) — token-driven */
 
 body.page-public-login {
   /* Measured at runtime from the fixed navbar; fallback clears a typical simple banner. */
@@ -36,24 +36,164 @@ body.page-public-login .main-content-wrapper.public-login-content {
   flex: 1 1 auto;
   position: relative;
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  flex-direction: row;
+  align-items: stretch;
+  justify-content: flex-start;
   width: 100%;
   min-height: 0;
   height: 100%;
-  padding: 1rem 1.25rem;
+  padding: 0.65rem 0.75rem;
+  gap: 0.75rem;
   box-sizing: border-box;
+}
+
+.public-deployments-panel {
+  flex: 0 0 18rem;
+  width: 18rem;
+  max-width: 100%;
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: var(--bs-card-bg);
+  color: var(--bs-card-color, var(--app-text));
+  border: 1px solid var(--card-border, var(--app-card-border));
+  border-radius: var(--app-radius-md, 0.5rem);
+  box-shadow: 0 0.35rem 1rem var(--app-shadow-soft, rgba(0, 0, 0, 0.08));
+}
+
+.public-deployments-title {
+  flex: 0 0 auto;
+  margin: 0;
+  padding: 0.85rem 1rem 0.7rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  border-bottom: 1px solid var(--card-border, var(--app-card-border));
+}
+
+.public-deployments-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.public-deployments-empty {
+  padding: 0.9rem 1rem;
+  font-size: 0.9rem;
+}
+
+.public-deployment-item {
+  border-bottom: 1px solid var(--card-border, var(--app-card-border));
+}
+
+.public-deployment-item:last-child {
+  border-bottom: none;
+}
+
+.public-deployment-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.public-deployment-toggle:hover,
+.public-deployment-toggle:focus-visible {
+  background-color: color-mix(in srgb, var(--bs-body-color, #212529) 6%, transparent);
+  outline: none;
+}
+
+.public-deployment-toggle:not(.collapsed) {
+  background-color: color-mix(in srgb, var(--bs-body-color, #212529) 6%, transparent);
+}
+
+.public-deployment-swatch {
+  flex: 0 0 auto;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  border: 1px solid var(--card-border, var(--app-card-border));
+}
+
+.public-deployment-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--bs-link-color, var(--bs-primary, #0d6efd));
+}
+
+.public-deployment-chevron {
+  flex: 0 0 auto;
+  font-size: 0.7rem;
+  opacity: 0.65;
+  transition: transform 0.15s ease;
+}
+
+.public-deployment-toggle:not(.collapsed) .public-deployment-chevron {
+  transform: rotate(180deg);
+}
+
+.public-deployment-body {
+  padding: 0 0.9rem 0.85rem;
+}
+
+.public-deployment-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.65rem;
+}
+
+.public-deployment-focus {
+  font-weight: 600;
+}
+
+.public-deployment-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.public-deployment-field {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 0.35rem 0.5rem;
+  align-items: start;
+}
+
+.public-deployment-label {
+  color: var(--app-text-muted, var(--bs-secondary-color, #6c757d));
+  font-weight: 600;
 }
 
 .public-map-wrap {
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(75vw, 100%);
-  height: 75%;
-  max-height: 100%;
-  min-height: 280px;
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  align-self: stretch;
+  height: auto;
+  max-height: none;
+  min-height: 0;
   gap: 0.65rem;
 }
 
@@ -104,13 +244,43 @@ body.page-public-login .main-content-wrapper.public-login-content {
 }
 
 @media (max-width: 576px) {
+  body.page-public-login:has(.public-login-shell) {
+    overflow: auto;
+  }
+
+  body.page-public-login .main-content-wrapper.public-login-content {
+    height: auto;
+    max-height: none;
+    min-height: calc(100dvh - var(--public-login-banner-height));
+  }
+
   .public-login-shell {
+    flex-direction: column;
+    height: auto;
+    min-height: calc(100dvh - var(--public-login-banner-height) - 1.5rem);
     padding: 0.75rem;
   }
+
   .public-map-wrap {
+    flex: 0 0 auto;
     width: 100%;
-    height: 78%;
+    height: min(55vh, 28rem);
     min-height: 240px;
+  }
+
+  .public-deployments-panel {
+    flex: 0 0 auto;
+    width: 100%;
+    max-height: none;
+    order: 2;
+  }
+
+  .public-map-wrap {
+    order: 1;
+  }
+
+  .public-deployments-list {
+    overflow: visible;
   }
 }
 

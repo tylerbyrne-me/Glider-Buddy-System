@@ -56,6 +56,7 @@
                         <th>PIC</th>
                         <th>WG</th>
                         <th>SG</th>
+                        <th>Team</th>
                         <th>Color</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -119,12 +120,21 @@
                                 Wave Glider platform access
                             </label>
                         </div>
-                        <div class="form-check mb-3">
+                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" id="editCanAccessSlocum" checked>
                             <label class="form-check-label" for="editCanAccessSlocum">
                                 Slocum Glider platform access
                             </label>
                         </div>
+                        <div class="form-check mb-1">
+                            <input class="form-check-input" type="checkbox" id="editCanAccessTeam">
+                            <label class="form-check-label" for="editCanAccessTeam">
+                                Team hub access
+                            </label>
+                        </div>
+                        <small id="editCanAccessTeamAdminNote" class="form-text text-muted d-none mb-3">
+                            Admins always have Team hub access.
+                        </small>
                         <div id="editUserError" class="alert alert-danger" style="display: none;"></div>
                     </form>
                 </div>

@@ -38,8 +38,10 @@ Without a Sensor Tracker row for a WG mission, Mission Title may still be the fo
 
 ## Login UI
 
-- Map is centered in the viewport **below** the fixed banner (~75% of that area).
+- Full-width layout below the fixed banner: **Active Deployments** sidebar on the left, map filling the remaining space.
 - Banner height is measured at runtime into `--public-login-banner-height` so the map is not clipped by the navbar.
+- Sidebar lists each plotted public mission (collapsible). Expanded details reuse popup fields: platform type, Mission Title, current location, and optional weekly report link. **Focus** fits the map to that mission’s track and opens its position popup. Marker/track clicks expand the matching sidebar item.
+- On narrow viewports (≤576px) the deployments list stacks **below** the map.
 - **Refresh map** and **Download KML** sit in a toolbar **under** the map (not overlaid on tiles / not under the banner).
 - Login is a navbar button → Bootstrap modal (`#loginForm` still used by `auth.js`).
 

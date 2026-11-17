@@ -13,6 +13,7 @@ from ..core.auth import (
     redirect_if_platform_denied,
     get_allowed_platforms_for_user,
     user_has_platform_access,
+    user_has_team_access,
 )
 from ..core.infra.db import get_db_session, SQLModelSession
 from ..core.infra.logging_config import get_request_id
@@ -20,7 +21,6 @@ from ..core.templates import templates
 from app.config import settings
 from ..core.template_context import get_template_context
 from ..core.infra.feature_toggles import is_feature_enabled
-from ..core.models.enums import UserRoleEnum
 from ..core.platforms import (
     PLATFORM_SLOCUM,
     PLATFORM_WAVE_GLIDER,
@@ -129,7 +129,7 @@ async def get_platform_choice(
         return RedirectResponse(url="/login.html")
     allowed_platforms = get_allowed_platforms_for_user(current_user)
     show_team_hub = bool(
-        is_feature_enabled("team_hub") and current_user.role == UserRoleEnum.admin
+        is_feature_enabled("team_hub") and user_has_team_access(current_user)
     )
     # Skip the chooser only when there is a single destination (one platform, no Team).
     if len(allowed_platforms) == 1 and not show_team_hub:

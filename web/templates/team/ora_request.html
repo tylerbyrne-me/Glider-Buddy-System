@@ -210,58 +210,7 @@
                     </div>
                     <button type="button" class="btn btn-sm btn-outline-secondary" id="oraAddPointBtn">Add coordinate row</button>
 
-                    {% if feature_enabled('map_vector_layers') %}
-                    <div id="vectorOverlaySection" class="mt-3">
-                        <label class="form-label small mb-1">Reference zones</label>
-                        <div id="vectorLayerToggleGroup" class="btn-group btn-group-sm mb-2 flex-wrap" role="group" aria-label="Reference zone toggles">
-                            <small class="text-muted">Loading layers…</small>
-                        </div>
-                    </div>
-                    {% endif %}
-                    {% if feature_enabled('vessel_density_map_layer') %}
-                    <div id="vesselDensitySection" class="mt-2">
-                        <label class="form-label small mb-1">AIS vessel density</label>
-                        <a id="vesselDensityOpenDataLink" class="d-none" href="https://open.canada.ca/data/en/dataset/eac8e835-e7c8-450d-96b0-ff42d416c815">Open Data</a>
-                        <div class="btn-group btn-group-sm mb-2" role="group">
-                            <input type="checkbox" class="btn-check" id="vesselDensityToggle" autocomplete="off">
-                            <label class="btn btn-outline-primary" for="vesselDensityToggle">Density 2025</label>
-                        </div>
-                        <div id="vesselDensityMonthGroup" class="btn-group btn-group-sm mb-2 flex-wrap d-none" role="group">
-                            {% for m, label in [(1,'Jan'),(2,'Feb'),(3,'Mar'),(4,'Apr'),(5,'May'),(6,'Jun'),(7,'Jul'),(8,'Aug'),(9,'Sep'),(10,'Oct'),(11,'Nov'),(12,'Dec')] %}
-                            <input type="radio" class="btn-check" name="vesselDensityMonth" id="vesselDensityMonth{{ m }}" value="{{ m }}" autocomplete="off" disabled>
-                            <label class="btn btn-outline-secondary" for="vesselDensityMonth{{ m }}">{{ label }}</label>
-                            {% endfor %}
-                        </div>
-                        <small id="vesselDensityStatusLine" class="text-muted d-block"></small>
-                    </div>
-                    {% endif %}
-                    {% if feature_enabled('ciops_ice_map_layer') %}
-                    <div id="ciopsIceSection" class="mt-2">
-                        <label class="form-label small mb-1">Ice forecast</label>
-                        <a id="ciopsIceOpenDataLink" class="d-none" href="https://open.canada.ca/data/en/dataset/bfe44cce-a9c4-467f-9172-c8800b32e4ec">MSC</a>
-                        <div class="btn-group btn-group-sm mb-2" role="group">
-                            <input type="checkbox" class="btn-check" id="ciopsIceToggle" autocomplete="off">
-                            <label class="btn btn-outline-primary" for="ciopsIceToggle">Ice forecast</label>
-                        </div>
-                        <div id="ciopsIceControls" class="d-none mb-2">
-                            <input type="range" class="form-range form-range-sm" id="ciopsIceTimeSlider" min="0" max="0" step="1" value="0" disabled>
-                            <img id="ciopsIceLegendImg" class="d-none mt-2" alt="Sea ice concentration legend" style="max-height: 140px;">
-                        </div>
-                        <small id="ciopsIceStatusLine" class="text-muted d-block"></small>
-                    </div>
-                    {% endif %}
-                    {% if feature_enabled('navwarn_map_layer') %}
-                    <div id="navwarnOverlaySection" class="mt-2">
-                        <label class="form-label small mb-1">NAVWARN</label>
-                        <div class="btn-group btn-group-sm mb-2" role="group">
-                            <input type="checkbox" class="btn-check" id="navwarnActiveToggle" autocomplete="off">
-                            <label class="btn btn-outline-primary" for="navwarnActiveToggle">Active NAVWARNs</label>
-                            <input type="checkbox" class="btn-check" id="navwarnAreasToggle" autocomplete="off">
-                            <label class="btn btn-outline-primary" for="navwarnAreasToggle">NAVWARN areas</label>
-                        </div>
-                        <small id="navwarnStatusLine" class="text-muted d-block"></small>
-                    </div>
-                    {% endif %}
+                    {% include "team/_map_reference_overlays.html" %}
                 </div>
             </div>
         </div>

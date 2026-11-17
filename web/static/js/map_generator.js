@@ -39,6 +39,10 @@ import {
     bindCiopsIceOverlayContext,
     initCiopsIceOverlay,
 } from '/static/js/ciops_ice_map_layer.js';
+import {
+    bindStationOffloadOverlayContext,
+    initStationOffloadOverlay,
+} from '/static/js/station_offload_map_layer.js';
 
 /** All track polyline layers (Wave Glider + Slocum) for bbox / z-order helpers. */
 function getAllTrackLayers() {
@@ -284,6 +288,8 @@ function initializeMissionMap() {
     initVesselDensityOverlay();
     bindCiopsIceOverlayContext(missionMap);
     initCiopsIceOverlay();
+    bindStationOffloadOverlayContext(missionMap);
+    initStationOffloadOverlay();
 }
 
 /**

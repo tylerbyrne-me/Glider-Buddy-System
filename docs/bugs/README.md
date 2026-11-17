@@ -40,3 +40,4 @@ When fixed: set `status: fixed`, complete Resolution, and move the related line 
 | [BUG-009](./BUG-009-sfmc-lognote-display-label.md) | fixed | SFMC log-note import failed on catalog display labels (`m226-Peggy`) |
 | [BUG-010](./BUG-010-pic-observed-max-48h-window.md) | fixed | PIC observed max / % battery used 48h peak instead of mission lifetime |
 | [BUG-011](./BUG-011-station-offload-draft-loss-and-triplicates.md) | fixed | Station offload draft loss, triplicate logs, search reset after save |
+| [BUG-012](./BUG-012-ora-tracker-fleetwide-instruments.md) | fixed | ORA Tracker loadout pulled fleet-wide / Slocum instruments |

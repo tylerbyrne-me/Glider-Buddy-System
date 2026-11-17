@@ -34,7 +34,7 @@ state; env lists remain break-glass for one compatibility release.
 | Start reached, no end | ACTIVE | CONTINUOUS (ST `enrollment_authority`) |
 | End time set | COMPLETED | ON_DEMAND (+ durable `final_sync` work item) |
 
-Overrides: `enrollment_override` = `automatic` | `forced_on` | `forced_off` (completion still wins over `forced_on`). WGMS/ERDDAP cannot enroll. Team enrollment/provision actions are attributed to the authenticated admin in `catalog_mission_events`.
+Overrides: `enrollment_override` = `automatic` | `forced_on` | `forced_off` (completion still wins over `forced_on`). WGMS/ERDDAP cannot enroll. Team enrollment/provision actions are attributed to the authenticated Team user in `catalog_mission_events`.
 
 Shadow mode: `MISSION_CATALOG_ENROLLMENT_SHADOW=true` logs would-enroll without writing CONTINUOUS.
 
@@ -74,7 +74,7 @@ require flag (3).
 
 ## Admin / Team UI
 
-Open `/team/mission-catalog` (admin + `team_hub`):
+Open `/team/mission-catalog` (`can_access_team` or admin + `team_hub`):
 
 | Tab | Purpose |
 |-----|---------|

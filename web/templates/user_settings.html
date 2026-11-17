@@ -45,6 +45,13 @@
                                     <input type="email" class="form-control" id="email" value="{{ current_user.email or '' }}" placeholder="Enter your email address">
                                 </div>
                             </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="telephone" class="form-label">Telephone</label>
+                                    <input type="tel" class="form-control" id="telephone" value="{{ current_user.telephone or '' }}" placeholder="Phone number">
+                                    <div class="form-text">Used to prefill team forms such as the NAVWARN request.</div>
+                                </div>
+                            </div>
                             {% if current_user.role == 'admin' %}
                             <div class="row">
                                 <div class="col-md-8 mb-3">

@@ -13,6 +13,27 @@
 - Choosing a **season** filters which **offload logs** drive per-station summaries (success, latest VRL, etc.).
 - The **grid always shows the live registry** (non-retired rows): hardware and settings columns reflect the current row, not a historical roster.
 
+## Progress map
+
+Station offload progress is shown as tiny Leaflet `circleMarker`s (no clustering). Colors are map-only (table row colors stay as today):
+
+| Color | Meaning |
+|-------|---------|
+| Green | Offloaded |
+| Yellow | Skipped or flagged |
+| Red | Failed offload |
+| White | Awaiting offload (includes hardware-swapped awaiting first offload) |
+
+Stations without `deployment_latitude` / `deployment_longitude` are omitted.
+
+### Surfaces
+
+1. **WG home map layer** — toggle **Offload status** under Station Offloads (gated by `station_offloads`). Data: `GET /api/map/stations/offload-status` (GeoJSON). Popup links to the offload sheet (`?station=`).
+2. **Dedicated page** — `/wave-glider/station_progress_map.html` (new tab): active WG mission track toggles + All/None, hours-back select, array-prefix filters, and the same station layer. Linked from Station Offload Status and the WG-VM4 dashboard card.
+3. **Public login map** — deferred (auth GeoJSON only for now).
+
+JS: `web/static/js/station_offload_map_layer.js` (shared), `station_progress_map.js` (dedicated page).
+
 ## Closing a field year
 
 1. Confirm the **`field_seasons`** row for that operational year.

@@ -1,4 +1,4 @@
-"""Team hub: platform-agnostic admin sandbox (ops scripts + form tools)."""
+"""Team hub: platform-agnostic ops sandbox (scripts + form tools)."""
 
 import asyncio
 import logging
@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from sqlmodel import Session as SQLModelSession
 
 from ..core import models
-from ..core.auth import get_current_admin_user
+from ..core.auth import require_team_access
 from ..core.infra.db import get_db_session
 from ..core.infra.feature_guards import require_feature_dep
 from ..core.mission_catalog.service import list_unmatched_sources
@@ -40,6 +40,7 @@ from ..services.sensor_tracker_query import (
     get_entity_analytics,
 )
 from ..services import team_ora
+from ..services import team_navwarn
 from ..services import team_vmt_logbook as vmt_logbook
 
 logger = logging.getLogger(__name__)
@@ -48,7 +49,7 @@ router = APIRouter(
     tags=["Team"],
     dependencies=[
         Depends(require_feature_dep("team_hub")),
-        Depends(get_current_admin_user),
+        Depends(require_team_access),
     ],
 )
 
@@ -56,7 +57,7 @@ router = APIRouter(
 @router.get("/team", response_class=HTMLResponse, include_in_schema=False)
 async def get_team_hub_page(
     request: Request,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     context = get_template_context(
         request=request,
@@ -70,7 +71,7 @@ async def get_team_hub_page(
 @router.get("/team/sfmc-lognotes", response_class=HTMLResponse, include_in_schema=False)
 async def get_sfmc_lognotes_page(
     request: Request,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     context = get_template_context(
         request=request,
@@ -83,7 +84,7 @@ async def get_sfmc_lognotes_page(
 @router.get("/team/telemetry-hexbin", response_class=HTMLResponse, include_in_schema=False)
 async def get_telemetry_hexbin_page(
     request: Request,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     context = get_template_context(
         request=request,
@@ -96,7 +97,7 @@ async def get_telemetry_hexbin_page(
 @router.get("/team/sensor-tracker", response_class=HTMLResponse, include_in_schema=False)
 async def get_sensor_tracker_browser_page(
     request: Request,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     context = get_template_context(
         request=request,
@@ -109,7 +110,7 @@ async def get_sensor_tracker_browser_page(
 @router.get("/team/visualizations", response_class=HTMLResponse, include_in_schema=False)
 async def get_visualizations_page(
     request: Request,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     context = get_template_context(
         request=request,
@@ -122,7 +123,7 @@ async def get_visualizations_page(
 @router.get("/team/mission-catalog", response_class=HTMLResponse, include_in_schema=False)
 async def get_mission_catalog_page(
     request: Request,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     context = get_template_context(
         request=request,
@@ -177,7 +178,7 @@ async def set_catalog_enrollment_override(
     catalog_mission_id: str,
     override: str = Query(..., description="automatic | forced_on | forced_off"),
     session: SQLModelSession = Depends(get_db_session),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     from app.core.mission_catalog.workspace import (
         get_catalog_mission,
@@ -208,7 +209,7 @@ async def set_catalog_enrollment_override(
 async def retry_catalog_provisioning(
     catalog_mission_id: str,
     session: SQLModelSession = Depends(get_db_session),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     from app.core.mission_catalog.audit import EVENT_PROVISION, record_mission_event
     from app.core.mission_catalog.provisioning import provision_mission
@@ -310,7 +311,7 @@ async def get_catalog_reconcile_runs(
 async def retry_catalog_final_sync(
     catalog_mission_id: str,
     session: SQLModelSession = Depends(get_db_session),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     from app.core.mission_catalog.final_sync import (
         request_final_sync_retry,
@@ -354,7 +355,7 @@ async def get_catalog_unmatched_sources(
 @router.get("/team/vmt-logbook", response_class=HTMLResponse, include_in_schema=False)
 async def get_vmt_logbook_page(
     request: Request,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     context = get_template_context(
         request=request,
@@ -401,7 +402,7 @@ async def run_team_ops_script(script_id: str):
 )
 async def sfmc_lognotes_dry_run(
     body: models.SfmcLognoteImportRequest,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     return prepare_and_optionally_commit(
@@ -423,7 +424,7 @@ async def sfmc_lognotes_dry_run(
 )
 async def sfmc_lognotes_post(
     body: models.SfmcLognoteImportRequest,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     return prepare_and_optionally_commit(
@@ -697,7 +698,7 @@ async def vmt_logbook_get_unit(
 )
 async def vmt_logbook_create_unit(
     body: models.VmtUnitCreate,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     try:
@@ -716,7 +717,7 @@ async def vmt_logbook_create_unit(
 async def vmt_logbook_update_unit(
     unit_id: int,
     body: models.VmtUnitUpdate,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     try:
@@ -736,7 +737,7 @@ async def vmt_logbook_update_unit(
 async def vmt_logbook_add_battery_check(
     unit_id: int,
     body: models.VmtBatteryCheckCreate,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     try:
@@ -756,7 +757,7 @@ async def vmt_logbook_add_battery_check(
 async def vmt_logbook_add_service_event(
     unit_id: int,
     body: models.VmtServiceEventCreate,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     try:
@@ -774,7 +775,7 @@ async def vmt_logbook_add_service_event(
 )
 async def vmt_logbook_sync_from_st(
     dry_run: bool = Query(True),
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     try:
@@ -808,7 +809,7 @@ def _raise_ora_error(exc: team_ora.OraError) -> None:
 @router.get("/team/ora", response_class=HTMLResponse, include_in_schema=False)
 async def get_ora_request_page(
     request: Request,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
 ):
     context = get_template_context(
         request=request,
@@ -830,7 +831,7 @@ async def list_ora_drafts(session: SQLModelSession = Depends(get_db_session)):
 )
 async def create_ora_draft(
     body: models.OraDraftWrite,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     try:
@@ -855,7 +856,7 @@ async def get_ora_draft(
 async def update_ora_draft(
     draft_id: int,
     body: models.OraDraftWrite,
-    current_user: models.User = Depends(get_current_admin_user),
+    current_user: models.User = Depends(require_team_access),
     session: SQLModelSession = Depends(get_db_session),
 ):
     try:
@@ -906,9 +907,187 @@ async def ora_loadout_from_tracker(body: models.OraLoadoutRequest):
 @router.post("/api/team/ora/pdf")
 async def download_ora_pdf(body: models.OraDraftWrite):
     try:
-        content, filename = team_ora.render_draft_pdf(body)
+        content, filename = await asyncio.to_thread(team_ora.render_draft_pdf, body)
     except team_ora.OraError as exc:
         _raise_ora_error(exc)
+    return Response(
+        content=content,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _raise_navwarn_error(exc: team_navwarn.NavwarnError) -> None:
+    raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+
+@router.get("/team/navwarn", response_class=HTMLResponse, include_in_schema=False)
+async def get_navwarn_request_page(
+    request: Request,
+    current_user: models.User = Depends(require_team_access),
+):
+    context = get_template_context(
+        request=request,
+        current_user=current_user,
+        show_banner_nav=True,
+    )
+    return templates.TemplateResponse("team/navwarn_request.html", context)
+
+
+@router.get("/api/team/navwarn/drafts", response_model=List[models.NavwarnDraftSummary])
+async def list_navwarn_drafts(session: SQLModelSession = Depends(get_db_session)):
+    return team_navwarn.list_drafts(session)
+
+
+@router.post(
+    "/api/team/navwarn/drafts",
+    response_model=models.NavwarnDraftRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_navwarn_draft(
+    body: models.NavwarnDraftWrite,
+    current_user: models.User = Depends(require_team_access),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        row = team_navwarn.create_draft(
+            session, body, username=current_user.username
+        )
+        return team_navwarn.draft_to_read(row)
+    except team_navwarn.NavwarnError as exc:
+        _raise_navwarn_error(exc)
+
+
+@router.get(
+    "/api/team/navwarn/drafts/{draft_id}",
+    response_model=models.NavwarnDraftRead,
+)
+async def get_navwarn_draft(
+    draft_id: int,
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        return team_navwarn.draft_to_read(team_navwarn.get_draft(session, draft_id))
+    except team_navwarn.NavwarnError as exc:
+        _raise_navwarn_error(exc)
+
+
+@router.put(
+    "/api/team/navwarn/drafts/{draft_id}",
+    response_model=models.NavwarnDraftRead,
+)
+async def update_navwarn_draft(
+    draft_id: int,
+    body: models.NavwarnDraftWrite,
+    current_user: models.User = Depends(require_team_access),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        row = team_navwarn.update_draft(
+            session, draft_id, body, username=current_user.username
+        )
+        return team_navwarn.draft_to_read(row)
+    except team_navwarn.NavwarnError as exc:
+        _raise_navwarn_error(exc)
+
+
+@router.delete(
+    "/api/team/navwarn/drafts/{draft_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_navwarn_draft(
+    draft_id: int,
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        team_navwarn.delete_draft(session, draft_id)
+    except team_navwarn.NavwarnError as exc:
+        _raise_navwarn_error(exc)
+
+
+@router.post(
+    "/api/team/navwarn/drafts/{draft_id}/duplicate",
+    response_model=models.NavwarnDraftRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def duplicate_navwarn_draft(
+    draft_id: int,
+    body: models.NavwarnDuplicateRequest,
+    current_user: models.User = Depends(require_team_access),
+    session: SQLModelSession = Depends(get_db_session),
+):
+    try:
+        row = team_navwarn.duplicate_as_update(
+            session,
+            draft_id,
+            username=current_user.username,
+            previous_navwarn_number=body.previous_navwarn_number,
+        )
+        return team_navwarn.draft_to_read(row)
+    except team_navwarn.NavwarnError as exc:
+        _raise_navwarn_error(exc)
+
+
+@router.get("/api/team/navwarn/missions", response_model=List[models.OraMissionOption])
+async def list_navwarn_missions(session: SQLModelSession = Depends(get_db_session)):
+    return team_navwarn.list_wave_glider_missions(session)
+
+
+@router.get("/api/team/navwarn/desks")
+async def list_navwarn_desks():
+    from app.platforms.wave_glider.navwarn_form import NAVWARN_DESKS
+
+    return [
+        {"id": desk_id, "name": name, "email": email}
+        for desk_id, (name, email) in NAVWARN_DESKS.items()
+    ]
+
+
+@router.get("/api/team/navwarn/defaults")
+async def navwarn_defaults(hull_name: Optional[str] = Query(default=None)):
+    return team_navwarn.default_text_for_hull(hull_name or "")
+
+
+@router.get(
+    "/api/team/navwarn/float-hull",
+    response_model=models.NavwarnFloatHullResponse,
+)
+async def navwarn_float_hull(
+    platform_name: str = Query(
+        ...,
+        min_length=1,
+        description="Sensor Tracker platform name, e.g. SV3-1070",
+    ),
+):
+    try:
+        return await team_navwarn.resolve_float_hull_from_tracker(platform_name)
+    except team_navwarn.NavwarnError as exc:
+        _raise_navwarn_error(exc)
+
+
+@router.post("/api/team/navwarn/docx")
+async def download_navwarn_docx(body: models.NavwarnDraftWrite):
+    try:
+        content, filename = await asyncio.to_thread(
+            team_navwarn.render_draft_docx, body
+        )
+    except team_navwarn.NavwarnError as exc:
+        _raise_navwarn_error(exc)
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/api/team/navwarn/pdf")
+async def download_navwarn_pdf(body: models.NavwarnDraftWrite):
+    try:
+        content, filename = await asyncio.to_thread(
+            team_navwarn.render_draft_pdf, body
+        )
+    except team_navwarn.NavwarnError as exc:
+        _raise_navwarn_error(exc)
     return Response(
         content=content,
         media_type="application/pdf",

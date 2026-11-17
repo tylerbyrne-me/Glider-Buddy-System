@@ -43,6 +43,12 @@ from app.platforms.wave_glider.ora_pdf import (
     OraDocumentFields,
     pdf_filename,
     render_ora_pdf,
+    table_coordinates,
+)
+from app.platforms.wave_glider.ora_map import render_ora_area_map_png
+from app.services.sensor_tracker_query import (
+    is_currently_attached,
+    pin_relationship_rows,
 )
 
 logger = logging.getLogger(__name__)
@@ -335,6 +341,7 @@ def list_wave_glider_missions(session: Session) -> list[OraMissionOption]:
     options = []
     for mission, platform in rows:
         hull = platform.canonical_name if platform else None
+        track_kind, track_id = _track_target(session, mission)
         options.append(
             OraMissionOption(
                 id=mission.id,
@@ -348,6 +355,8 @@ def list_wave_glider_missions(session: Session) -> list[OraMissionOption]:
                 ),
                 vehicle_model=infer_vehicle_model(hull),
                 hull_profile=_hull_profile_read(profiles.get(hull or "")),
+                track_kind=track_kind,
+                track_id=track_id,
             )
         )
     return options
@@ -447,24 +456,61 @@ def fields_from_write(body: OraDraftWrite) -> OraDocumentFields:
     )
 
 
-def render_draft_pdf(body: OraDraftWrite) -> tuple[bytes, str]:
-    fields = fields_from_write(body)
-    return render_ora_pdf(fields), pdf_filename(body.title, body.hull_name)
-
-
-def _logger_identifier(row: dict[str, Any]) -> Optional[str]:
-    logger_row = row.get("data_logger") if isinstance(row.get("data_logger"), dict) else row
-    if not isinstance(logger_row, dict):
+def _area_map_png(fields: OraDocumentFields) -> Optional[bytes]:
+    try:
+        return render_ora_area_map_png(table_coordinates(fields))
+    except Exception:
+        logger.exception("ORA area map failed; PDF will omit the map page")
         return None
+
+
+def render_draft_pdf(body: OraDraftWrite) -> tuple[bytes, str]:
+    """Blocking (Cartopy + optional bathymetry fetch); call from a worker thread."""
+    fields = fields_from_write(body)
+    content = render_ora_pdf(fields, area_map_png=_area_map_png(fields))
+    return content, pdf_filename(body.title, body.hull_name)
+
+
+def _logger_ref(row: dict[str, Any]) -> tuple[Optional[int], Optional[str], Optional[str]]:
+    """Return (id, identifier, serial) for a data_logger_on_platform row."""
+    nested = row.get("data_logger") if isinstance(row.get("data_logger"), dict) else row
+    if not isinstance(nested, dict):
+        return None, None, None
+    raw_id = nested.get("id")
+    logger_id: Optional[int] = None
+    if isinstance(raw_id, int):
+        logger_id = raw_id
+    elif isinstance(raw_id, str) and raw_id.strip().isdigit():
+        logger_id = int(raw_id.strip())
+    identifier: Optional[str] = None
     for key in ("identifier", "name", "data_logger_identifier"):
-        value = logger_row.get(key)
+        value = nested.get(key)
         if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
+            identifier = value.strip()
+            break
+    serial_raw = nested.get("serial")
+    serial = serial_raw.strip() if isinstance(serial_raw, str) and serial_raw.strip() else None
+    return logger_id, identifier, serial
+
+
+def _append_instrument_labels(rows: list[dict[str, Any]], labels: list[str]) -> None:
+    for row in rows:
+        if not is_currently_attached(row):
+            continue
+        label = instrument_label(row)
+        if label:
+            labels.append(label)
 
 
 async def load_tracker_devices(platform_name: str, devices: list[OraDeviceRow]) -> OraLoadoutResponse:
-    """Pull instrument names for a hull and merge them into the device table."""
+    """Pull instrument names for a hull and merge them into the device table.
+
+    Instruments come from ``instrument_on_platform`` plus instruments mounted on
+    this hull's own flight/science data loggers. Logger identifier filters are
+    type-level (shared labels), so results are pinned by logger id/serial the
+    same way mission metadata sync does. Only currently attached relationships
+    are kept.
+    """
     name = (platform_name or "").strip()
     if not name:
         raise OraError("Enter a hull or Sensor Tracker platform name first.")
@@ -488,32 +534,45 @@ async def load_tracker_devices(platform_name: str, devices: list[OraDeviceRow]) 
             f"Sensor Tracker did not return instruments for {name}.",
             status_code=502,
         ) from exc
-    for row in direct or []:
-        label = instrument_label(row)
-        if label:
-            labels.append(label)
+    _append_instrument_labels(
+        [row for row in (direct or []) if isinstance(row, dict)],
+        labels,
+    )
     try:
         loggers = await service.fetch_data_loggers_on_platform(name)
     except Exception as exc:
         logger.warning("ORA Tracker loggers failed for %s: %s", name, exc)
         loggers = []
         warning = "Platform instruments loaded. Data-logger instruments could not be listed."
+    mounted_by_identifier: dict[str, list[dict[str, Any]]] = {}
     for logger_row in loggers or []:
         if not isinstance(logger_row, dict):
             continue
-        identifier = _logger_identifier(logger_row)
+        if not is_currently_attached(logger_row):
+            continue
+        logger_id, identifier, logger_serial = _logger_ref(logger_row)
         if not identifier:
             continue
-        try:
-            mounted = await service.fetch_instruments_on_data_logger(identifier)
-        except Exception as exc:
-            logger.warning("ORA Tracker logger %s failed: %s", identifier, exc)
-            warning = warning or "Some data-logger instruments could not be loaded."
+        if logger_id is None and not logger_serial:
             continue
-        for row in mounted or []:
-            label = instrument_label(row)
-            if label:
-                labels.append(label)
+        if identifier not in mounted_by_identifier:
+            try:
+                fetched = await service.fetch_instruments_on_data_logger(identifier)
+            except Exception as exc:
+                logger.warning("ORA Tracker logger %s failed: %s", identifier, exc)
+                warning = warning or "Some data-logger instruments could not be loaded."
+                mounted_by_identifier[identifier] = []
+                continue
+            mounted_by_identifier[identifier] = [
+                row for row in (fetched or []) if isinstance(row, dict)
+            ]
+        pinned = pin_relationship_rows(
+            mounted_by_identifier[identifier],
+            parent_id=logger_id if logger_id is not None else 0,
+            parent_entity="data_logger",
+            parent_serial=logger_serial,
+        )
+        _append_instrument_labels(pinned, labels)
     unique: list[str] = []
     seen: set[str] = set()
     for label in labels:

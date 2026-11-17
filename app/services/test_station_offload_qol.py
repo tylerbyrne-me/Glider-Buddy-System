@@ -11,6 +11,7 @@ from app.core.models.database import OffloadLog, StationMetadata
 from app.services.station_overview import (
     build_status_overview_row,
     clear_display_status_override,
+    station_status_rows_to_geojson,
 )
 
 
@@ -165,3 +166,42 @@ def test_station_metadata_read_from_orm_dump():
     assert read.is_retired is True
     assert read.retired_reason.startswith("Recovered")
     assert read.otn_metadata == "otn notes"
+
+
+def test_station_status_rows_to_geojson_omits_missing_coords():
+    rows = [
+        {
+            "station_id": "HFX01",
+            "deployment_latitude": 44.5,
+            "deployment_longitude": -63.5,
+            "status_text": "Offloaded",
+            "status_color": "green",
+            "last_offload_by_glider": "m210",
+        },
+        {
+            "station_id": "CBS02",
+            "deployment_latitude": None,
+            "deployment_longitude": None,
+            "status_text": "Awaiting Offload",
+            "status_color": "grey",
+            "last_offload_by_glider": None,
+        },
+        {
+            "station_id": "NCAT03",
+            "deployment_latitude": 47.0,
+            "deployment_longitude": -60.0,
+            "status_text": "Hardware Swapped - Awaiting Offload",
+            "status_color": "purple",
+            "last_offload_by_glider": None,
+        },
+    ]
+    geo = station_status_rows_to_geojson(rows)
+    assert geo["type"] == "FeatureCollection"
+    assert geo["meta"]["plotted"] == 2
+    assert geo["meta"]["omitted_missing_coords"] == 1
+    props = {f["properties"]["station_id"]: f["properties"] for f in geo["features"]}
+    assert props["HFX01"]["array_prefix"] == "HFX"
+    assert props["HFX01"]["status_color"] == "green"
+    assert props["NCAT03"]["array_prefix"] == "NCAT"
+    assert props["NCAT03"]["status_color"] == "purple"
+    assert geo["features"][0]["geometry"]["coordinates"] == [-63.5, 44.5]

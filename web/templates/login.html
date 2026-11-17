@@ -5,7 +5,7 @@
 {% block body_class %}page-public-login{% endblock %}
 
 {% block head_extra_css %}
-<link rel="stylesheet" href="/static/css/pages/login.css">
+<link rel="stylesheet" href="/static/css/pages/login.css?v={{ app_version }}">
 {% endblock %}
 
 {% block content_container_class %}container-fluid main-content-wrapper{% if feature_enabled('public_login_map') %} public-login-content{% endif %}{% endblock %}
@@ -39,6 +39,12 @@
 {% block content %}
     {% if feature_enabled('public_login_map') %}
     <div class="public-login-shell" data-public-map-enabled="true">
+        <aside class="public-deployments-panel" aria-label="Active deployments">
+            <h2 class="public-deployments-title">
+                Active Deployments (<span id="publicDeploymentCount">0</span>)
+            </h2>
+            <div id="publicDeploymentList" class="public-deployments-list"></div>
+        </aside>
         <div class="public-map-wrap">
             <div class="public-map-frame">
                 <div id="publicMapContainer" aria-label="Public glider track map"></div>
@@ -132,7 +138,7 @@
             window.addEventListener('load', syncPublicLoginBannerOffset);
         })();
     </script>
-    <script type="module" src="/static/js/public_map.js"></script>
+    <script type="module" src="/static/js/public_map.js?v={{ app_version }}"></script>
     <script>
         (function () {
             var modalEl = document.getElementById('publicLoginModal');

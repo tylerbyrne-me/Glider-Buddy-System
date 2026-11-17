@@ -1923,7 +1923,14 @@
           </div>
           <hr>
           <!-- Station Offload Log Section -->
-          <h4 class="mt-4">Station Offload Log</h4>
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-4 mb-2">
+            <h4 class="mb-0">Station Offload Log</h4>
+            {% if features.station_offloads %}
+            <a class="btn btn-outline-primary btn-sm" href="/wave-glider/station_progress_map.html" target="_blank" rel="noopener">
+              <i class="fas fa-map-location-dot me-1"></i> Open station progress map
+            </a>
+            {% endif %}
+          </div>
           <div class="row mb-3">
             <div class="col-md-4">
               <label for="stationIdSearch" class="form-label">Station ID Search:</label>

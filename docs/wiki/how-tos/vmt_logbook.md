@@ -1,13 +1,13 @@
 # VMT Team log book
 
-Admin Team tool for **Vemco Mobile Transceiver (VMT)** inventory: serial/tag metadata, battery checks, InnovaSea/service history, Sensor Tracker sync, and live deployment/use accounting.
+Team tool for **Vemco Mobile Transceiver (VMT)** inventory: serial/tag metadata, battery checks, InnovaSea/service history, Sensor Tracker sync, and live deployment/use accounting.
 
 VMTs are self-powered and self-logging — they do not stream diagnostics into Buddy like other sensors. This log book replaces the year-to-year spreadsheet.
 
 ## Access
 
 - Feature toggle: `team_hub` (same as the rest of Team)
-- Role: admin
+- ACL: `can_access_team` (admins always allowed; grant via User Management)
 - URL: `/team/vmt-logbook` (also listed on `/team` as **VMT log book**)
 
 ## What is stored locally (SQLite)

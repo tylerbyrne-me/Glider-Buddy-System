@@ -92,6 +92,7 @@ from .database import (
     VmtUnitAuditLog,
     OraRequest,
     OraHullProfile,
+    NavwarnRequest,
     WaveGliderMissionMetrics,
 )
 
@@ -233,6 +234,11 @@ from .schemas import (
     OraContextTrack,
     OraLoadoutRequest,
     OraLoadoutResponse,
+    NavwarnDraftWrite,
+    NavwarnDraftRead,
+    NavwarnDraftSummary,
+    NavwarnDuplicateRequest,
+    NavwarnFloatHullResponse,
     
     # Knowledge base models
     KnowledgeDocumentCreate,
@@ -345,6 +351,7 @@ __all__ = [
     "VmtUnitAuditLog",
     "OraRequest",
     "OraHullProfile",
+    "NavwarnRequest",
     "WaveGliderMissionMetrics",
     
     # Pydantic schemas (add all schema names here)
@@ -467,6 +474,11 @@ __all__ = [
     "OraContextTrack",
     "OraLoadoutRequest",
     "OraLoadoutResponse",
+    "NavwarnDraftWrite",
+    "NavwarnDraftRead",
+    "NavwarnDraftSummary",
+    "NavwarnDuplicateRequest",
+    "NavwarnFloatHullResponse",
     "KnowledgeDocumentCreate",
     "KnowledgeDocumentUpdate",
     "KnowledgeDocumentRead",

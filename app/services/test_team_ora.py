@@ -140,6 +140,8 @@ def test_mission_options_and_context_tracks() -> None:
     assert options[0].label == "m240-SV3-1071"
     assert options[0].dates_of_operation == "7 Apr 2026 – 6 May 2026"
     assert options[0].vehicle_model == "sv3"
+    assert options[0].track_kind == "wave_glider"
+    assert options[0].track_id == "m240"
 
     try:
         team_ora.create_draft(
@@ -162,23 +164,74 @@ def test_mission_options_and_context_tracks() -> None:
 
 def test_tracker_loadout_merges_platform_and_logger_instruments() -> None:
     class FakeService:
+        logger_fetches = 0
+
         def __init__(self, skip_auth: bool = True) -> None:
             self.skip_auth = skip_auth
 
         async def fetch_instruments_on_platform(self, platform_name: str):
             assert platform_name == "SV3-1071"
-            return [{"instrument": {"name": "RDI 600 ADCP"}}]
+            return [
+                {"instrument": {"name": "RDI 600 ADCP"}, "start_time": "2024-01-01"},
+                {
+                    "instrument": {"name": "Retired Wave Sensor"},
+                    "start_time": "2020-01-01",
+                    "end_time": "2021-01-01",
+                },
+            ]
 
         async def fetch_data_loggers_on_platform(self, platform_name: str):
-            return [{"data_logger": {"identifier": "science-1"}}]
+            return [
+                {
+                    "data_logger": {
+                        "id": 101,
+                        "identifier": "science computer",
+                        "serial": "SCI-101",
+                    },
+                    "start_time": "2024-01-01",
+                },
+                {
+                    "data_logger": {
+                        "id": 50,
+                        "identifier": "science computer",
+                        "serial": "SCI-OLD",
+                    },
+                    "start_time": "2019-01-01",
+                    "end_time": "2020-01-01",
+                },
+            ]
 
         async def fetch_instruments_on_data_logger(self, identifier: str):
-            assert identifier == "science-1"
-            return [{"instrument": {"identifier": "VM4-009"}}]
+            assert identifier == "science computer"
+            FakeService.logger_fetches += 1
+            return [
+                {
+                    "instrument": {"identifier": "VM4-009"},
+                    "data_logger": {"id": 101, "serial": "SCI-101"},
+                    "start_time": "2024-01-01",
+                },
+                {
+                    "instrument": {"identifier": "sci_oxy4"},
+                    "data_logger": {"id": 999, "serial": "SLOCUM-SCI"},
+                    "start_time": "2024-01-01",
+                },
+                {
+                    "instrument": {"identifier": "sci_dmon"},
+                    "data_logger": {"id": 999, "serial": "SLOCUM-SCI"},
+                    "start_time": "2024-01-01",
+                },
+                {
+                    "instrument": {"name": "Old Fluorometer"},
+                    "data_logger": {"id": 101, "serial": "SCI-101"},
+                    "start_time": "2020-01-01",
+                    "end_time": "2021-06-01",
+                },
+            ]
 
     import app.services.sensor_tracker_service as tracker_module
 
     original = tracker_module.SensorTrackerService
+    FakeService.logger_fetches = 0
     tracker_module.SensorTrackerService = FakeService
     try:
         result = asyncio.run(
@@ -194,3 +247,12 @@ def test_tracker_loadout_merges_platform_and_logger_instruments() -> None:
     assert "RDI 600 ADCP" in names
     assert "Innovasea VM4" in names
     assert "VMC, Rudder, GPS" in names
+    assert "Retired Wave Sensor" not in names
+    assert "Old Fluorometer" not in names
+    assert "sci_oxy4" not in names
+    assert "sci_dmon" not in names
+    assert "sci_oxy4" not in result.instrument_names
+    assert "sci_dmon" not in result.instrument_names
+    assert "RDI 600 ADCP" in result.instrument_names
+    assert "VM4-009" in result.instrument_names
+    assert FakeService.logger_fetches == 1

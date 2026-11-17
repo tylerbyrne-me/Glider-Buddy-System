@@ -185,6 +185,21 @@ function finitePair(point) {
     return Number.isFinite(lat) && Number.isFinite(lon) ? [lat, lon] : null;
 }
 
+const BOX_COMMENTS = ['Box NW', 'Box NE', 'Box SE', 'Box SW'];
+
+function boxGroups() {
+    const groups = [];
+    for (let start = 0; start + BOX_COMMENTS.length <= coordinates.length; start += 1) {
+        const run = coordinates.slice(start, start + BOX_COMMENTS.length);
+        const isBox = run.every((point, offset) => point.comment === BOX_COMMENTS[offset]);
+        const corners = run.map(finitePair);
+        if (!isBox || corners.some((pair) => !pair)) continue;
+        groups.push(corners);
+        start += BOX_COMMENTS.length - 1;
+    }
+    return groups;
+}
+
 function redrawArea({ fit = false } = {}) {
     if (!drawLayer) return;
     drawLayer.clearLayers();
@@ -207,11 +222,11 @@ function redrawArea({ fit = false } = {}) {
         });
     });
     if (latlngs.length >= 2) {
-        const shape = coordinateMode() === 'box' && latlngs.length >= 3
-            ? L.polygon(latlngs, { color: '#0b3a5b', weight: 2, fillOpacity: 0.08 })
-            : L.polyline(latlngs, { color: '#0b3a5b', weight: 2 });
-        shape.addTo(drawLayer);
+        L.polyline(latlngs, { color: '#0b3a5b', weight: 2 }).addTo(drawLayer);
     }
+    boxGroups().forEach((corners) => {
+        L.polygon(corners, { color: '#0b3a5b', weight: 2, fillOpacity: 0.08 }).addTo(drawLayer);
+    });
     if (fit && latlngs.length) {
         map.fitBounds(L.latLngBounds(latlngs).pad(0.3));
     }
@@ -245,6 +260,7 @@ function renderCoordinates() {
         });
         row.querySelector('[data-remove]').addEventListener('click', () => {
             coordinates.splice(index, 1);
+            boxClicks = [];
             renderCoordinates();
             redrawArea({ fit: false });
         });
@@ -252,42 +268,36 @@ function renderCoordinates() {
     });
 }
 
-function boxCorners(first, second) {
+function boxCorners(first, second, startIndex) {
     const north = Math.max(first.lat, second.lat);
     const south = Math.min(first.lat, second.lat);
     const east = Math.max(first.lon, second.lon);
     const west = Math.min(first.lon, second.lon);
     return [
-        { label: 'Coordinate 1', lat: north, lon: west, comment: 'Box NW' },
-        { label: 'Coordinate 2', lat: north, lon: east, comment: 'Box NE' },
-        { label: 'Coordinate 3', lat: south, lon: east, comment: 'Box SE' },
-        { label: 'Coordinate 4', lat: south, lon: west, comment: 'Box SW' },
-    ];
+        { lat: north, lon: west, comment: 'Box NW' },
+        { lat: north, lon: east, comment: 'Box NE' },
+        { lat: south, lon: east, comment: 'Box SE' },
+        { lat: south, lon: west, comment: 'Box SW' },
+    ].map((corner, offset) => ({ label: `Coordinate ${startIndex + offset}`, ...corner }));
 }
 
 function onMapClick(event) {
     const lat = Number(event.latlng.lat.toFixed(6));
     const lon = Number(event.latlng.lng.toFixed(6));
     const mode = coordinateMode();
-    if (mode === 'hold_station') {
-        coordinates = [{ label: 'Coordinate 1', lat, lon, comment: 'Hold station' }];
+    if (mode === 'box' && boxClicks.length) {
+        coordinates.pop();
+        coordinates.push(...boxCorners(boxClicks[0], { lat, lon }, coordinates.length + 1));
         boxClicks = [];
-    } else if (mode === 'box') {
-        boxClicks.push({ lat, lon });
-        if (boxClicks.length < 2) {
-            coordinates = [{ label: 'Coordinate 1', lat, lon, comment: 'Box corner' }];
-        } else {
-            coordinates = boxCorners(boxClicks[0], boxClicks[1]);
-            boxClicks = [];
-        }
     } else {
         const index = coordinates.length + 1;
-        coordinates.push({
-            label: `Coordinate ${index}`,
-            lat,
-            lon,
-            comment: index === 1 ? 'Deployment location' : '',
-        });
+        let comment = index === 1 ? 'Deployment location' : '';
+        if (mode === 'hold_station') comment = 'Hold station';
+        if (mode === 'box') {
+            comment = 'Box corner';
+            boxClicks = [{ lat, lon }];
+        }
+        coordinates.push({ label: `Coordinate ${index}`, lat, lon, comment });
     }
     renderCoordinates();
     redrawArea({ fit: false });
@@ -541,6 +551,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             lon: null,
             comment: '',
         });
+        boxClicks = [];
         renderCoordinates();
     });
     $('oraClearPointsBtn').addEventListener('click', () => {

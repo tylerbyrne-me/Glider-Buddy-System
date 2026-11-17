@@ -43,6 +43,8 @@ def _get_static_version_token() -> str:
             static / "js" / "team" / "mission_catalog.js",
             static / "css" / "themes.css",
             static / "css" / "custom.css",
+            static / "css" / "pages" / "login.css",
+            static / "js" / "public_map.js",
         ]
         mtimes = [str(int(path.stat().st_mtime)) for path in tracked_files if path.exists()]
         if mtimes:

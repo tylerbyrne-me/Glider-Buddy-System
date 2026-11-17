@@ -23,6 +23,7 @@ let publicMap = null;
 let trackLayers = [];
 let autoRefreshTimer = null;
 let isLoading = false;
+let openMissionId = null;
 const publicMapTileHolder = { current: null };
 
 function mapMarkerThemeColors() {
@@ -47,10 +48,10 @@ function setToolbarBusy(busy) {
     const kmlBtn = document.getElementById('publicMapDownloadKmlBtn');
     if (refreshBtn) {
         refreshBtn.disabled = busy;
-        const icon = refreshBtn.querySelector('i');
-        if (icon) {
-            icon.classList.toggle('fa-spin', busy);
-        }
+    }
+    const icon = refreshBtn ? refreshBtn.querySelector('i') : null;
+    if (icon) {
+        icon.classList.toggle('fa-spin', busy);
     }
     if (kmlBtn) {
         kmlBtn.classList.toggle('disabled', busy);
@@ -70,6 +71,47 @@ function platformTypeLabel(platform) {
     return String(platform || 'Platform').replace(/_/g, ' ');
 }
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function missionDetailFields(mission) {
+    const platformName = mission.platform_name || mission.display_name || mission.mission_id || 'Glider';
+    const missionTitle = mission.mission_title || mission.mission_id || '';
+    const platform = platformTypeLabel(mission.platform);
+    const pos = mission.current_position;
+    const hasPos = pos && Number.isFinite(Number(pos.lat)) && Number.isFinite(Number(pos.lon));
+    const posText = hasPos
+        ? `${Number(pos.lat).toFixed(4)}, ${Number(pos.lon).toFixed(4)}`
+        : '';
+    return {
+        platformName,
+        missionTitle,
+        platform,
+        posText,
+        weeklyReportUrl: mission.weekly_report_url || '',
+    };
+}
+
+function buildPopupHtml(mission) {
+    const fields = missionDetailFields(mission);
+    const posLine = fields.posText
+        ? `<br><small>${escapeHtml(fields.posText)}</small>`
+        : '';
+    let reportLine = '';
+    if (fields.weeklyReportUrl) {
+        const href = String(fields.weeklyReportUrl).replace(/"/g, '&quot;');
+        reportLine = `<br><a href="${href}" target="_blank" rel="noopener noreferrer" class="btn btn-link btn-sm p-0">View weekly report</a>`;
+    }
+    return `<strong>${escapeHtml(fields.platformName)}</strong><br>`
+        + `<small class="text-muted">${escapeHtml(fields.platform)}</small><br>`
+        + `Mission Title: ${escapeHtml(fields.missionTitle)}${posLine}${reportLine}`;
+}
+
 function clearTracks() {
     if (!publicMap) return;
     for (const track of trackLayers) {
@@ -80,30 +122,208 @@ function clearTracks() {
     trackLayers = [];
 }
 
-function buildPopupHtml(mission) {
-    const platformName = mission.platform_name || mission.display_name || mission.mission_id || 'Glider';
-    const missionTitle = mission.mission_title || mission.mission_id || '';
-    const platform = platformTypeLabel(mission.platform);
-    const pos = mission.current_position;
-    const posLine = pos
-        ? `<br><small>${Number(pos.lat).toFixed(4)}, ${Number(pos.lon).toFixed(4)}</small>`
-        : '';
-    let reportLine = '';
-    if (mission.weekly_report_url) {
-        const href = String(mission.weekly_report_url).replace(/"/g, '&quot;');
-        reportLine = `<br><a href="${href}" target="_blank" rel="noopener noreferrer" class="btn btn-link btn-sm p-0">View weekly report</a>`;
+function captureOpenMissionId() {
+    const openEl = document.querySelector('#publicDeploymentList .collapse.show');
+    if (!openEl) {
+        openMissionId = null;
+        return;
     }
-    return `<strong>${escapeHtml(platformName)}</strong><br>`
-        + `<small class="text-muted">${escapeHtml(platform)}</small><br>`
-        + `Mission Title: ${escapeHtml(missionTitle)}${posLine}${reportLine}`;
+    openMissionId = openEl.getAttribute('data-mission-id') || null;
 }
 
-function escapeHtml(value) {
-    return String(value ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+function expandDeploymentItem(index, { scroll = true } = {}) {
+    const collapseEl = document.getElementById(`publicDeployment-${index}`);
+    if (!collapseEl) return;
+
+    const list = document.getElementById('publicDeploymentList');
+    if (list) {
+        list.querySelectorAll('.collapse.show').forEach((el) => {
+            if (el === collapseEl) return;
+            if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
+                bootstrap.Collapse.getOrCreateInstance(el, { toggle: false }).hide();
+            } else {
+                el.classList.remove('show');
+            }
+        });
+    }
+
+    if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
+        bootstrap.Collapse.getOrCreateInstance(collapseEl, { toggle: false }).show();
+    } else {
+        collapseEl.classList.add('show');
+    }
+
+    openMissionId = collapseEl.getAttribute('data-mission-id') || openMissionId;
+
+    if (scroll) {
+        const item = collapseEl.closest('.public-deployment-item');
+        if (item && typeof item.scrollIntoView === 'function') {
+            item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }
+}
+
+function focusMission(index) {
+    const track = trackLayers[index];
+    if (!publicMap || !track) return;
+
+    expandDeploymentItem(index, { scroll: true });
+
+    if (track.polyline) {
+        const bounds = track.polyline.getBounds();
+        if (bounds && bounds.isValid()) {
+            const sw = bounds.getSouthWest();
+            const ne = bounds.getNorthEast();
+            const isPoint = sw.lat === ne.lat && sw.lng === ne.lng;
+            if (!isPoint) {
+                publicMap.fitBounds(bounds.pad(0.2), { maxZoom: 10 });
+            } else if (track.position) {
+                publicMap.setView(track.position.getLatLng(), Math.min(publicMap.getZoom(), 10) || 8);
+            }
+        }
+    } else if (track.position) {
+        publicMap.setView(track.position.getLatLng(), 8);
+    }
+
+    if (track.position) {
+        track.position.openPopup();
+    }
+}
+
+function bindTrackToSidebar(layer, index) {
+    if (!layer) return;
+    layer.on('click', () => {
+        expandDeploymentItem(index, { scroll: true });
+    });
+}
+
+function renderDeploymentList(missions) {
+    const listEl = document.getElementById('publicDeploymentList');
+    const countEl = document.getElementById('publicDeploymentCount');
+    if (!listEl) return;
+
+    captureOpenMissionId();
+    listEl.innerHTML = '';
+
+    // Caller passes only successfully plotted missions (1:1 with trackLayers).
+    const plotted = Array.isArray(missions) ? missions : [];
+
+    if (countEl) countEl.textContent = String(plotted.length);
+
+    if (!plotted.length) {
+        listEl.innerHTML = '<p class="public-deployments-empty text-muted mb-0">No active deployments</p>';
+        openMissionId = null;
+        return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    let restoreIndex = -1;
+
+    plotted.forEach((mission, index) => {
+        const fields = missionDetailFields(mission);
+        const track = trackLayers[index];
+        const color = (track && track.color) || TRACK_COLORS[index % TRACK_COLORS.length];
+        const missionId = String(mission.mission_id || (track && track.missionId) || `mission-${index}`);
+        const collapseId = `publicDeployment-${index}`;
+        const headingId = `publicDeploymentHeading-${index}`;
+
+        if (openMissionId && missionId === openMissionId) {
+            restoreIndex = index;
+        }
+
+        const item = document.createElement('div');
+        item.className = 'public-deployment-item';
+        item.dataset.missionId = missionId;
+        item.dataset.trackIndex = String(index);
+
+        let reportHtml = '';
+        if (fields.weeklyReportUrl) {
+            const href = String(fields.weeklyReportUrl).replace(/"/g, '&quot;');
+            reportHtml = `
+                <div class="public-deployment-field">
+                    <span class="public-deployment-label">Weekly report</span>
+                    <a href="${href}" target="_blank" rel="noopener noreferrer">View weekly report</a>
+                </div>`;
+        }
+
+        const locationHtml = fields.posText
+            ? `<div class="public-deployment-field">
+                    <span class="public-deployment-label">Location</span>
+                    <span>${escapeHtml(fields.posText)}</span>
+               </div>`
+            : '';
+
+        item.innerHTML = `
+            <button class="public-deployment-toggle collapsed"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#${collapseId}"
+                    aria-expanded="false"
+                    aria-controls="${collapseId}"
+                    id="${headingId}">
+                <span class="public-deployment-swatch" style="background-color: ${escapeHtml(color)}" aria-hidden="true"></span>
+                <span class="public-deployment-name">${escapeHtml(fields.platformName)}</span>
+                <i class="fas fa-chevron-down public-deployment-chevron" aria-hidden="true"></i>
+            </button>
+            <div id="${collapseId}"
+                 class="collapse public-deployment-body"
+                 data-mission-id="${escapeHtml(missionId)}"
+                 aria-labelledby="${headingId}">
+                <div class="public-deployment-actions">
+                    <button type="button" class="btn btn-primary btn-sm public-deployment-focus"
+                            data-track-index="${index}">
+                        Focus
+                    </button>
+                </div>
+                <div class="public-deployment-fields">
+                    <div class="public-deployment-field">
+                        <span class="public-deployment-label">Platform</span>
+                        <span>${escapeHtml(fields.platform)}</span>
+                    </div>
+                    <div class="public-deployment-field">
+                        <span class="public-deployment-label">Mission Title</span>
+                        <span>${escapeHtml(fields.missionTitle)}</span>
+                    </div>
+                    ${locationHtml}
+                    ${reportHtml}
+                </div>
+            </div>
+        `;
+
+        fragment.appendChild(item);
+    });
+
+    listEl.appendChild(fragment);
+
+    listEl.querySelectorAll('.public-deployment-focus').forEach((btn) => {
+        btn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const index = Number(btn.getAttribute('data-track-index'));
+            if (Number.isFinite(index)) focusMission(index);
+        });
+    });
+
+    listEl.querySelectorAll('.public-deployment-body').forEach((collapseEl) => {
+        collapseEl.addEventListener('show.bs.collapse', () => {
+            openMissionId = collapseEl.getAttribute('data-mission-id') || null;
+            listEl.querySelectorAll('.collapse.show').forEach((el) => {
+                if (el === collapseEl) return;
+                if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
+                    bootstrap.Collapse.getOrCreateInstance(el, { toggle: false }).hide();
+                }
+            });
+        });
+        collapseEl.addEventListener('hide.bs.collapse', () => {
+            if (openMissionId === collapseEl.getAttribute('data-mission-id')) {
+                openMissionId = null;
+            }
+        });
+    });
+
+    if (restoreIndex >= 0) {
+        expandDeploymentItem(restoreIndex, { scroll: false });
+    }
 }
 
 function plotMission(mission, colorIndex) {
@@ -154,7 +374,18 @@ function plotMission(mission, colorIndex) {
         );
     }
 
-    trackLayers.push({ polyline, position, waypoint });
+    const trackIndex = trackLayers.length;
+    bindTrackToSidebar(polyline, trackIndex);
+    bindTrackToSidebar(position, trackIndex);
+    if (waypoint) bindTrackToSidebar(waypoint, trackIndex);
+
+    trackLayers.push({
+        polyline,
+        position,
+        waypoint,
+        missionId: String(mission.mission_id || `mission-${colorIndex}`),
+        color,
+    });
 }
 
 function restyleTrackMarkersForTheme() {
@@ -196,6 +427,7 @@ async function loadPublicMapBundle({ forceRefresh = false } = {}) {
         });
         if (response.status === 404) {
             setStatus('Public map is currently unavailable.', true);
+            renderDeploymentList([]);
             return;
         }
         if (response.status === 429) {
@@ -208,23 +440,25 @@ async function loadPublicMapBundle({ forceRefresh = false } = {}) {
         const bundle = await response.json();
         clearTracks();
         const missions = Array.isArray(bundle.missions) ? bundle.missions : [];
-        let plotted = 0;
-        missions.forEach((mission, idx) => {
+        const plottedMissions = [];
+        missions.forEach((mission) => {
             const before = trackLayers.length;
-            plotMission(mission, idx);
-            if (trackLayers.length > before) plotted += 1;
+            plotMission(mission, before);
+            if (trackLayers.length > before) plottedMissions.push(mission);
         });
-        if (plotted > 0) {
+        renderDeploymentList(plottedMissions);
+        if (plottedMissions.length > 0) {
             fitToTracks();
             const generated = bundle.generated_at || 'unknown';
             const hours = bundle.window_hours != null ? bundle.window_hours : 168;
-            setStatus(`Last updated ${generated} · last ${hours}h · ${plotted} track(s)`);
+            setStatus(`Last updated ${generated} · last ${hours}h · ${plottedMissions.length} track(s)`);
         } else {
             setStatus('No public glider tracks are currently available.');
         }
     } catch (err) {
         console.error('public_map load failed', err);
         setStatus(err.message || 'Failed to load public map.', true);
+        renderDeploymentList([]);
     } finally {
         isLoading = false;
         setToolbarBusy(false);
@@ -321,7 +555,7 @@ function initializePublicMap() {
         loadPublicMapBundle({ forceRefresh: false });
     }, AUTO_REFRESH_MS);
 
-    // Leaflet needs a resize after the centered layout settles.
+    // Leaflet needs a resize after the sidebar + map layout settles.
     window.setTimeout(() => {
         syncPublicLoginBannerOffset();
     }, 50);

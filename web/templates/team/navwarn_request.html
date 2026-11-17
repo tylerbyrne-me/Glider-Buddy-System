@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+
+{% block title %}Wave Glider NAVWARN - {{ platform_buddy_title }}{% endblock %}
+
+{% block head_extra_css %}
+<style>
+    /* Rendered (not display:none) so showPicker() can open the native calendar. */
+    .nw-dt-picker {
+        position: absolute;
+        right: 0.75rem;
+        top: 2rem;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+        border: 0;
+        padding: 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid mt-4 px-3 px-lg-4">
+    <p class="mb-2"><a href="/team">&larr; Team</a></p>
+    <h1 class="mb-2">Wave Glider NAVWARN request</h1>
+    <p class="text-muted mb-3">
+        Draft a Canadian Coast Guard NAVWARN request, then download the filled form
+        as a <code>.docx</code> (official template) or PDF copy. Email it yourself to
+        the desk shown below. The app does not send mail.
+    </p>
+
+    <div class="d-flex flex-wrap gap-2 mb-3 align-items-end">
+        <div style="min-width: 16rem;">
+            <label for="nwDraftSelect" class="form-label mb-1">Saved drafts</label>
+            <select id="nwDraftSelect" class="form-select">
+                <option value="">New request</option>
+            </select>
+        </div>
+        <button type="button" class="btn btn-outline-secondary" id="nwNewBtn">New</button>
+        <button type="button" class="btn btn-outline-danger" id="nwDeleteBtn" disabled>Delete draft</button>
+        <button type="button" class="btn btn-primary" id="nwSaveBtn">Save draft</button>
+        <button type="button" class="btn btn-outline-secondary" id="nwDuplicateBtn" disabled>Duplicate as update</button>
+        <button type="button" class="btn btn-outline-primary" id="nwDocxBtn">Download .docx</button>
+        <button type="button" class="btn btn-outline-primary" id="nwPdfBtn">Download PDF</button>
+    </div>
+    <p id="nwStatus" class="small text-muted"></p>
+
+    <div class="row g-4">
+        <div class="col-xl-6">
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">Desk &amp; mission</h2></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="nwDesk" class="form-label">NAVWARN desk</label>
+                        <select id="nwDesk" class="form-select">
+                            <option value="sydney">Sydney</option>
+                            <option value="port_aux_basques">Port aux Basques</option>
+                        </select>
+                        <div class="mt-2 d-flex flex-wrap gap-2 align-items-center">
+                            <span class="small text-muted">Email:</span>
+                            <code id="nwDeskEmail">NAVWARN.MCTSSydney@innav.gc.ca</code>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="nwCopyEmailBtn">Copy email</button>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nwMission" class="form-label">Catalog mission (planned or active Wave Glider)</label>
+                        <select id="nwMission" class="form-select">
+                            <option value="">Not linked</option>
+                        </select>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="nwTitle" class="form-label">Title</label>
+                            <input id="nwTitle" class="form-control" placeholder="Spring Bloom 2026">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="nwHull" class="form-label">Hull ID (Float SV3)</label>
+                            <input id="nwHull" class="form-control" placeholder="C34167NS">
+                            <div class="form-text">
+                                Coast Guard hull ID from Sensor Tracker component
+                                <code>Float SV3 - C34167NS</code>, not the platform name
+                                <code>SV3-1070</code>. Choosing a mission looks this up.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">Required contact information</h2></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="nwRequester" class="form-label">Name of person, vessel or organization</label>
+                        <input id="nwRequester" class="form-control" placeholder="Tyler Byrne, Dalhousie University, C34166NS">
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="nwTelephone" class="form-label">Telephone number</label>
+                            <input id="nwTelephone" class="form-control" placeholder="Phone number">
+                            <div class="form-text">Prefills from your account when set in User Settings.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="nwEmail" class="form-label">Email address</label>
+                            <input id="nwEmail" class="form-control" type="email" placeholder="name@example.com">
+                            <div class="form-text">Prefills from your account email when available.</div>
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <span class="form-label d-block">Publish contact information in the NAVWARN?</span>
+                        <label class="d-block"><input type="radio" name="nwPublish" value="no" checked> No</label>
+                        <label class="d-block"><input type="radio" name="nwPublish" value="yes_same"> Yes, the same information as in (1.), (2.) and (3.)</label>
+                        <label class="d-block"><input type="radio" name="nwPublish" value="yes_custom"> Yes, the following contact information:</label>
+                        <textarea id="nwPublishCustom" class="form-control mt-2" rows="2" placeholder="Custom contact text"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">Required NAVWARN information</h2></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <span class="form-label d-block">Update or cancellation to a previous NAVWARN?</span>
+                        <label class="me-3"><input type="radio" name="nwUpdate" value="yes"> Yes</label>
+                        <label><input type="radio" name="nwUpdate" value="no" checked> No</label>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nwPrevious" class="form-label">Previously published NAVWARN number (if known)</label>
+                        <input id="nwPrevious" class="form-control" placeholder="NW-N-0623-26">
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6 position-relative">
+                            <label for="nwStart" class="form-label">Start date and time</label>
+                            <div class="input-group">
+                                <input id="nwStart" class="form-control" placeholder="15:00 UTC 2026-04-21">
+                                <button type="button" class="btn btn-outline-secondary" data-dt-pick="nwStart" title="Pick date and time" aria-label="Pick start date and time">
+                                    <i class="fas fa-calendar-alt"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" data-dt-now="nwStart">Now</button>
+                            </div>
+                            <input type="datetime-local" id="nwStartPicker" class="nw-dt-picker" tabindex="-1" aria-hidden="true">
+                        </div>
+                        <div class="col-md-6 position-relative">
+                            <label for="nwCompletion" class="form-label">Completion date and time</label>
+                            <div class="input-group">
+                                <input id="nwCompletion" class="form-control" placeholder="15:00 UTC 2026-04-23">
+                                <button type="button" class="btn btn-outline-secondary" data-dt-pick="nwCompletion" title="Pick date and time" aria-label="Pick completion date and time">
+                                    <i class="fas fa-calendar-alt"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary" data-dt-now="nwCompletion">Now</button>
+                            </div>
+                            <input type="datetime-local" id="nwCompletionPicker" class="nw-dt-picker" tabindex="-1" aria-hidden="true">
+                            <div class="btn-group btn-group-sm mt-1" role="group" aria-label="Completion relative to start">
+                                <button type="button" class="btn btn-outline-secondary" data-dt-offset-days="1">Start +1 d</button>
+                                <button type="button" class="btn btn-outline-secondary" data-dt-offset-days="7">+7 d</button>
+                                <button type="button" class="btn btn-outline-secondary" data-dt-offset-days="30">+30 d</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-2">
+                        <button type="button" class="btn btn-sm btn-link px-0" id="nwMissionDatesBtn">Use catalog mission start / end</button>
+                        <div class="form-text">Times use the format <code>15:00 UTC 2026-04-21</code> and follow the Timezone choice below.</div>
+                    </div>
+                    <div class="mt-3">
+                        <span class="form-label d-block">Timezone</span>
+                        <label class="me-3"><input type="radio" name="nwTimezone" value="local"> Local Time</label>
+                        <label><input type="radio" name="nwTimezone" value="utc" checked> UTC</label>
+                    </div>
+                    <div class="mt-3">
+                        <span class="form-label d-block">Days of operation</span>
+                        <label class="me-3"><input type="radio" name="nwDays" value="weekdays"> Weekdays only</label>
+                        <label class="me-3"><input type="radio" name="nwDays" value="weekends"> Weekends only</label>
+                        <label class="me-3"><input type="radio" name="nwDays" value="daily" checked> Daily</label>
+                        <label class="me-3"><input type="radio" name="nwDays" value="intermittently"> Intermittently</label>
+                        <label><input type="radio" name="nwDays" value="other"> Other</label>
+                        <input id="nwDaysOther" class="form-control mt-2" placeholder="Other days">
+                    </div>
+                    <div class="mt-3">
+                        <span class="form-label d-block">Hours of operation</span>
+                        <label class="me-3"><input type="radio" name="nwHours" value="daylight"> Daylight hours only</label>
+                        <label class="me-3"><input type="radio" name="nwHours" value="24h" checked> 24 hours</label>
+                        <label><input type="radio" name="nwHours" value="other"> Other</label>
+                        <input id="nwHoursOther" class="form-control mt-2" placeholder="Other hours">
+                    </div>
+                    <div class="mt-3">
+                        <span class="form-label d-block">Completion firm or estimated?</span>
+                        <label class="me-3"><input type="radio" name="nwFirmness" value="firm"> Firm</label>
+                        <label><input type="radio" name="nwFirmness" value="estimated" checked> Estimated</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-6">
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">Position</h2></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <span class="form-label d-block">Position format</span>
+                        <label class="me-3"><input type="radio" name="nwPosFormat" value="dm"> degrees and minutes</label>
+                        <label class="me-3"><input type="radio" name="nwPosFormat" value="dms"> degrees minutes and seconds</label>
+                        <label><input type="radio" name="nwPosFormat" value="dmm" checked> degrees minutes and decimal minutes</label>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="nwLat" class="form-label">Latitude (decimal degrees)</label>
+                            <input id="nwLat" class="form-control" type="number" step="any" placeholder="44.512">
+                        </div>
+                        <div class="col-md-6">
+                            <label for="nwLon" class="form-label">Longitude (decimal degrees)</label>
+                            <input id="nwLon" class="form-control" type="number" step="any" placeholder="-63.409">
+                        </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="nwLastFixBtn">Use last telemetry fix</button>
+                        <small id="nwFixStatus" class="text-muted"></small>
+                    </div>
+                    <div class="small mt-2">
+                        <span class="text-muted">Prints on the form as:</span>
+                        <code id="nwPositionPreview">—</code>
+                    </div>
+                    <div class="mt-3">
+                        <label for="nwPlace" class="form-label">Local-area place name</label>
+                        <input id="nwPlace" class="form-control" placeholder="Halifax Approaches">
+                    </div>
+                    <div class="mt-3">
+                        <label for="nwExtraPositions" class="form-label">Additional positions / area description</label>
+                        <textarea id="nwExtraPositions" class="form-control" rows="3" placeholder="5km diameter operation area around the center lat/lon point"></textarea>
+                        <div class="form-text">The map below writes this text until you edit it by hand.</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">Operations area map</h2></div>
+                <div class="card-body">
+                    <p class="small text-muted">
+                        Click the map to place points. Hold station uses one point (plus optional radius);
+                        course and polygon add a point per click. Drag markers to adjust. The first point
+                        (or polygon centre) becomes the form position.
+                    </p>
+                    <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Area mode">
+                            <input type="radio" class="btn-check" name="nwAreaMode" id="nwAreaHold" value="hold" autocomplete="off" checked>
+                            <label class="btn btn-outline-primary" for="nwAreaHold">Hold station</label>
+                            <input type="radio" class="btn-check" name="nwAreaMode" id="nwAreaCourse" value="course" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="nwAreaCourse">Course</label>
+                            <input type="radio" class="btn-check" name="nwAreaMode" id="nwAreaPolygon" value="polygon" autocomplete="off">
+                            <label class="btn btn-outline-primary" for="nwAreaPolygon">Polygon</label>
+                        </div>
+                        <div id="nwRadiusGroup" class="input-group input-group-sm" style="max-width: 11rem;">
+                            <span class="input-group-text">Radius</span>
+                            <input id="nwRadiusKm" class="form-control" type="number" min="0" step="0.1" placeholder="2.5">
+                            <span class="input-group-text">km</span>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="nwUndoPointBtn">Undo point</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="nwClearPointsBtn">Clear points</button>
+                        <div class="form-check form-check-inline mb-0">
+                            <input class="form-check-input" type="checkbox" id="nwShowTrack" checked>
+                            <label class="form-check-label small" for="nwShowTrack">Mission track (72 h)</label>
+                        </div>
+                    </div>
+                    <div id="nwMap" class="border rounded mb-2" style="height: 440px;"></div>
+                    <small id="nwAreaStatus" class="text-muted d-block"></small>
+                    {% include "team/_map_reference_overlays.html" %}
+                </div>
+            </div>
+
+            <div class="card gbs-card mb-3">
+                <div class="card-header"><h2 class="h5 mb-0">NAVWARN details</h2></div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label for="nwNatureCategory" class="form-label">Nature of event/operation (select ONE topic)</label>
+                        <select id="nwNatureCategory" class="form-select">
+                            <option value="marine_works">Marine works</option>
+                            <option value="obstruction" selected>Obstruction</option>
+                            <option value="offshore">Offshore works</option>
+                            <option value="recreational">Recreational event</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nwNatureTopic" class="form-label">Topic</label>
+                        <select id="nwNatureTopic" class="form-select"></select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nwNatureOther" class="form-label">Other description (when topic is other)</label>
+                        <input id="nwNatureOther" class="form-control" placeholder="Acoustic/Oceanographic Survey">
+                    </div>
+                    <div class="mb-3">
+                        <label for="nwVessels" class="form-label">Vessels or other equipment on scene</label>
+                        <textarea id="nwVessels" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nwMarkers" class="form-label">Markers, buoys, flags, lights</label>
+                        <textarea id="nwMarkers" class="form-control" rows="3"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <span class="form-label d-block">Minimum wash / wide berth</span>
+                        <label class="me-3"><input type="radio" name="nwWash" value="none" checked> None</label>
+                        <label class="me-3"><input type="radio" name="nwWash" value="minimum_wash"> Minimum wash</label>
+                        <label><input type="radio" name="nwWash" value="wide_berth"> Wide berth</label>
+                    </div>
+                    <div class="mb-3">
+                        <label for="nwOtherDetails" class="form-label">Other details for mariners</label>
+                        <textarea id="nwOtherDetails" class="form-control" rows="4"></textarea>
+                    </div>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="nwFillDefaultsBtn">
+                        Fill Wave Glider defaults from Hull ID
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block body_extra_js %}
+<script type="module" src="/static/js/team/navwarn_request.js?v={{ app_version }}"></script>
+{% endblock %}

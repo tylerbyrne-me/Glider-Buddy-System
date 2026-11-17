@@ -1,6 +1,6 @@
 """Team hub ops-tool catalog and capture-based runner.
 
-Registry of admin Team tools. ``kind="run"`` entries execute in-process via
+Registry of Team hub tools. ``kind="run"`` entries execute in-process via
 importlib (stdout/stderr/logging capture). ``kind="page"`` entries link to
 dedicated Team tool pages with their own forms/APIs.
 """
@@ -129,6 +129,17 @@ OPS_SCRIPTS: Dict[str, OpsScriptSpec] = {
         ),
         kind="page",
         href="/team/ora",
+    ),
+    "navwarn_request": OpsScriptSpec(
+        id="navwarn_request",
+        label="Wave Glider NAVWARN request",
+        description=(
+            "Draft a Canadian Coast Guard NAVWARN request for a Wave Glider: "
+            "desk, schedule, position, and vessel details. Download a filled "
+            ".docx or PDF copy."
+        ),
+        kind="page",
+        href="/team/navwarn",
     ),
 }
 

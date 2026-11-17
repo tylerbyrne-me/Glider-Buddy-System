@@ -1178,7 +1178,67 @@ class SensorTrackerService:
         except Exception as e:
             logger.error(f"Error fetching instruments on platform '{platform_name}': {e}")
             return []
-    
+
+    async def fetch_components_on_platform(
+        self,
+        platform_name: str,
+        attached_time: Optional[str] = None,
+        depth: int = 1,
+    ) -> List[Dict[str, Any]]:
+        """Fetch ``component_on_platform`` rows for a Tracker platform name."""
+        try:
+            logger.info(
+                "Fetching components on platform '%s' (attached_time: %s)",
+                platform_name,
+                attached_time,
+            )
+            filters: Dict[str, Any] = {
+                "platform_name": platform_name,
+                "depth": depth,
+            }
+            if attached_time:
+                filters["attached_time"] = attached_time
+
+            try:
+                if hasattr(stc, "component_on_platform"):
+                    response = stc.component_on_platform.get(filters)
+                    if response and hasattr(response, "dict"):
+                        components = response.dict
+                        if isinstance(components, list):
+                            return components
+                        if isinstance(components, dict):
+                            if "results" in components:
+                                return components["results"]
+                            return [components]
+            except AttributeError:
+                logger.debug(
+                    "component_on_platform not in client library, using direct API call"
+                )
+            except Exception as exc:
+                logger.debug("Client library call failed, trying direct API: %s", exc)
+
+            base_url = stc.HOST.rstrip("/")
+            url = f"{base_url}/api/component_on_platform/"
+            params = {"platform_name": platform_name, "depth": depth}
+            if attached_time:
+                params["attached_time"] = attached_time
+
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+                data = response.json()
+
+            if isinstance(data, dict) and "results" in data:
+                return data["results"]
+            if isinstance(data, list):
+                return data
+            return [data] if data else []
+        except Exception as exc:
+            logger.error(
+                "Error fetching components on platform '%s': %s", platform_name, exc
+            )
+            return []
+
     # Note: History parsing methods removed - we now use API endpoints directly
     # (parse_instrument_on_platform_history, parse_sensor_on_instrument_history)
     # These were used for parsing nested history data from deployment responses,

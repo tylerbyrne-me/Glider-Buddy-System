@@ -41,6 +41,10 @@ class UserInDB(SQLModel, table=True):
     email: Optional[str] = SQLModelField(
         default=None, unique=True, index=True, description="Email address of the user (must be unique if provided)."
     )
+    telephone: Optional[str] = SQLModelField(
+        default=None,
+        description="Optional contact telephone for the user (e.g. NAVWARN requesting organization).",
+    )
     full_name: Optional[str] = SQLModelField(default=None, description="Full name of the user.")
     hashed_password: str = SQLModelField(description="Hashed password for the user.")
     role: UserRoleEnum = SQLModelField(
@@ -74,6 +78,11 @@ class UserInDB(SQLModel, table=True):
         default=True,
         index=True,
         description="Whether the user may access the Slocum Glider platform (when globally enabled).",
+    )
+    can_access_team: bool = SQLModelField(
+        default=False,
+        index=True,
+        description="Whether the user may access the Team hub (when team_hub is enabled). Admins always allowed.",
     )
     ui_preferences: Optional[Dict[str, Any]] = SQLModelField(
         default=None,
@@ -1819,6 +1828,69 @@ class OraHullProfile(SQLModel, table=True):
     smc_version: Optional[str] = SQLModelField(default=None)
     updated_at_utc: datetime = SQLModelField(default_factory=lambda: datetime.now(timezone.utc))
     updated_by_username: Optional[str] = SQLModelField(default=None)
+
+
+class NavwarnRequest(SQLModel, table=True):
+    """Team draft of a Canadian Coast Guard NAVWARN request form."""
+
+    __tablename__ = "navwarn_requests"
+
+    id: Optional[int] = SQLModelField(default=None, primary_key=True)
+    title: Optional[str] = SQLModelField(default=None, index=True)
+    catalog_mission_id: Optional[str] = SQLModelField(
+        default=None,
+        foreign_key="catalog_missions.id",
+        index=True,
+    )
+    hull_name: Optional[str] = SQLModelField(default=None, index=True)
+    desk: str = SQLModelField(default="sydney", index=True)
+    requester_name: str = SQLModelField(default="")
+    telephone: Optional[str] = SQLModelField(default=None)
+    email: Optional[str] = SQLModelField(default=None)
+    publish_contact: Optional[str] = SQLModelField(default="no")
+    publish_contact_custom: Optional[str] = SQLModelField(
+        default=None, sa_column=Column(Text)
+    )
+    is_update_or_cancel: Optional[str] = SQLModelField(default="no")
+    previous_navwarn_number: Optional[str] = SQLModelField(default=None)
+    start_datetime: Optional[str] = SQLModelField(default=None)
+    timezone: Optional[str] = SQLModelField(default="utc")
+    days_of_operation: Optional[str] = SQLModelField(default="daily")
+    days_other: Optional[str] = SQLModelField(default=None)
+    hours_of_operation: Optional[str] = SQLModelField(default="24h")
+    hours_other: Optional[str] = SQLModelField(default=None)
+    completion_datetime: Optional[str] = SQLModelField(default=None)
+    completion_firmness: Optional[str] = SQLModelField(default="estimated")
+    position_format: str = SQLModelField(default="dmm")
+    latitude: Optional[float] = SQLModelField(default=None)
+    longitude: Optional[float] = SQLModelField(default=None)
+    place_name: Optional[str] = SQLModelField(default=None)
+    extra_positions: Optional[str] = SQLModelField(
+        default=None, sa_column=Column(Text)
+    )
+    area_json: Optional[Dict[str, Any]] = SQLModelField(
+        default=None,
+        sa_column=Column(JSON),
+        description="Map editor area: mode (hold/course/polygon), points, radius_km.",
+    )
+    nature_category: Optional[str] = SQLModelField(default="obstruction")
+    nature_topic: Optional[str] = SQLModelField(default="other")
+    nature_other: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    vessels_on_scene: Optional[str] = SQLModelField(
+        default=None, sa_column=Column(Text)
+    )
+    markers_description: Optional[str] = SQLModelField(
+        default=None, sa_column=Column(Text)
+    )
+    wash_berth: Optional[str] = SQLModelField(default="none")
+    other_details: Optional[str] = SQLModelField(default=None, sa_column=Column(Text))
+    created_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_at_utc: datetime = SQLModelField(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+    updated_by_username: Optional[str] = SQLModelField(default=None, index=True)
 
 
 class WaveGliderMissionMetrics(SQLModel, table=True):

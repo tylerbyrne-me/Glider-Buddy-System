@@ -1,11 +1,11 @@
 # Sensor Tracker Team browser
 
-Live, **read-only** inventory search in the admin Team hub. Use this to inspect Sensor Tracker as the source of truth (platforms, deployments, loggers, instruments, sensors, and components when Tracker exposes them). Detail pages show live **service time** (days at sea, days on the current deployment, days attached / on the shelf) from Tracker start/end windows. Calibration age and lifetime expectations are not computed yet.
+Live, **read-only** inventory search in the Team hub. Use this to inspect Sensor Tracker as the source of truth (platforms, deployments, loggers, instruments, sensors, and components when Tracker exposes them). Detail pages show live **service time** (days at sea, days on the current deployment, days attached / on the shelf) from Tracker start/end windows. Calibration age and lifetime expectations are not computed yet.
 
 ## Access
 
 - Feature toggle: `team_hub` (same as the rest of Team)
-- Role: admin
+- ACL: `can_access_team` (admins always allowed; grant via User Management)
 - URL: `/team/sensor-tracker` (also listed on `/team` as **Sensor Tracker browser**)
 
 ## What it queries

@@ -4344,6 +4344,35 @@ async def get_view_station_status_page_legacy():
     )
 
 
+@app.get("/wave-glider/station_progress_map.html", response_class=HTMLResponse)
+async def get_station_progress_map_page(
+    request: Request,
+    current_user: Optional[models.User] = Depends(get_optional_current_user),
+):
+    from .core.platforms import PLATFORM_WAVE_GLIDER, platform_page_context
+    from .core.infra.feature_toggles import is_feature_enabled
+
+    if not is_feature_enabled("station_offloads"):
+        raise HTTPException(status_code=404, detail="Station offloads are disabled.")
+
+    username_for_log = (
+        current_user.username if current_user else "anonymous/unauthenticated"
+    )
+    logger.info(
+        "User '%s' accessing /wave-glider/station_progress_map.html.",
+        username_for_log,
+    )
+    context = get_template_context(
+        request=request,
+        current_user=current_user,
+    )
+    context.update(platform_page_context(PLATFORM_WAVE_GLIDER))
+    return templates.TemplateResponse(
+        "station_progress_map.html",
+        context,
+    )
+
+
 # --- HTML Route for Admin User Management ---
 @app.get("/admin/user_management.html", response_class=HTMLResponse)
 async def get_admin_user_management_page(

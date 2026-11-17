@@ -5,7 +5,7 @@ Provides endpoints to retrieve telemetry data for map display
 and generate KML files for Google Maps/Earth export.
 """
 
-from typing import Optional, List
+from typing import Optional, List, Annotated
 from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, Depends, Query, HTTPException, status, Request
 from fastapi.responses import JSONResponse, Response
@@ -25,6 +25,7 @@ from ..core.geo import vessel_density as vessel_density_service
 from ..core.geo import ciops_ice as ciops_ice_service
 from ..core.data.processors import preprocess_telemetry_df
 from ..core.data.data_service import get_data_service
+from ..core.infra.db import SQLModelSession, get_db_session
 from app.platforms.slocum.cache_service import (
     get_cached_or_fetch_dashboard_df,
     get_cached_or_fetch_bundle_df,
@@ -36,6 +37,7 @@ from app.platforms.slocum.checklist_autofill import latest_valid_waypoint
 from app.platforms.slocum.overage_cache import OverageRangeError
 from ..core.infra.feature_toggles import is_feature_enabled
 from ..core.infra.error_handlers import handle_processing_error, handle_data_not_found, ErrorContext
+from ..services.station_offload_map import build_station_offload_status_geojson
 
 logger = logging.getLogger(__name__)
 
@@ -1335,5 +1337,52 @@ async def purge_navwarn_cache_endpoint(
         summary.get("freed_bytes"),
     )
     return summary
+
+
+def _require_station_offloads() -> None:
+    if not is_feature_enabled("station_offloads"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Station offloads are disabled (feature_toggles.station_offloads).",
+        )
+
+
+@router.get("/api/map/stations/offload-status")
+async def get_station_offload_status_geojson(
+    session: Annotated[SQLModelSession, Depends(get_db_session)],
+    current_user: models.User = Depends(get_current_active_user),
+    season_year: Optional[int] = Query(
+        None,
+        description="Season tag for offload status (None = active season context).",
+    ),
+):
+    """GeoJSON points for station offload progress (auth; gated by station_offloads)."""
+    _require_station_offloads()
+    try:
+        collection = build_station_offload_status_geojson(
+            session,
+            season_year=season_year,
+            include_retired=False,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to build station offload status GeoJSON for user=%s: %s",
+            current_user.username,
+            exc,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Unable to build station offload status map layer.",
+        ) from exc
+    meta = collection.get("meta") or {}
+    logger.info(
+        "User '%s' loaded station offload map layer (plotted=%s omitted=%s season=%r)",
+        current_user.username,
+        meta.get("plotted"),
+        meta.get("omitted_missing_coords"),
+        season_year,
+    )
+    return collection
 
 

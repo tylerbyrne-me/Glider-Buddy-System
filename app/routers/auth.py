@@ -282,6 +282,10 @@ class UserSelfUpdate(BaseModel):
     """Model for users to update their own information."""
     full_name: Optional[str] = None
     email: Optional[str] = Field(None, description="New email for the user. Must be unique if changed.")
+    telephone: Optional[str] = Field(
+        None,
+        description="Contact telephone for the user (used by team forms such as NAVWARN).",
+    )
     sensor_tracker_token: Optional[str] = Field(
         None,
         description="Admin-only Sensor Tracker API token.",
@@ -316,6 +320,8 @@ async def update_current_user(
         admin_kwargs["full_name"] = user_update.full_name
     if "email" in update_data:
         admin_kwargs["email"] = user_update.email
+    if "telephone" in update_data:
+        admin_kwargs["telephone"] = user_update.telephone
 
     if admin_kwargs:
         admin_update = models.UserUpdateForAdmin(**admin_kwargs)

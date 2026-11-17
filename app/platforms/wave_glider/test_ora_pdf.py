@@ -3,7 +3,9 @@
 import io
 
 import PyPDF2
+from PIL import Image
 
+from app.platforms.wave_glider import ora_map
 from app.platforms.wave_glider.ora_pdf import (
     OraCoordinate,
     OraDeviceLine,
@@ -62,6 +64,47 @@ def test_pdf_includes_request_fields_and_skips_unchecked_devices() -> None:
     assert "Spare" not in text
     assert "Hold south of Halifax." in text
     assert "opscenter@liquid-robotics.com" in text
+
+
+def _mixed_coordinates() -> list[OraCoordinate]:
+    return [
+        OraCoordinate("Coordinate 1", 44.40, -63.50, "Deployment location"),
+        OraCoordinate("Coordinate 2", 44.30, -63.30, ""),
+        OraCoordinate("Coordinate 3", 44.20, -63.20, "Hold station"),
+        OraCoordinate("Coordinate 4", 44.10, -63.40, "Box NW"),
+        OraCoordinate("Coordinate 5", 44.10, -63.10, "Box NE"),
+        OraCoordinate("Coordinate 6", 43.90, -63.10, "Box SE"),
+        OraCoordinate("Coordinate 7", 43.90, -63.40, "Box SW"),
+    ]
+
+
+def test_box_groups_find_box_runs_inside_a_mixed_list() -> None:
+    groups = ora_map._box_groups(_mixed_coordinates())
+    assert groups == [[(44.10, -63.40), (44.10, -63.10), (43.90, -63.10), (43.90, -63.40)]]
+
+
+def test_area_map_png_renders_mixed_points(monkeypatch) -> None:
+    monkeypatch.setattr(ora_map, "_add_report_bathymetry_contours", lambda ax, extent: None)
+    png = ora_map.render_ora_area_map_png(_mixed_coordinates())
+    assert png and png.startswith(b"\x89PNG")
+
+
+def test_area_map_png_is_none_without_positions() -> None:
+    assert ora_map.render_ora_area_map_png([OraCoordinate("Coordinate 1", None, None, "TBD")]) is None
+
+
+def test_pdf_places_map_before_coordinates_when_png_given() -> None:
+    fields = _fields()
+    text = _text(render_ora_pdf(fields, area_map_png=_tiny_png()))
+    assert "Purpose" in text
+    assert text.index("Purpose") < text.index("Operations area map") < text.index("Coordinates\n")
+    assert "Operations area map" not in _text(render_ora_pdf(fields))
+
+
+def _tiny_png() -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (40, 30), "white").save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def test_pdf_filename() -> None:

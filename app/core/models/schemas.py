@@ -277,6 +277,10 @@ class UserBase(BaseModel):
     """Base user model."""
     username: str = Field(description="Unique username for the user.")
     email: Optional[str] = Field(None, description="Email address of the user.")
+    telephone: Optional[str] = Field(
+        None,
+        description="Optional contact telephone for the user.",
+    )
     full_name: Optional[str] = Field(None, description="Full name of the user.")
     color: Optional[str] = Field(default=None, description="User's assigned color for UI elements.")
     role: UserRoleEnum = Field(UserRoleEnum.pilot, description="Role of the user, determines access permissions.")
@@ -295,6 +299,7 @@ class User(UserBase):
     is_pic: bool = Field(False, description="Whether the user is eligible for PIC roster selection.")
     can_access_wave_glider: bool = Field(True, description="Whether the user may access Wave Glider.")
     can_access_slocum: bool = Field(True, description="Whether the user may access Slocum Glider.")
+    can_access_team: bool = Field(False, description="Whether the user may access the Team hub.")
     ui_preferences: UiPreferences = Field(default_factory=UiPreferences)
 
     @field_validator("ui_preferences", mode="before")
@@ -307,12 +312,16 @@ class UserUpdateForAdmin(BaseModel):
     """Model for admin updates to user."""
     full_name: Optional[str] = None
     email: Optional[str] = Field(None, description="New email for the user. Must be unique if changed.")
+    telephone: Optional[str] = Field(
+        None, description="New contact telephone for the user."
+    )
     role: Optional[UserRoleEnum] = Field(None, description="New role for the user.")
     disabled: Optional[bool] = Field(None, description="New disabled status for the user account.")
     is_mos: Optional[bool] = Field(None, description="Set whether this user is included in the MOS roster.")
     is_pic: Optional[bool] = Field(None, description="Set whether this user is included in the PIC roster.")
     can_access_wave_glider: Optional[bool] = Field(None, description="Allow Wave Glider platform access.")
     can_access_slocum: Optional[bool] = Field(None, description="Allow Slocum Glider platform access.")
+    can_access_team: Optional[bool] = Field(None, description="Allow Team hub access.")
 
 
 class PasswordUpdate(BaseModel):
@@ -1969,6 +1978,8 @@ class OraMissionOption(BaseModel):
     dates_of_operation: str = ""
     vehicle_model: Optional[str] = None
     hull_profile: Optional[OraHullProfileRead] = None
+    track_kind: Optional[str] = None
+    track_id: Optional[str] = None
 
 
 class OraContextTrack(BaseModel):
@@ -1989,4 +2000,79 @@ class OraLoadoutResponse(BaseModel):
     platform_name: str
     instrument_names: List[str] = []
     devices: List[OraDeviceRow] = []
+    warning: Optional[str] = None
+
+
+class NavwarnAreaPoint(BaseModel):
+    lat: float
+    lon: float
+
+
+class NavwarnArea(BaseModel):
+    mode: str = "hold"
+    points: List[NavwarnAreaPoint] = []
+    radius_km: Optional[float] = None
+
+
+class NavwarnDraftWrite(BaseModel):
+    title: Optional[str] = None
+    catalog_mission_id: Optional[str] = None
+    hull_name: Optional[str] = None
+    desk: str = "sydney"
+    requester_name: str = ""
+    telephone: Optional[str] = None
+    email: Optional[str] = None
+    publish_contact: Optional[str] = "no"
+    publish_contact_custom: Optional[str] = None
+    is_update_or_cancel: Optional[str] = "no"
+    previous_navwarn_number: Optional[str] = None
+    start_datetime: Optional[str] = None
+    timezone: Optional[str] = "utc"
+    days_of_operation: Optional[str] = "daily"
+    days_other: Optional[str] = None
+    hours_of_operation: Optional[str] = "24h"
+    hours_other: Optional[str] = None
+    completion_datetime: Optional[str] = None
+    completion_firmness: Optional[str] = "estimated"
+    position_format: str = "dmm"
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    place_name: Optional[str] = None
+    extra_positions: Optional[str] = None
+    area: Optional[NavwarnArea] = None
+    nature_category: Optional[str] = "obstruction"
+    nature_topic: Optional[str] = "other"
+    nature_other: Optional[str] = None
+    vessels_on_scene: Optional[str] = None
+    markers_description: Optional[str] = None
+    wash_berth: Optional[str] = "none"
+    other_details: Optional[str] = None
+
+
+class NavwarnDraftRead(NavwarnDraftWrite):
+    id: int
+    created_at_utc: datetime
+    updated_at_utc: datetime
+    updated_by_username: Optional[str] = None
+
+
+class NavwarnDraftSummary(BaseModel):
+    id: int
+    title: Optional[str] = None
+    hull_name: Optional[str] = None
+    desk: str = "sydney"
+    requester_name: str = ""
+    start_datetime: Optional[str] = None
+    previous_navwarn_number: Optional[str] = None
+    updated_at_utc: datetime
+
+
+class NavwarnDuplicateRequest(BaseModel):
+    previous_navwarn_number: Optional[str] = None
+
+
+class NavwarnFloatHullResponse(BaseModel):
+    platform_name: str
+    hull_id: Optional[str] = None
+    component_name: Optional[str] = None
     warning: Optional[str] = None

@@ -369,3 +369,59 @@ def build_status_overview_row(
         "remote_health_humidity": latest_remote_health_humidity,
         "remote_health_report_date": latest_remote_health_report_date,
     }
+
+
+def station_array_prefix(station_id: Optional[str]) -> str:
+    """Leading alphabetic run of station_id (CBS, HFX, NCAT, …)."""
+    raw = str(station_id or "").strip().upper()
+    if not raw:
+        return ""
+    i = 0
+    while i < len(raw) and raw[i].isalpha():
+        i += 1
+    return raw[:i] if i else raw
+
+
+def station_status_rows_to_geojson(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Build a FeatureCollection for the station offload progress map layer.
+
+    Stations without finite lat/lon are omitted and counted in meta.
+    """
+    features: List[Dict[str, Any]] = []
+    omitted = 0
+    for row in rows or []:
+        try:
+            lat = float(row.get("deployment_latitude"))
+            lon = float(row.get("deployment_longitude"))
+        except (TypeError, ValueError):
+            omitted += 1
+            continue
+        if lat != lat or lon != lon:  # NaN
+            omitted += 1
+            continue
+        if abs(lat) > 90 or abs(lon) > 180:
+            omitted += 1
+            continue
+        station_id = row.get("station_id") or ""
+        features.append(
+            {
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                "properties": {
+                    "station_id": station_id,
+                    "status_text": row.get("status_text") or "",
+                    "status_color": row.get("status_color") or "grey",
+                    "last_offload_by_glider": row.get("last_offload_by_glider"),
+                    "array_prefix": station_array_prefix(str(station_id)),
+                },
+            }
+        )
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "meta": {
+            "plotted": len(features),
+            "omitted_missing_coords": omitted,
+            "total_rows": len(rows or []),
+        },
+    }
