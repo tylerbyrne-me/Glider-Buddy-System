@@ -139,7 +139,15 @@ function drawMarkers({ fitBounds = false } = {}) {
     markerLayerGroup.addTo(missionMapRef);
 
     const omitted = Number(geoJsonCache?.meta?.omitted_missing_coords) || 0;
-    updateStatusLine(`${plotted} plotted · ${omitted} without lat/lon`);
+    const seasonYear = geoJsonCache?.meta?.season_year;
+    const seasonClosed = Boolean(geoJsonCache?.meta?.season_is_closed);
+    let seasonLabel = 'no season';
+    if (seasonYear != null) {
+        seasonLabel = seasonClosed
+            ? `season ${seasonYear} (closed)`
+            : `season ${seasonYear}`;
+    }
+    updateStatusLine(`${plotted} plotted · ${omitted} without lat/lon · ${seasonLabel}`);
 
     if (fitBounds && latLngs.length) {
         try {

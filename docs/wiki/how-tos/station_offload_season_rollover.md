@@ -26,6 +26,16 @@ Station offload progress is shown as tiny Leaflet `circleMarker`s (no clustering
 
 Stations without `deployment_latitude` / `deployment_longitude` are omitted.
 
+### Season context (map + default overview)
+
+Both the home/dedicated map layer (`GET /api/map/stations/offload-status`) and the Station Offload Status overview when no season is selected use `StationSeasonService.resolve_operational_season_context`:
+
+1. **Active open season** (`is_active` and not closed) — e.g. 2026 mid-season, or 2027 after it is opened.
+2. Else **most recent closed season** — e.g. after closing 2026 in November while an inactive 2027 shell may already exist; keep showing 2026 until 2027 is set active.
+3. Else newest season row / none.
+
+GeoJSON `meta` includes `season_year`, `season_is_closed`, and `season_source` (shown on the map status line).
+
 ### Surfaces
 
 1. **WG home map layer** — toggle **Offload status** under Station Offloads (gated by `station_offloads`). Data: `GET /api/map/stations/offload-status` (GeoJSON). Popup links to the offload sheet (`?station=`).

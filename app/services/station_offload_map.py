@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
@@ -47,13 +47,33 @@ def _resolve_station_flag_state(
     return state_by_station
 
 
+def resolve_overview_season_context(
+    session: Session,
+    *,
+    season_year: Optional[int] = None,
+) -> Tuple[Optional[int], bool, str]:
+    """Resolve (target_year, season_is_closed, source) for overview / map queries."""
+    if season_year is not None:
+        season_row = StationSeasonService.get_season_by_year(session, season_year)
+        season_is_closed = bool(season_row and season_row.closed_at_utc) or (
+            season_row is None
+        )
+        return season_year, season_is_closed, "explicit"
+    return StationSeasonService.resolve_operational_season_context(session)
+
+
 def list_station_status_overview(
     session: Session,
     *,
     season_year: Optional[int] = None,
     include_retired: bool = False,
 ) -> List[Dict[str, Any]]:
-    """Live registry rows with season-scoped offload status (same as status_overview API)."""
+    """Live registry rows with season-scoped offload status (same as status_overview API).
+
+    When ``season_year`` is omitted, uses
+    :meth:`StationSeasonService.resolve_operational_season_context` (active open
+    season, else most recent closed season).
+    """
     statement = (
         select(models.StationMetadata)
         .options(selectinload(models.StationMetadata.offload_logs))
@@ -76,16 +96,10 @@ def list_station_status_overview(
         )
     latest_swap_by_station = latest_hardware_swap_ts_by_station(hardware_rows)
 
-    if season_year is None:
-        active = StationSeasonService.get_active_season(session)
-        target_year: Optional[int] = active.year if active else None
-        season_is_closed = False
-    else:
-        target_year = season_year
-        season_row = StationSeasonService.get_season_by_year(session, season_year)
-        season_is_closed = bool(season_row and season_row.closed_at_utc) or (
-            season_row is None
-        )
+    target_year, season_is_closed, _source = resolve_overview_season_context(
+        session,
+        season_year=season_year,
+    )
 
     all_flag_events = list(session.exec(select(models.StationFlagEvent)).all())
     flag_state_by_station = _resolve_station_flag_state(
@@ -96,29 +110,17 @@ def list_station_status_overview(
 
     overview_list: List[Dict[str, Any]] = []
     for station in stations_metadata:
-        if season_year is None:
-            if target_year is None:
-                relevant_logs = [
-                    log
-                    for log in station.offload_logs
-                    if log.field_season_year is None
-                ]
-            else:
-                relevant_logs = [
-                    log
-                    for log in station.offload_logs
-                    if offload_log_matches_season_year(
-                        log_season=log.field_season_year,
-                        target_year=target_year,
-                        season_is_closed=False,
-                    )
-                ]
+        if target_year is None:
+            relevant_logs = [
+                log
+                for log in station.offload_logs
+                if log.field_season_year is None
+            ]
         else:
             relevant_logs = [
                 log
                 for log in station.offload_logs
-                if target_year is not None
-                and offload_log_matches_season_year(
+                if offload_log_matches_season_year(
                     log_season=log.field_season_year,
                     target_year=target_year,
                     season_is_closed=season_is_closed,
@@ -147,9 +149,25 @@ def build_station_offload_status_geojson(
     season_year: Optional[int] = None,
     include_retired: bool = False,
 ) -> Dict[str, Any]:
-    rows = list_station_status_overview(
+    target_year, season_is_closed, source = resolve_overview_season_context(
         session,
         season_year=season_year,
+    )
+    # Pass the resolved year explicitly so open vs closed matching is consistent
+    # (operational resolve may fall back to a closed year when nothing is active).
+    rows = list_station_status_overview(
+        session,
+        season_year=target_year,
         include_retired=include_retired,
     )
-    return station_status_rows_to_geojson(rows)
+    collection = station_status_rows_to_geojson(rows)
+    meta = dict(collection.get("meta") or {})
+    meta.update(
+        {
+            "season_year": target_year,
+            "season_is_closed": season_is_closed,
+            "season_source": source,
+        }
+    )
+    collection["meta"] = meta
+    return collection

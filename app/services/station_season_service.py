@@ -73,6 +73,40 @@ class StationSeasonService:
         return list(session.exec(statement).all())
 
     @staticmethod
+    def resolve_operational_season_context(
+        session: SQLModelSession,
+    ) -> tuple[Optional[int], bool, str]:
+        """Season year used when callers omit an explicit season filter.
+
+        Preference order:
+        1. Active open season (``is_active`` and not closed) — e.g. 2026 mid-season
+           or 2027 after it is opened.
+        2. Most recent *closed* season — covers the winter gap after closing 2026
+           while an inactive 2027 shell may already exist from close-season.
+        3. Newest season row of any kind (rare bootstrap).
+        4. ``(None, False)`` when no ``field_seasons`` rows exist.
+
+        Returns ``(year, season_is_closed, source)`` where ``source`` is one of
+        ``active_open``, ``latest_closed``, ``latest_any``, ``none``.
+        """
+        active = StationSeasonService.get_active_season(session)
+        if active is not None and not active.closed_at_utc:
+            return active.year, False, "active_open"
+
+        seasons = StationSeasonService.get_all_seasons(session)
+        closed = [s for s in seasons if s.closed_at_utc]
+        if closed:
+            # get_all_seasons is year-desc; first closed is the most recent closed year
+            latest_closed = closed[0]
+            return latest_closed.year, True, "latest_closed"
+
+        if seasons:
+            newest = seasons[0]
+            return newest.year, bool(newest.closed_at_utc), "latest_any"
+
+        return None, False, "none"
+
+    @staticmethod
     def create_season(session: SQLModelSession, year: int, is_active: bool = False) -> FieldSeason:
         """Create a new field season."""
         # If setting as active, deactivate all other seasons
