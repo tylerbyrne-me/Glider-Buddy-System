@@ -41,3 +41,6 @@ When fixed: set `status: fixed`, complete Resolution, and move the related line 
 | [BUG-010](./BUG-010-pic-observed-max-48h-window.md) | fixed | PIC observed max / % battery used 48h peak instead of mission lifetime |
 | [BUG-011](./BUG-011-station-offload-draft-loss-and-triplicates.md) | fixed | Station offload draft loss, triplicate logs, search reset after save |
 | [BUG-012](./BUG-012-ora-tracker-fleetwide-instruments.md) | fixed | ORA Tracker loadout pulled fleet-wide / Slocum instruments |
+| [BUG-013](./BUG-013-offload-log-mission-id-overwrites-all.md) | fixed | Editing Mission ID on one offload log overwrote every attempt for the station |
+| [BUG-014](./BUG-014-vm4-vrl-attach-overwrote-older-logs.md) | fixed | VM4 VRL attach filled older blank logs with a newer session’s filename |
+| [BUG-015](./BUG-015-offload-mission-id-misattribution.md) | investigating | Offload logs misattributed to wrong/missing mission ID (VM4 audit CLI) |

@@ -19,8 +19,10 @@ from app.core.mission_catalog.final_sync import (
     ensure_final_sync_work_item,
     get_final_sync_work_item,
     process_final_sync_work_item,
+    reopen_final_sync_for_delayed_cutover,
     request_final_sync_retry,
 )
+from app.core.mission_catalog.erddap_prefs import WAITING_FOR_DELAYED_SOURCE
 from app.core.mission_catalog.handlers import SlocumHandler, WaveGliderHandler
 from app.core.mission_catalog.health import build_catalog_health_report
 from app.core.mission_catalog.provisioning import provision_mission
@@ -125,7 +127,10 @@ def test_historical_slocum_empty_env_is_completed_linked_inactive(
     assert keys == ["peggy_20250101_200_delayed"]
 
 
-def test_historical_slocum_keys_skip_aliases(monkeypatch) -> None:
+def test_historical_slocum_keys_prefer_delayed_over_stored_realtime(
+    monkeypatch,
+) -> None:
+    """Historical keys prefer linked delayed even when deployment still points realtime."""
     session = _session()
     monkeypatch.setattr(enablement_mod, "_mission_catalog_enabled", lambda: True)
     monkeypatch.setattr(enablement_mod, "env_slocum_historical_keys", lambda: [])
@@ -154,11 +159,23 @@ def test_historical_slocum_keys_skip_aliases(monkeypatch) -> None:
             created_by_username="test",
         )
     )
+    session.add(
+        CatalogMissionSource(
+            mission_id=completed.id,
+            provider_key="oceantrack_erddap",
+            source_kind="erddap",
+            collection="tabledap",
+            external_ref="fundy_20260724_229_delayed",
+            source_variant="delayed",
+            enabled=True,
+            match_status=CatalogMatchStatus.LINKED.value,
+        )
+    )
     session.commit()
     keys = list_catalog_sync_targets(
         "slocum", session, operational_state="completed"
     )
-    assert keys == ["fundy_20260724_229_realtime"]
+    assert keys == ["fundy_20260724_229_delayed"]
 
 
 def test_stale_wgms_source_excluded_from_readiness() -> None:
@@ -269,6 +286,224 @@ def test_final_sync_enqueued_on_slocum_complete_and_survives_retry() -> None:
 
     retried = request_final_sync_retry(session, mission.id, actor="admin")
     assert retried.status == CatalogWorkItemStatus.PENDING.value
+
+
+def test_slocum_final_sync_waits_for_delayed_source() -> None:
+    session = _session()
+    platform = CatalogPlatform(canonical_name="peggy", platform_family="slocum")
+    session.add(platform)
+    session.commit()
+    session.refresh(platform)
+    mission = CatalogMission(
+        id="cat-wait-delayed",
+        title="m211",
+        deployment_number=211,
+        start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        end_time=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        operational_state=CatalogOperationalState.COMPLETED.value,
+        sync_policy=CatalogSyncPolicy.ON_DEMAND.value,
+        platform_id=platform.id,
+    )
+    session.add(mission)
+    session.add(
+        SlocumDeployment(
+            name="peggy wait",
+            mission_key="peggy_20260101_211",
+            erddap_dataset_id="peggy_20260101_211_realtime",
+            glider_name="peggy",
+            catalog_mission_id=mission.id,
+            is_active=False,
+            status="completed",
+            created_by_username="test",
+        )
+    )
+    session.add(
+        CatalogMissionSource(
+            mission_id=mission.id,
+            provider_key="oceantrack_erddap",
+            source_kind="erddap",
+            collection="tabledap",
+            external_ref="peggy_20260101_211_realtime",
+            source_variant="realtime",
+            enabled=True,
+            match_status=CatalogMatchStatus.LINKED.value,
+        )
+    )
+    session.commit()
+    item = ensure_final_sync_work_item(session, mission, actor="test")
+    session.commit()
+
+    async def run():
+        return await process_final_sync_work_item(session, item, actor="test")
+
+    outcome = asyncio.run(run())
+    assert outcome.get("ok") is False
+    assert outcome.get("error") == WAITING_FOR_DELAYED_SOURCE
+    session.refresh(item)
+    assert item.status == CatalogWorkItemStatus.FAILED.value
+    assert item.last_error == WAITING_FOR_DELAYED_SOURCE
+    assert item.attempts == 0  # soft wait does not burn attempts
+
+
+def test_slocum_final_sync_points_deployment_at_delayed(monkeypatch) -> None:
+    session = _session()
+    platform = CatalogPlatform(canonical_name="peggy", platform_family="slocum")
+    session.add(platform)
+    session.commit()
+    session.refresh(platform)
+    mission = CatalogMission(
+        id="cat-sync-delayed",
+        title="m212",
+        deployment_number=212,
+        start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        end_time=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        operational_state=CatalogOperationalState.COMPLETED.value,
+        sync_policy=CatalogSyncPolicy.ON_DEMAND.value,
+        platform_id=platform.id,
+    )
+    session.add(mission)
+    dep = SlocumDeployment(
+        name="peggy delayed",
+        mission_key="peggy_20260101_212",
+        erddap_dataset_id="peggy_20260101_212_realtime",
+        glider_name="peggy",
+        catalog_mission_id=mission.id,
+        is_active=False,
+        status="completed",
+        created_by_username="test",
+    )
+    session.add(dep)
+    session.add(
+        CatalogMissionSource(
+            mission_id=mission.id,
+            provider_key="oceantrack_erddap",
+            source_kind="erddap",
+            collection="tabledap",
+            external_ref="peggy_20260101_212_delayed",
+            source_variant="delayed",
+            enabled=True,
+            match_status=CatalogMatchStatus.LINKED.value,
+        )
+    )
+    session.commit()
+
+    import app.core.mission_catalog.final_sync as fs_mod
+
+    async def fake_mirror(dataset_id, hours_back=None):
+        return {"dataset_id": dataset_id, "ok": True}
+
+    monkeypatch.setattr(
+        "app.platforms.slocum.mirror_service.sync_dataset_mirror",
+        fake_mirror,
+    )
+    item = ensure_final_sync_work_item(session, mission, actor="test")
+    session.commit()
+
+    async def run():
+        return await process_final_sync_work_item(session, item, actor="test")
+
+    outcome = asyncio.run(run())
+    assert outcome.get("ok") is True
+    assert outcome.get("dataset_id") == "peggy_20260101_212_delayed"
+    session.refresh(dep)
+    assert dep.erddap_dataset_id == "peggy_20260101_212_delayed"
+    session.refresh(item)
+    assert item.status == CatalogWorkItemStatus.DONE.value
+
+
+def test_reopen_final_sync_when_delayed_links_after_done() -> None:
+    session = _session()
+    platform = CatalogPlatform(canonical_name="fundy", platform_family="slocum")
+    session.add(platform)
+    session.commit()
+    session.refresh(platform)
+    mission = CatalogMission(
+        id="cat-reopen-delayed",
+        title="m229",
+        deployment_number=229,
+        start_time=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        end_time=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        operational_state=CatalogOperationalState.COMPLETED.value,
+        sync_policy=CatalogSyncPolicy.ON_DEMAND.value,
+        platform_id=platform.id,
+    )
+    session.add(mission)
+    session.add(
+        SlocumDeployment(
+            name="fundy",
+            mission_key="fundy_20260724_229",
+            erddap_dataset_id="fundy_20260724_229_realtime",
+            glider_name="fundy",
+            catalog_mission_id=mission.id,
+            is_active=False,
+            status="completed",
+            created_by_username="test",
+        )
+    )
+    item = CatalogMissionWorkItem(
+        catalog_mission_id=mission.id,
+        work_type="final_sync",
+        status=CatalogWorkItemStatus.DONE.value,
+        attempts=1,
+        max_attempts=10,
+        created_at_utc=datetime(2026, 9, 17, tzinfo=timezone.utc),
+        updated_at_utc=datetime(2026, 9, 18, tzinfo=timezone.utc),
+    )
+    session.add(item)
+    session.commit()
+
+    # No delayed yet → no reopen.
+    assert (
+        reopen_final_sync_for_delayed_cutover(session, mission, actor="test")
+        is None
+    )
+
+    session.add(
+        CatalogMissionSource(
+            mission_id=mission.id,
+            provider_key="oceantrack_erddap",
+            source_kind="erddap",
+            collection="tabledap",
+            external_ref="fundy_20260724_229_delayed",
+            source_variant="delayed",
+            enabled=True,
+            match_status=CatalogMatchStatus.LINKED.value,
+        )
+    )
+    session.commit()
+    reopened = reopen_final_sync_for_delayed_cutover(session, mission, actor="test")
+    assert reopened is not None
+    assert reopened.status == CatalogWorkItemStatus.PENDING.value
+    session.commit()
+
+
+def test_final_sync_manual_retry_refreshes_age() -> None:
+    session = _session()
+    mission = CatalogMission(
+        id="cat-retry-age",
+        title="m213",
+        deployment_number=213,
+        operational_state=CatalogOperationalState.COMPLETED.value,
+        sync_policy=CatalogSyncPolicy.ON_DEMAND.value,
+    )
+    session.add(mission)
+    old = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    item = CatalogMissionWorkItem(
+        catalog_mission_id=mission.id,
+        work_type="final_sync",
+        status=CatalogWorkItemStatus.EXHAUSTED.value,
+        attempts=10,
+        max_attempts=10,
+        last_error="max_age_exceeded",
+        created_at_utc=old,
+        updated_at_utc=old,
+    )
+    session.add(item)
+    session.commit()
+    retried = request_final_sync_retry(session, mission.id, actor="admin")
+    assert retried.status == CatalogWorkItemStatus.PENDING.value
+    assert retried.created_at_utc is not None
+    assert retried.created_at_utc.replace(tzinfo=timezone.utc) > old
 
 
 def test_enrollment_override_records_audit_event(monkeypatch) -> None:

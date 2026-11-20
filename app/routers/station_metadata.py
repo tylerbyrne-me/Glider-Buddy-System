@@ -46,8 +46,10 @@ from ..core.stations.station_registry_policy import (
 )
 from ..core.infra.feature_toggles import is_feature_enabled
 from ..core.offload_comments import (
+    apply_mission_id_to_offload_log,
     enrich_offload_log_read,
     get_offload_comments,
+    mission_id_from_offload_log,
     normalize_offload_log_write_data,
 )
 
@@ -1211,6 +1213,10 @@ async def create_offload_log_for_station(
     if db_offload_log.was_offloaded is not None:
         db_station_metadata.was_last_offload_successful = db_offload_log.was_offloaded
 
+    mid_for_station = (sheet_mission_id or "").strip()
+    if mid_for_station:
+        db_station_metadata.last_offload_by_glider = mid_for_station
+
     clear_display_status_override(db_station_metadata)
 
     session.add(db_station_metadata)  # Add again to save changes to station metadata
@@ -1290,6 +1296,10 @@ async def update_offload_log_for_station(
             detail="No update data provided",
         )
 
+    # mission_id is not an OffloadLog column — maps to parser_session_ref sheet form.
+    mission_id_provided = "mission_id" in update_data
+    mission_id_value = update_data.pop("mission_id", None)
+
     if any(
         key in update_data
         for key in ("offload_comments", "user_notes", "offload_notes_file_size")
@@ -1299,10 +1309,34 @@ async def update_offload_log_for_station(
     for key, value in update_data.items():
         setattr(db_log, key, value)
 
+    if mission_id_provided:
+        apply_mission_id_to_offload_log(
+            db_log,
+            mission_id_value,
+            station_id=station_id,
+        )
+
     db_log.updated_by_source = "user"
     db_log.updated_at_utc = datetime.now(timezone.utc)
     session.add(db_log)
     _refresh_station_last_offload_from_all_logs(session, station_id)
+
+    # Keep station "current" mission in sync when this log is the latest attempt.
+    if mission_id_provided:
+        all_logs = list(
+            session.exec(
+                select(models.OffloadLog).where(
+                    models.OffloadLog.station_id == station_id
+                )
+            ).all()
+        )
+        if all_logs:
+            latest = max(all_logs, key=_offload_log_sort_key)
+            if latest.id == db_log.id:
+                mid = mission_id_from_offload_log(db_log)
+                db_station.last_offload_by_glider = mid
+                session.add(db_station)
+
     session.commit()
     session.refresh(db_log)
     logger.info(

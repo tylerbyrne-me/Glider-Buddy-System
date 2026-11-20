@@ -196,7 +196,7 @@ def build_workspace_payload(
     links: Dict[str, Optional[str]] = {
         "wave_glider_dashboard": None,
         "slocum_dashboard": None,
-        "slocum_admin_overviews": "/admin/slocum/mission-overviews"
+        "slocum_admin_overviews": "/slocum/admin/mission_overviews.html"
         if family == "slocum" or slocum
         else None,
     }
@@ -205,10 +205,21 @@ def build_workspace_payload(
         if mid:
             links["wave_glider_dashboard"] = f"/wave-glider/dashboard.html?mission={mid}"
     if slocum:
+        from app.core.mission_catalog.erddap_prefs import preferred_slocum_delayed_ref
+
         dep = slocum[0]
-        key = (dep.erddap_dataset_id or dep.mission_key or "").strip()
+        delayed_ref = preferred_slocum_delayed_ref(session, mission)
+        key = (
+            delayed_ref
+            or (dep.erddap_dataset_id or "").strip()
+            or (dep.mission_key or "").strip()
+        )
         if key:
-            links["slocum_dashboard"] = f"/slocum/dashboard.html?dataset={key}"
+            # Historical when inactive / completed; active dashboards use /slocum.
+            if not dep.is_active or (mission.operational_state or "").lower() == "completed":
+                links["slocum_dashboard"] = f"/slocum/historical?dataset={key}"
+            else:
+                links["slocum_dashboard"] = f"/slocum/dashboard.html?dataset={key}"
 
     from app.core.mission_catalog.audit import event_to_dict, list_mission_events
     from app.core.mission_catalog.final_sync import (

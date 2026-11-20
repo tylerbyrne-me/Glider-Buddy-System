@@ -914,13 +914,14 @@ document.addEventListener('DOMContentLoaded', async function () {
 </div>`;
     }
 
-    function renderRecentOffloadCards(logs, stationMissionId = '') {
+    function renderRecentOffloadCards(logs) {
         return logs.map((p) => {
             const ok = p.was_offloaded === true;
             const bad = p.was_offloaded === false;
             const badge = ok ? 'text-success' : bad ? 'text-danger' : 'text-secondary';
             const sym = ok ? 'Yes' : bad ? 'No' : '?';
             const commentsText = getOffloadCommentsFromLog(p);
+            const logMissionId = (p.mission_id || '').trim();
             return `
 <div class="recent-log-edit border border-secondary rounded p-2 mb-2" data-recent-log-id="${p.id}">
   <div class="d-flex justify-content-between small"><span class="${badge}">#${p.id} · Offloaded: ${sym}</span><span class="text-muted">${escapeHtml(p.log_timestamp_utc || '')}</span></div>
@@ -935,9 +936,9 @@ document.addEventListener('DOMContentLoaded', async function () {
     ${recentUtcField('Departure (UTC)', 'recent-departure', p.departure_date)}
     <div class="col-md-6"><label class="form-label small mb-0">Distance cmd sent (m)</label><input type="number" step="any" class="form-control form-control-sm recent-distance" value="${p.distance_command_sent_m ?? ''}"></div>
   </div>
-  <label class="form-label small mb-0 mt-1">Station Offload Mission ID</label>
-  <input type="text" class="form-control form-control-sm recent-station-mission-id" value="${escapeHtml(stationMissionId || '')}" placeholder="e.g., m209 (optional)">
-  <div class="form-text">Station-level value (updates last_offload_by_glider for this station).</div>
+  <label class="form-label small mb-0 mt-1">Offload Mission ID</label>
+  <input type="text" class="form-control form-control-sm recent-log-mission-id" value="${escapeHtml(logMissionId)}" placeholder="e.g., m230-SV3-1070 (optional)">
+  <div class="form-text">Per-attempt value (this log only). Station Info "Current" mission is separate.</div>
   <label class="form-label small mb-0 mt-1">Offload Comments</label>
   <textarea class="form-control form-control-sm recent-offload-comments" rows="2">${escapeHtml(commentsText)}</textarea>
   <div class="form-check mt-1">
@@ -966,7 +967,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             return;
         }
         acc.style.display = 'block';
-        accBody.innerHTML = renderRecentOffloadCards(logs, stationData?.last_offload_by_glider || '');
+        accBody.innerHTML = renderRecentOffloadCards(logs);
     }
 
     function syncStationDeepLink(stationId) {
@@ -1286,7 +1287,7 @@ document.addEventListener('DOMContentLoaded', async function () {
             const commentsField = wrap.querySelector('.recent-offload-comments');
             const cb = wrap.querySelector('.recent-was-offloaded');
             const vrlFileName = wrap.querySelector('.recent-vrl-file-name');
-            const missionInput = wrap.querySelector('.recent-station-mission-id');
+            const missionInput = wrap.querySelector('.recent-log-mission-id');
             const distanceInput = wrap.querySelector('.recent-distance');
             const getRecentIso = (selector) => {
                 const input = wrap.querySelector(selector);
@@ -1304,22 +1305,27 @@ document.addEventListener('DOMContentLoaded', async function () {
                 departure_date: getRecentIso('.recent-departure'),
                 distance_command_sent_m: Number.isNaN(distanceRaw) ? null : distanceRaw,
                 vrl_file_name: vrlFileName ? vrlFileName.value.trim() || null : null,
+                // Always send so empty clears a prior per-log sheet attribution.
+                mission_id: missionInput ? missionInput.value.trim() : '',
             };
-            Object.keys(payload).forEach((k) => { if (payload[k] === null) delete payload[k]; });
+            Object.keys(payload).forEach((k) => {
+                if (k !== 'mission_id' && payload[k] === null) delete payload[k];
+            });
             try {
-                await apiRequest(`/api/station_metadata/${encodeURIComponent(currentEditingStationId)}/offload_logs/${logId}`, 'PUT', payload);
-                const missionRaw = missionInput ? missionInput.value.trim() : '';
-                const missionPayload = { last_offload_by_glider: missionRaw || null };
-                const updatedStation = await apiRequest(
-                    `/api/station_metadata/${encodeURIComponent(currentEditingStationId)}`,
+                const updatedLog = await apiRequest(
+                    `/api/station_metadata/${encodeURIComponent(currentEditingStationId)}/offload_logs/${logId}`,
                     'PUT',
-                    missionPayload
+                    payload
                 );
-                const topMissionInput = document.getElementById('formLastOffloadByGlider');
-                if (topMissionInput) topMissionInput.value = updatedStation?.last_offload_by_glider || '';
-                showToast('Station Offload Mission ID is station-wide and was updated.', 'info');
-                showToast('Offload log updated', 'success');
                 const st = await apiRequest(`/api/station_metadata/${encodeURIComponent(currentEditingStationId)}`, 'GET');
+                const topMissionInput = document.getElementById('formLastOffloadByGlider');
+                if (topMissionInput) {
+                    topMissionInput.value = st?.last_offload_by_glider || '';
+                }
+                if (missionInput && updatedLog) {
+                    missionInput.value = updatedLog.mission_id || '';
+                }
+                showToast('Offload log updated', 'success');
                 renderRecentCardsFromStationPayload(st);
                 await fetchStationStatuses();
             } catch (err) {
@@ -1672,6 +1678,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 pendingClientSubmissionId = newClientSubmissionId();
             }
 
+            const manualMissionId = (document.getElementById('formOffloadMissionId').value || '').trim();
             const payload = {
                 arrival_date: getIsoFromDatetimeLocal('formArrivalDate'),
                 distance_command_sent_m: parseFloat(document.getElementById('formDistanceSent').value) || null,
@@ -1683,21 +1690,14 @@ document.addEventListener('DOMContentLoaded', async function () {
                 vrl_file_name: document.getElementById('formVrlFileName').value.trim() || null,
                 offload_comments: document.getElementById('formOffloadComments').value.trim() || null,
                 client_submission_id: pendingClientSubmissionId,
+                ...(manualMissionId ? { mission_id: manualMissionId } : {}),
             };
-            const manualMissionId = (document.getElementById('formOffloadMissionId').value || '').trim();
              // Filter out null values if backend expects only provided fields
             Object.keys(payload).forEach(key => payload[key] === null && delete payload[key]);
              if (payload.distance_command_sent_m && isNaN(payload.distance_command_sent_m)) delete payload.distance_command_sent_m;
 
             try {
                 await apiRequest(`/api/station_metadata/${currentEditingStationId}/offload_logs/`, 'POST', payload);
-                if (manualMissionId) {
-                    await apiRequest(
-                        `/api/station_metadata/${encodeURIComponent(currentEditingStationId)}`,
-                        'PUT',
-                        { last_offload_by_glider: manualMissionId }
-                    );
-                }
                 clearDraft(currentUsername, currentEditingStationId);
                 hideDraftNotice();
                 await fetchStationStatuses(); // Refresh table

@@ -507,29 +507,48 @@ class SlocumHandler:
             dep.updated_at_utc = _utcnow()
             session.add(dep)
             result.actions.append(f"archived_slocum:{dep.id}")
-        # Prefer delayed ERDDAP source when present.
-        delayed = list(
-            session.exec(
-                select(CatalogMissionSource).where(
-                    CatalogMissionSource.mission_id == mission.id,
-                    CatalogMissionSource.source_kind == "erddap",
-                    CatalogMissionSource.source_variant
-                    == CatalogSourceVariant.DELAYED.value,
-                )
-            ).all()
+        # Prefer delayed ERDDAP when present: bump priority + rewrite live pointer.
+        from app.core.mission_catalog.erddap_prefs import (
+            fresh_erddap_sources,
+            preferred_slocum_delayed_ref,
         )
-        if delayed and not dry_run:
-            for source in delayed:
+
+        delayed_ref = preferred_slocum_delayed_ref(session, mission)
+        delayed_sources = [
+            s
+            for s in fresh_erddap_sources(session, mission.id)
+            if (s.source_variant or "").lower() == CatalogSourceVariant.DELAYED.value
+            or "delayed" in (s.external_ref or "").lower()
+        ]
+        if delayed_sources and not dry_run:
+            for source in delayed_sources:
                 source.priority = min(int(source.priority or 100), 10)
                 source.updated_at_utc = _utcnow()
                 session.add(source)
             result.actions.append("prefer_delayed_erddap")
+        if delayed_ref and not dry_run:
+            for dep in deployments:
+                if (dep.erddap_dataset_id or "").strip() != delayed_ref:
+                    dep.erddap_dataset_id = delayed_ref
+                    dep.updated_at_utc = _utcnow()
+                    session.add(dep)
+                    result.actions.append(f"pointed_slocum_delayed:{dep.id}")
+        elif delayed_ref and dry_run:
+            result.actions.append("would_point_slocum_delayed")
         if not dry_run:
             session.commit()
             try:
-                from app.core.mission_catalog.final_sync import ensure_final_sync_work_item
+                from app.core.mission_catalog.final_sync import (
+                    ensure_final_sync_work_item,
+                    reopen_final_sync_for_delayed_cutover,
+                )
 
-                ensure_final_sync_work_item(session, mission, actor="handler", dry_run=False)
+                ensure_final_sync_work_item(
+                    session, mission, actor="handler", dry_run=False
+                )
+                reopen_final_sync_for_delayed_cutover(
+                    session, mission, actor="handler", dry_run=False
+                )
                 session.commit()
                 result.actions.append("final_sync_enqueued")
             except Exception as exc:

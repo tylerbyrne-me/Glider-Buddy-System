@@ -176,7 +176,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const overviews = (detail.overviews || []).map((o) => `<li><code>${escapeHtml(o.mission_id)}</code></li>`).join('')
             || '<li class="text-muted">None</li>';
         const slocum = (detail.slocum_deployments || []).map((d) => `
-            <li><code>${escapeHtml(d.mission_key || d.erddap_dataset_id || d.id)}</code>
+            <li><code>${escapeHtml(d.mission_key || d.id)}</code>
+            ${d.erddap_dataset_id ? ` · <code>${escapeHtml(d.erddap_dataset_id)}</code>` : ''}
             ${d.is_active ? '<span class="badge text-bg-success">active</span>' : '<span class="badge text-bg-secondary">inactive</span>'}
             ${escapeHtml(d.status || '')}</li>
         `).join('') || '<li class="text-muted">None</li>';

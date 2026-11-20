@@ -142,12 +142,27 @@ def test_slocum_completion_archives_deployment() -> None:
         catalog_mission_id=mission.id,
     )
     session.add(dep)
+    session.add(
+        CatalogMissionSource(
+            mission_id=mission.id,
+            provider_key="oceantrack_erddap",
+            source_kind="erddap",
+            collection="tabledap",
+            external_ref="fundy_20260724_229_delayed",
+            source_variant="delayed",
+            enabled=True,
+            match_status="linked",
+        )
+    )
     session.commit()
     result = SlocumHandler().on_completed(session, mission, dry_run=False)
     session.refresh(dep)
     assert dep.is_active is False
     assert dep.status == "completed"
+    assert dep.erddap_dataset_id == "fundy_20260724_229_delayed"
     assert any(a.startswith("archived_slocum:") for a in result.actions)
+    assert "prefer_delayed_erddap" in result.actions
+    assert any(a.startswith("pointed_slocum_delayed:") for a in result.actions)
 
 
 def test_slocum_waiting_for_source_without_erddap() -> None:

@@ -52,10 +52,18 @@ Empty-env catalog authority:
 
 - **Active WG:** `ACTIVE` ∧ `CONTINUOUS` + realtime WGMS + linked overview
 - **Active Slocum:** `ACTIVE` ∧ `CONTINUOUS` + ERDDAP + linked *active* deployment
-- **Historical Slocum:** `COMPLETED` ∩ inactive linked `SlocumDeployment` (not unrelated orphans). Dropdown uses canonical ERDDAP dataset ids (aliases are active-only).
+- **Historical Slocum:** `COMPLETED` ∩ inactive linked `SlocumDeployment` (not unrelated orphans). Dropdown uses canonical ERDDAP dataset ids (aliases are active-only). When a linked delayed ERDDAP source exists, prefer that id over a stored `*_realtime` pointer on the deployment.
 - **Historical WG:** catalog `COMPLETED` linked overviews only (one preferred key per `m###`); WGMS scrape is fallback when catalog has no completed WG rows — never unioned (avoids `1070-m170` + `m170-SV3-1070` duplicates).
 
 STALE/CONFLICT sources are excluded from readiness. Prefer realtime while ACTIVE; delayed/past while COMPLETED.
+
+### Slocum delayed cutover (ADR 0016)
+
+- Final sync **waits** for a fresh linked `*_delayed` ERDDAP source (`waiting_for_delayed_source`); it does not mark DONE on realtime alone (parity with WG `waiting_for_past_source`).
+- Wait states do not burn attempt quotas or age-exhaust; Team **Retry final sync** refreshes the age clock.
+- After reconcile links delayed to a COMPLETED mission still pointing at realtime, final sync is **reopened** (batch-limited drain).
+- `on_completed` rewrites `SlocumDeployment.erddap_dataset_id` when delayed is already linked.
+- Health: wait errors are **expected**; `completed_realtime_with_delayed_linked` is a **fault** until cutover finishes. Unrelated ST exhausted rows are a separate ops cleanup.
 
 ## Ops flags
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 PARSER_OFFLOAD_NOTES_PREFIX = "Auto-generated from WG-VM4 data"
+STATION_OFFLOAD_SHEET_MARKER = ":station_offload_sheet:"
 
 
 def _trimmed(value: Optional[str]) -> str:
@@ -67,6 +68,54 @@ def normalize_offload_log_write_data(data: dict) -> dict:
     return result
 
 
+def is_station_offload_sheet_session_ref(ref: Optional[str]) -> bool:
+    return STATION_OFFLOAD_SHEET_MARKER in _trimmed(ref)
+
+
+def mission_id_from_offload_log(log: Any) -> Optional[str]:
+    """
+    Per-log mission attribution for UI/API.
+
+    Prefers sheet refs ``{mission}:station_offload_sheet:{station}``; otherwise the
+    first segment of ``parser_session_ref`` / ``parser_run_id`` (parser pipelines).
+    """
+    ref = _trimmed(getattr(log, "parser_session_ref", None))
+    if ref:
+        if is_station_offload_sheet_session_ref(ref):
+            prefix = ref.split(":", 1)[0].strip()
+            return prefix or None
+        prefix = ref.split(":", 1)[0].strip()
+        return prefix or None
+    run_id = _trimmed(getattr(log, "parser_run_id", None))
+    if run_id:
+        prefix = run_id.split(":", 1)[0].strip()
+        return prefix or None
+    return None
+
+
+def apply_mission_id_to_offload_log(
+    log: Any,
+    mission_id: Optional[str],
+    *,
+    station_id: str,
+) -> None:
+    """
+    Persist per-log mission on ``parser_session_ref`` for sheet/user attribution.
+
+    Only rewrites empty refs or existing ``station_offload_sheet`` refs so VM4
+    parser session keys are not clobbered. Clearing mission clears sheet refs only.
+    """
+    mid = _trimmed(mission_id) or None
+    ref = _trimmed(getattr(log, "parser_session_ref", None))
+    can_rewrite = (not ref) or is_station_offload_sheet_session_ref(ref)
+    if not can_rewrite:
+        return
+    if mid is None:
+        log.parser_session_ref = None
+        return
+    log.parser_session_ref = f"{mid}{STATION_OFFLOAD_SHEET_MARKER}{station_id}"
+
+
 def enrich_offload_log_read(log: Any) -> dict:
     """Return offload log dict with computed offload_comments for API responses."""
     if hasattr(log, "model_dump"):
@@ -111,4 +160,5 @@ def enrich_offload_log_read(log: Any) -> dict:
             if hasattr(log, key)
         }
     payload["offload_comments"] = get_offload_comments(log)
+    payload["mission_id"] = mission_id_from_offload_log(log)
     return payload

@@ -19,8 +19,10 @@ from app.core.models.database import (
 )
 from app.core.models.enums import (
     CatalogEnrollmentOverride,
+    CatalogMatchStatus,
     CatalogOperationalState,
     CatalogSyncPolicy,
+    CatalogWorkItemStatus,
 )
 
 
@@ -139,3 +141,101 @@ def test_health_completed_without_archived_live_row() -> None:
     assert any(
         i["issue"] == "completed_without_archived_live_row" for i in report["issues"]
     )
+
+
+def test_health_completed_realtime_with_delayed_linked() -> None:
+    session = _session()
+    platform = CatalogPlatform(canonical_name="fundy", platform_family="slocum")
+    session.add(platform)
+    session.commit()
+    session.refresh(platform)
+    mission = CatalogMission(
+        id="cat-health-rt-delayed",
+        title="m229",
+        deployment_number=229,
+        start_time=datetime(2026, 7, 1, tzinfo=timezone.utc),
+        end_time=datetime(2026, 9, 1, tzinfo=timezone.utc),
+        operational_state=CatalogOperationalState.COMPLETED.value,
+        sync_policy=CatalogSyncPolicy.ON_DEMAND.value,
+        platform_id=platform.id,
+    )
+    session.add(mission)
+    session.add(
+        SlocumDeployment(
+            name="Fundy",
+            glider_name="fundy",
+            mission_key="fundy_20260724_229",
+            erddap_dataset_id="fundy_20260724_229_realtime",
+            is_active=False,
+            status="completed",
+            created_by_username="test",
+            catalog_mission_id=mission.id,
+        )
+    )
+    session.add(
+        CatalogMissionSource(
+            mission_id=mission.id,
+            provider_key="oceantrack_erddap",
+            source_kind="erddap",
+            collection="tabledap",
+            external_ref="fundy_20260724_229_delayed",
+            source_variant="delayed",
+            enabled=True,
+            match_status=CatalogMatchStatus.LINKED.value,
+        )
+    )
+    session.add(
+        CatalogMissionWorkItem(
+            catalog_mission_id=mission.id,
+            work_type="final_sync",
+            status=CatalogWorkItemStatus.DONE.value,
+            attempts=1,
+            max_attempts=10,
+        )
+    )
+    session.commit()
+    report = build_catalog_health_report(session)
+    mismatch = [
+        i
+        for i in report["issues"]
+        if i["issue"] == "completed_realtime_with_delayed_linked"
+    ]
+    assert len(mismatch) == 1
+    assert mismatch[0]["severity"] == "fault"
+
+
+def test_health_waiting_for_delayed_is_expected() -> None:
+    session = _session()
+    platform = CatalogPlatform(canonical_name="peggy", platform_family="slocum")
+    session.add(platform)
+    session.commit()
+    session.refresh(platform)
+    mission = CatalogMission(
+        id="cat-health-wait",
+        title="m214",
+        deployment_number=214,
+        operational_state=CatalogOperationalState.COMPLETED.value,
+        sync_policy=CatalogSyncPolicy.ON_DEMAND.value,
+        platform_id=platform.id,
+    )
+    session.add(mission)
+    session.add(
+        CatalogMissionWorkItem(
+            catalog_mission_id=mission.id,
+            work_type="final_sync",
+            status=CatalogWorkItemStatus.FAILED.value,
+            attempts=0,
+            max_attempts=10,
+            last_error="waiting_for_delayed_source",
+        )
+    )
+    session.commit()
+    report = build_catalog_health_report(session)
+    wait_issues = [
+        i
+        for i in report["issues"]
+        if i["issue"] == "completed_final_sync_failed"
+        and i.get("last_error") == "waiting_for_delayed_source"
+    ]
+    assert len(wait_issues) == 1
+    assert wait_issues[0]["severity"] == "expected"

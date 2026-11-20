@@ -233,13 +233,32 @@ def _live_slocum_keys(session: Session, *, is_active: bool) -> List[str]:
                 SlocumDeployment.is_active == False  # noqa: E712
             )
         ).all()
+        from app.core.mission_catalog.erddap_prefs import preferred_slocum_delayed_ref
+
+        missions_by_id = {
+            m.id: m
+            for m in session.exec(
+                select(CatalogMission).where(
+                    CatalogMission.operational_state
+                    == CatalogOperationalState.COMPLETED.value
+                )
+            ).all()
+            if m.id
+        }
         keys: List[str] = []
         seen: Set[str] = set()
         for deployment in deployments:
             catalog_id = getattr(deployment, "catalog_mission_id", None)
             if not catalog_id or catalog_id not in completed_ids:
                 continue
-            key = _slocum_live_key(deployment, prefer_alias=False)
+            # Prefer linked delayed ERDDAP over a stale stored realtime pointer.
+            mission = missions_by_id.get(catalog_id)
+            delayed_ref = (
+                preferred_slocum_delayed_ref(session, mission)
+                if mission is not None
+                else None
+            )
+            key = delayed_ref or _slocum_live_key(deployment, prefer_alias=False)
             if not key or key in seen:
                 continue
             seen.add(key)

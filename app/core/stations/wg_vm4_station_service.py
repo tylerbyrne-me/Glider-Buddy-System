@@ -16,6 +16,7 @@ from sqlmodel import select
 from ..infra.db import SQLModelSession
 from .. import models
 from ..infra.feature_toggles import is_feature_enabled
+from .vrl_filename import log_reference_timestamp, parse_vrl_filename_timestamp
 from .wg_vm4_payload_parser import WgVm4PayloadParser, OffloadEvent, OffloadEventType
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,8 @@ PRIMARY_MATCH_WINDOW_MINUTES = 5
 FALLBACK_MATCH_WINDOW_MINUTES = 10
 BLANK_PLACEHOLDERS = {"---", "n/a", "na", "none", "null", "unknown"}
 ENRICHMENT_FALLBACK_WINDOW_HOURS = 8
+# Refuse to paint a VRL whose embedded stamp is far from the matched log attempt time.
+VRL_ATTACH_MAX_STAMP_DELTA = timedelta(hours=48)
 
 
 def _truncate_parser_notes(notes: Optional[str], max_length: int = MAX_PARSER_NOTES_LENGTH) -> Optional[str]:
@@ -83,6 +86,10 @@ def _find_matching_log_for_enrichment(
 ) -> Optional[models.OffloadLog]:
     """
     Find the best candidate log for enrichment using progressively broader timestamp fields.
+
+    Always prefers the closest attempt time to ``reference_ts``. Never returns a
+    station-wide blank log outside the same-day / 8h enrichment windows.
+    ``prefer_blank_vrl`` only reorders within an already time-scoped candidate set.
     """
     def _closest_delta_seconds(log: models.OffloadLog) -> float:
         candidate_times = [
@@ -98,6 +105,19 @@ def _find_matching_log_for_enrichment(
             return float("inf")
         return min(abs((t - reference_ts).total_seconds()) for t in normalized)
 
+    def _pick(candidates: List[models.OffloadLog]) -> Optional[models.OffloadLog]:
+        if not candidates:
+            return None
+        if prefer_blank_vrl:
+            blank_vrl_candidates = [
+                log
+                for log in candidates
+                if _is_blank_value(getattr(log, "vrl_file_name", None))
+            ]
+            if blank_vrl_candidates:
+                return min(blank_vrl_candidates, key=_closest_delta_seconds)
+        return min(candidates, key=_closest_delta_seconds)
+
     candidate_columns = [
         models.OffloadLog.offload_start_time_utc,
         models.OffloadLog.time_first_command_sent_utc,
@@ -105,110 +125,55 @@ def _find_matching_log_for_enrichment(
         models.OffloadLog.offload_end_time_utc,
         models.OffloadLog.log_timestamp_utc,
     ]
-    for column in candidate_columns:
-        stmt = (
-            select(models.OffloadLog)
-            .where(
+    primary_predicates = [
+        (column.isnot(None)) & (column >= start_window) & (column <= end_window)
+        for column in candidate_columns
+    ]
+    primary_candidates = list(
+        session.exec(
+            select(models.OffloadLog).where(
                 models.OffloadLog.station_id == station_id,
-                column.isnot(None),
-                column >= start_window,
-                column <= end_window,
+                or_(*primary_predicates),
             )
-            .order_by(models.OffloadLog.updated_at_utc.desc(), models.OffloadLog.log_timestamp_utc.desc())
-        )
-        log = session.exec(stmt).first()
-        if log:
-            return log
+        ).all()
+    )
+    picked = _pick(primary_candidates)
+    if picked is not None:
+        return picked
 
     # Same-day fallback (UTC date): handles legacy shifted timestamps while keeping station/day scope.
     day_start = reference_ts.replace(hour=0, minute=0, second=0, microsecond=0)
     day_end = day_start + timedelta(days=1)
-    date_predicates = []
-    for column in candidate_columns:
-        date_predicates.append(
-            (column.isnot(None)) & (column >= day_start) & (column < day_end)
-        )
+    date_predicates = [
+        (column.isnot(None)) & (column >= day_start) & (column < day_end)
+        for column in candidate_columns
+    ]
     same_day_candidates = list(
         session.exec(
-            select(models.OffloadLog)
-            .where(
+            select(models.OffloadLog).where(
                 models.OffloadLog.station_id == station_id,
                 or_(*date_predicates),
             )
-            .order_by(models.OffloadLog.updated_at_utc.desc(), models.OffloadLog.log_timestamp_utc.desc())
         ).all()
     )
-    if same_day_candidates:
-        if prefer_blank_vrl:
-            blank_vrl_candidates = [log for log in same_day_candidates if _is_blank_value(getattr(log, "vrl_file_name", None))]
-            if blank_vrl_candidates:
-                return min(blank_vrl_candidates, key=_closest_delta_seconds)
-        return min(same_day_candidates, key=_closest_delta_seconds)
+    picked = _pick(same_day_candidates)
+    if picked is not None:
+        return picked
 
-    # Broader fallback: find nearest log within a wider UTC window.
+    # Broader fallback: nearest log within a wider UTC window (log_timestamp only).
     wide_start = reference_ts - timedelta(hours=ENRICHMENT_FALLBACK_WINDOW_HOURS)
     wide_end = reference_ts + timedelta(hours=ENRICHMENT_FALLBACK_WINDOW_HOURS)
     wide_candidates = list(
         session.exec(
-            select(models.OffloadLog)
-            .where(
+            select(models.OffloadLog).where(
                 models.OffloadLog.station_id == station_id,
                 models.OffloadLog.log_timestamp_utc.isnot(None),
                 models.OffloadLog.log_timestamp_utc >= wide_start,
                 models.OffloadLog.log_timestamp_utc <= wide_end,
             )
-            .order_by(models.OffloadLog.updated_at_utc.desc(), models.OffloadLog.log_timestamp_utc.desc())
         ).all()
     )
-    if not wide_candidates:
-        return None
-
-    if prefer_blank_vrl:
-        blank_vrl_candidates = [l for l in wide_candidates if _is_blank_value(getattr(l, "vrl_file_name", None))]
-        if blank_vrl_candidates:
-            return min(blank_vrl_candidates, key=_closest_delta_seconds)
-    return min(wide_candidates, key=_closest_delta_seconds)
-    return None
-
-
-def _find_latest_log_for_station_vrl(
-    session: SQLModelSession,
-    station_id: str,
-) -> Optional[models.OffloadLog]:
-    """
-    Station-only VRL fallback: pick latest user log, preferring blank VRL fields.
-    """
-    blank_stmt = (
-        select(models.OffloadLog)
-        .where(
-            models.OffloadLog.station_id == station_id,
-            models.OffloadLog.created_by_source == "user",
-            models.OffloadLog.vrl_file_name.is_(None),
-        )
-        .order_by(models.OffloadLog.updated_at_utc.desc(), models.OffloadLog.log_timestamp_utc.desc())
-    )
-    log = session.exec(blank_stmt).first()
-    if log:
-        return log
-
-    all_user_stmt = (
-        select(models.OffloadLog)
-        .where(
-            models.OffloadLog.station_id == station_id,
-            models.OffloadLog.created_by_source == "user",
-        )
-        .order_by(models.OffloadLog.updated_at_utc.desc(), models.OffloadLog.log_timestamp_utc.desc())
-    )
-    log = session.exec(all_user_stmt).first()
-    if log:
-        return log
-
-    fallback_stmt = (
-        select(models.OffloadLog)
-        .where(models.OffloadLog.station_id == station_id)
-        .order_by(models.OffloadLog.updated_at_utc.desc(), models.OffloadLog.log_timestamp_utc.desc())
-    )
-    return session.exec(fallback_stmt).first()
+    return _pick(wide_candidates)
 
 
 class WgVm4StationService:
@@ -748,23 +713,21 @@ async def run_vm4_background_pipeline(
 
     run_started_at = datetime.now(timezone.utc)
     data_service = get_data_service()
-    checkpoint_for_mission_stmt = select(models.Vm4ProcessingCheckpoint).where(
-        models.Vm4ProcessingCheckpoint.mission_id == mission_id,
-        models.Vm4ProcessingCheckpoint.report_type == "wg_vm4_info",
-    ).order_by(models.Vm4ProcessingCheckpoint.updated_at_utc.desc())
-    previous_checkpoint = session.exec(checkpoint_for_mission_stmt).first()
-    start_date = None
-    if (not force_full_scan) and previous_checkpoint and previous_checkpoint.last_processed_timestamp_utc:
-        checkpoint_ts = _normalize_utc_timestamp(previous_checkpoint.last_processed_timestamp_utc)
-        if checkpoint_ts is not None:
-            start_date = checkpoint_ts - timedelta(hours=2)
-
+    # Attach-only pipeline: always load the full VM4 info file (same idea as remote
+    # health). Checkpoint date windows skip older sessions whose VRL was cleared by
+    # audit while remote health still matched — e.g. HFX031 Nov 2026 after a bad
+    # July VRL was removed. ``force_full_scan`` stays on the API/UI for operators
+    # but no longer narrows info row scoping.
+    if force_full_scan:
+        logger.info(
+            "VM4 background pipeline force_full_scan=true mission=%s "
+            "(info load is already full-file for attach)",
+            mission_id,
+        )
     df, source_path, file_mod_time = await data_service.load(
         "wg_vm4_info",
         mission_id,
-        start_date=start_date,
-        end_date=datetime.now(timezone.utc) if start_date else None,
-        hours_back=None if start_date is None else None,
+        hours_back=None,
     )
     if df is None or df.empty:
         return {
@@ -833,7 +796,8 @@ async def run_vm4_background_pipeline(
     result = {
         "mission_id": mission_id,
         "source_path": source_path,
-        "start_date_used": start_date.isoformat() if start_date else None,
+        # Always full-file load for attach-only VRL path (checkpoint is metadata only).
+        "start_date_used": None,
         "rows_processed": info_rows_scoped,
         "rows_loaded": info_rows_loaded,
         "rows_in_scope_current_year": info_rows_scoped,
@@ -841,6 +805,7 @@ async def run_vm4_background_pipeline(
         "remote_health": health_stats,
         "duration_seconds": duration_seconds,
         "updated_checkpoint": True,
+        "force_full_scan": bool(force_full_scan),
     }
     logger.info(
         "VM4 background pipeline completed mission=%s rows_in_scope=%s events=%s logs=%s duration_s=%.2f",
@@ -859,7 +824,11 @@ def attach_vrl_file_names_to_offload_logs(
     time_window_minutes: int = 30,
 ) -> Dict[str, int]:
     """
-    Parse VM4 info sessions and attach VRL names to matching existing offload logs only.
+    Parse VM4 info sessions and attach VRL names to time-matched existing offload logs only.
+
+    Never falls back to an arbitrary blank log on the station (that previously painted a
+    new VRL onto older attempts from other months). Closest time match wins; only blank
+    VRL fields are filled.
     """
     stats = {
         "rows_processed": 0,
@@ -868,6 +837,8 @@ def attach_vrl_file_names_to_offload_logs(
         "stations_matched": 0,
         "no_station": 0,
         "no_matching_log": 0,
+        "already_had_vrl": 0,
+        "stamp_mismatch_rejected": 0,
         "errors": 0,
     }
     if vm4_info_df is None or vm4_info_df.empty:
@@ -887,24 +858,57 @@ def attach_vrl_file_names_to_offload_logs(
             if not serial or _is_blank_value(vrl_file_name):
                 continue
 
+            reference_ts = _normalize_utc_timestamp(
+                session_payload.get("end_time") or session_payload.get("start_time")
+            )
+            if reference_ts is None:
+                stats["no_matching_log"] += 1
+                continue
+
             station = service.find_station_by_serial(serial)
             if not station:
                 stats["no_station"] += 1
                 continue
             stats["stations_matched"] += 1
 
-            log = _find_latest_log_for_station_vrl(
+            start_window = reference_ts - timedelta(minutes=time_window_minutes)
+            end_window = reference_ts + timedelta(minutes=time_window_minutes)
+            log = _find_matching_log_for_enrichment(
                 session=session,
                 station_id=station.station_id,
+                reference_ts=reference_ts,
+                start_window=start_window,
+                end_window=end_window,
+                prefer_blank_vrl=False,
             )
             if not log:
                 stats["no_matching_log"] += 1
                 continue
 
-            if _is_blank_value(getattr(log, "vrl_file_name", None)):
-                log.vrl_file_name = str(vrl_file_name).strip()
-                session.add(log)
-                stats["logs_updated"] += 1
+            if not _is_blank_value(getattr(log, "vrl_file_name", None)):
+                stats["already_had_vrl"] += 1
+                continue
+
+            vrl_name = str(vrl_file_name).strip()
+            vrl_ts = parse_vrl_filename_timestamp(vrl_name)
+            log_ts = log_reference_timestamp(log)
+            if (
+                vrl_ts is not None
+                and log_ts is not None
+                and abs(vrl_ts - log_ts) > VRL_ATTACH_MAX_STAMP_DELTA
+            ):
+                stats["stamp_mismatch_rejected"] += 1
+                logger.info(
+                    "VRL attach skipped stamp mismatch station=%s log_id=%s vrl=%s",
+                    station.station_id,
+                    getattr(log, "id", None),
+                    vrl_name,
+                )
+                continue
+
+            log.vrl_file_name = vrl_name
+            session.add(log)
+            stats["logs_updated"] += 1
         except Exception as exc:
             stats["errors"] += 1
             logger.warning("attach_vrl_file_names_to_offload_logs session failed: %s", exc)

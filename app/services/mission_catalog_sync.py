@@ -349,6 +349,7 @@ async def _sync_mission_catalog_unlocked(
                     from app.core.mission_catalog.final_sync import (
                         ensure_final_sync_work_item,
                         process_due_final_sync_work_items,
+                        reopen_final_sync_for_delayed_cutover,
                     )
                     from app.core.models.enums import CatalogOperationalState
 
@@ -360,6 +361,9 @@ async def _sync_mission_catalog_unlocked(
                     ).all()
                     for mission in completed:
                         ensure_final_sync_work_item(
+                            db, mission, actor=actor, dry_run=False
+                        )
+                        reopen_final_sync_for_delayed_cutover(
                             db, mission, actor=actor, dry_run=False
                         )
                     db.commit()

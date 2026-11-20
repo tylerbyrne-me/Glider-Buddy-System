@@ -470,14 +470,7 @@ export function initializeWgVm4OffloadSection() {
                     { is_flagged: true, note: flagNote }
                 );
             }
-            const missionId = missionIdForSheet;
-            if (missionId) {
-                await apiRequest(
-                    `/api/station_metadata/${encodeURIComponent(submittedStationId)}`,
-                    'PUT',
-                    { last_offload_by_glider: missionId }
-                );
-            }
+            // mission_id on create already sets per-log attribution and station last_offload_by_glider.
             clearDraft(draftUsername, submittedStationId);
             markFormDirty(false);
             showToast(`Log for station ${submittedStationId} submitted successfully!`, 'success');

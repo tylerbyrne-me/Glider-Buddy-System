@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session, select
 
+from app.core.mission_catalog.erddap_prefs import (
+    WAIT_SOURCE_ERRORS,
+    deployment_needs_delayed_cutover,
+)
 from app.core.models.database import (
     CatalogMission,
     CatalogMissionSource,
@@ -30,7 +34,12 @@ _EXPECTED_READINESS = {
 }
 
 
-def _issue_severity(issue: str, reasons: Optional[List[str]] = None) -> str:
+def _issue_severity(
+    issue: str,
+    reasons: Optional[List[str]] = None,
+    *,
+    last_error: Optional[str] = None,
+) -> str:
     if issue in (
         "enrolled_but_not_ready",
         "missing_source_links",
@@ -45,9 +54,13 @@ def _issue_severity(issue: str, reasons: Optional[List[str]] = None) -> str:
             r in _EXPECTED_READINESS for r in reasons
         ):
             return "expected"
+    # Waiting for delayed/past ERDDAP or WGMS is expected Ocean Track / folder lag.
+    if issue == "completed_final_sync_failed" and (last_error or "") in WAIT_SOURCE_ERRORS:
+        return "expected"
     if issue in (
         "completed_final_sync_failed",
         "completed_final_sync_exhausted",
+        "completed_realtime_with_delayed_linked",
         "duplicate_overviews",
         "duplicate_active_slocum_deployments",
         "completed_still_continuous",
@@ -192,7 +205,11 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                         "title": mission.title,
                         "issue": "completed_final_sync_pending",
                         "work_status": work.status if work else None,
-                        "severity": _issue_severity("completed_final_sync_pending"),
+                        "last_error": work.last_error if work else None,
+                        "severity": _issue_severity(
+                            "completed_final_sync_pending",
+                            last_error=work.last_error if work else None,
+                        ),
                     }
                 )
             elif work.status == CatalogWorkItemStatus.FAILED.value:
@@ -202,7 +219,10 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                         "title": mission.title,
                         "issue": "completed_final_sync_failed",
                         "last_error": work.last_error,
-                        "severity": _issue_severity("completed_final_sync_failed"),
+                        "severity": _issue_severity(
+                            "completed_final_sync_failed",
+                            last_error=work.last_error,
+                        ),
                     }
                 )
             elif work.status == CatalogWorkItemStatus.EXHAUSTED.value:
@@ -213,10 +233,31 @@ def build_catalog_health_report(session: Session) -> Dict[str, Any]:
                         "issue": "completed_final_sync_exhausted",
                         "last_error": work.last_error,
                         "severity": _issue_severity(
-                            "completed_final_sync_exhausted"
+                            "completed_final_sync_exhausted",
+                            last_error=work.last_error,
                         ),
                     }
                 )
+            # DONE (or any state) still pointing at realtime while delayed is linked.
+            for dep in slocum:
+                if deployment_needs_delayed_cutover(
+                    session,
+                    mission,
+                    erddap_dataset_id=dep.erddap_dataset_id,
+                ):
+                    issues.append(
+                        {
+                            "mission_id": mission.id,
+                            "title": mission.title,
+                            "issue": "completed_realtime_with_delayed_linked",
+                            "deployment_id": dep.id,
+                            "erddap_dataset_id": dep.erddap_dataset_id,
+                            "severity": _issue_severity(
+                                "completed_realtime_with_delayed_linked"
+                            ),
+                        }
+                    )
+                    break
 
         if len(overviews) > 1:
             issues.append(

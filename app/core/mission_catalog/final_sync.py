@@ -13,6 +13,13 @@ from app.core.mission_catalog.audit import (
     EVENT_FINAL_SYNC,
     record_mission_event,
 )
+from app.core.mission_catalog.erddap_prefs import (
+    WAITING_FOR_DELAYED_SOURCE,
+    WAITING_FOR_PAST_SOURCE,
+    WAIT_SOURCE_ERRORS,
+    deployment_needs_delayed_cutover,
+    preferred_slocum_delayed_ref,
+)
 from app.core.models.database import (
     CatalogMission,
     CatalogMissionSource,
@@ -140,6 +147,8 @@ def request_final_sync_retry(
         item.status = CatalogWorkItemStatus.PENDING.value
         item.next_retry_at_utc = _utcnow()
         item.last_error = None
+        # Refresh age clock so max_age does not immediately exhaust late retries.
+        item.created_at_utc = _utcnow()
         item.updated_at_utc = _utcnow()
         # Manual retry resets exhaustion but keeps attempt count for audit.
         if item.attempts >= item.max_attempts:
@@ -158,6 +167,103 @@ def request_final_sync_retry(
     session.commit()
     session.refresh(item)
     return item
+
+
+def reopen_final_sync_for_delayed_cutover(
+    session: Session,
+    mission: CatalogMission,
+    *,
+    actor: str = "scheduler",
+    dry_run: bool = False,
+) -> Optional[CatalogMissionWorkItem]:
+    """Re-open final sync when delayed is linked but the live pointer is still realtime.
+
+    Used after reconcile links ``*_delayed`` to a COMPLETED Slocum mission whose
+    prior final sync succeeded (or exhausted) on realtime.
+    """
+    if mission.operational_state != CatalogOperationalState.COMPLETED.value:
+        return None
+    family = _platform_family(session, mission)
+    if family != "slocum":
+        return None
+
+    deployments = list(
+        session.exec(
+            select(SlocumDeployment).where(
+                SlocumDeployment.catalog_mission_id == mission.id
+            )
+        ).all()
+    )
+    if not deployments:
+        return None
+    needs_cutover = any(
+        deployment_needs_delayed_cutover(
+            session, mission, erddap_dataset_id=dep.erddap_dataset_id
+        )
+        for dep in deployments
+    )
+    if not needs_cutover:
+        return None
+
+    existing = session.exec(
+        select(CatalogMissionWorkItem).where(
+            CatalogMissionWorkItem.catalog_mission_id == mission.id,
+            CatalogMissionWorkItem.work_type == WORK_TYPE,
+        )
+    ).first()
+    if dry_run:
+        return existing
+
+    now = _utcnow()
+    if existing is None:
+        item = CatalogMissionWorkItem(
+            catalog_mission_id=mission.id,
+            work_type=WORK_TYPE,
+            status=CatalogWorkItemStatus.PENDING.value,
+            attempts=0,
+            max_attempts=_max_attempts(),
+            next_retry_at_utc=now,
+            created_at_utc=now,
+            updated_at_utc=now,
+        )
+        session.add(item)
+        session.flush()
+        record_mission_event(
+            session,
+            catalog_mission_id=mission.id,
+            event_type=EVENT_FINAL_SYNC,
+            actor=actor,
+            source="final_sync",
+            after={"status": item.status, "work_item_id": item.id},
+            message="final_sync_reopened_for_delayed",
+        )
+        return item
+
+    if existing.status in (
+        CatalogWorkItemStatus.PENDING.value,
+        CatalogWorkItemStatus.RUNNING.value,
+    ):
+        return existing
+
+    existing.status = CatalogWorkItemStatus.PENDING.value
+    existing.next_retry_at_utc = now
+    existing.last_error = None
+    existing.created_at_utc = now
+    existing.updated_at_utc = now
+    if existing.attempts >= int(existing.max_attempts or _max_attempts()):
+        existing.max_attempts = int(existing.attempts or 0) + _max_attempts()
+    session.add(existing)
+    session.flush()
+    record_mission_event(
+        session,
+        catalog_mission_id=mission.id,
+        event_type=EVENT_FINAL_SYNC,
+        actor=actor,
+        source="final_sync",
+        after={"status": existing.status, "work_item_id": existing.id},
+        message="final_sync_reopened_for_delayed",
+    )
+    return existing
 
 
 def _fresh_sources(
@@ -218,7 +324,7 @@ async def _run_wave_glider_final_sync(
         in (CatalogSourceVariant.DELAYED.value, "past")
     ]
     if not past:
-        return {"ok": False, "error": "waiting_for_past_source", "retryable": True}
+        return {"ok": False, "error": WAITING_FOR_PAST_SOURCE, "retryable": True}
 
     mission_id = overviews[0].mission_id
     synced, errors = await sync_past_mission(mission_id)
@@ -248,33 +354,18 @@ async def _run_slocum_final_sync(
     if not deployments:
         return {"ok": False, "error": "no_slocum_deployment", "retryable": True}
 
-    sources = _fresh_sources(session, mission.id, source_kind="erddap")
-    delayed = [
-        s
-        for s in sources
-        if (s.source_variant or "").lower() == CatalogSourceVariant.DELAYED.value
-        or "delayed" in (s.external_ref or "").lower()
-    ]
-    realtime = [
-        s
-        for s in sources
-        if (s.source_variant or "").lower() == CatalogSourceVariant.REALTIME.value
-        or "realtime" in (s.external_ref or "").lower()
-    ]
-
-    # Prefer delayed dataset when present; otherwise bounded incremental on linked row.
-    preferred_ref: Optional[str] = None
-    if delayed:
-        preferred_ref = (delayed[0].external_ref or "").strip() or None
-    elif realtime:
-        preferred_ref = (realtime[0].external_ref or "").strip() or None
+    # Completed cutover requires delayed ERDDAP (mirror WG waiting_for_past_source).
+    preferred_ref = preferred_slocum_delayed_ref(session, mission)
+    if not preferred_ref:
+        return {
+            "ok": False,
+            "error": WAITING_FOR_DELAYED_SOURCE,
+            "retryable": True,
+        }
 
     deployment = deployments[0]
-    dataset_id = preferred_ref or (deployment.erddap_dataset_id or "").strip()
-    if not dataset_id:
-        return {"ok": False, "error": "missing_dataset_id", "retryable": True}
-
-    if preferred_ref and deployment.erddap_dataset_id != preferred_ref:
+    dataset_id = preferred_ref
+    if deployment.erddap_dataset_id != preferred_ref:
         deployment.erddap_dataset_id = preferred_ref
         deployment.updated_at_utc = _utcnow()
         session.add(deployment)
@@ -309,8 +400,14 @@ async def process_final_sync_work_item(
         return {"ok": False, "error": "mission_missing"}
 
     # Completion lifecycle must remain completed even if final sync fails.
+    # Waiting for delayed/past sources must not age-exhaust (Ocean Track lag).
+    prior_error = (item.last_error or "").strip()
     age_limit = _utcnow() - timedelta(days=_max_age_days())
-    if item.created_at_utc and item.created_at_utc.replace(tzinfo=timezone.utc) < age_limit:
+    if (
+        prior_error not in WAIT_SOURCE_ERRORS
+        and item.created_at_utc
+        and item.created_at_utc.replace(tzinfo=timezone.utc) < age_limit
+    ):
         item.status = CatalogWorkItemStatus.EXHAUSTED.value
         item.last_error = "max_age_exceeded"
         item.updated_at_utc = _utcnow()
@@ -361,8 +458,19 @@ async def process_final_sync_work_item(
         message = "final_sync_done"
     else:
         item.last_error = str(outcome.get("error") or "unknown")
+        is_wait = item.last_error in WAIT_SOURCE_ERRORS
         retryable = bool(outcome.get("retryable", True))
-        if (not retryable) or item.attempts >= int(item.max_attempts or _max_attempts()):
+        if is_wait:
+            # Soft wait: undo attempt burn; retry until source appears.
+            item.attempts = max(0, int(item.attempts or 1) - 1)
+            item.status = CatalogWorkItemStatus.FAILED.value
+            item.next_retry_at_utc = _utcnow() + timedelta(
+                seconds=_backoff_seconds(max(1, int(item.attempts or 0) + 1))
+            )
+            message = "final_sync_waiting_for_source"
+        elif (not retryable) or item.attempts >= int(
+            item.max_attempts or _max_attempts()
+        ):
             item.status = CatalogWorkItemStatus.EXHAUSTED.value
             message = "final_sync_exhausted"
         else:

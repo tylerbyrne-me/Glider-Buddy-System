@@ -534,6 +534,15 @@ class OffloadLogUpdate(SQLModel):
     remote_health_tilt_rad: Optional[float] = None
     remote_health_humidity: Optional[int] = None
     remote_health_report_date: Optional[date] = None
+    mission_id: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description=(
+            "Per-log mission attribution. Stored as parser_session_ref "
+            "{mission_id}:station_offload_sheet:{station_id} when the log has no "
+            "non-sheet parser session key. Empty string clears a sheet-style ref."
+        ),
+    )
 
 
 class ConflictResolutionRequest(SQLModel):
@@ -623,6 +632,12 @@ class OffloadLogRead(SQLModel):
     parser_run_id: Optional[str] = None
     parser_session_ref: Optional[str] = None
     client_submission_id: Optional[str] = None
+    mission_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Computed per-log mission attribution from parser_session_ref / parser_run_id."
+        ),
+    )
 
 
 class StationHardwareHistoryRead(SQLModel):
