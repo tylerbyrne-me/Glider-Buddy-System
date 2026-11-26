@@ -1,7 +1,7 @@
 ---
 id: BUG-016
 type: bug
-status: investigating
+status: fixed
 priority: high
 created: 2026-11-26
 tags: [reporting, eom, gunicorn, timeout, ctd]
@@ -21,9 +21,12 @@ EOM PDF completes and is saved to `end_of_mission_report_url` within gunicorn/pr
 ## Notes
 
 - Runtime evidence (2026-11-26): 1070 finished (`SLOWREQ 76.70s` → 200). 1071 killed at week_idx 3 with PDF `elapsed_s≈94` after weeks taking 14–23s each (`ctd_rows` 13k–21k/week).
-- Cause: synchronous matplotlib/ReportLab on full-resolution CTD (and other series) across many ISO weeks blocks the uvicorn worker; wall time exceeds gunicorn silence timeout. Follow-up: each week also re-copied/re-preprocessed full CTD (~294k) and often refetched ETOPO bathymetry per week map.
-- Fix in flight: ceil stride-downsample (`REPORT_CHART_MAX_POINTS=5000`); preprocess-once + cheap time-slice per week; skip bathymetry on EOM per-week maps; `asyncio.to_thread` around `write_mission_pdf`.
+- Cause: synchronous matplotlib/ReportLab on full-resolution CTD across many ISO weeks; each week also re-copied/re-preprocessed full CTD (~294k) and often refetched ETOPO bathymetry per week map; uvicorn worker silence triggered `WORKER TIMEOUT`.
 
 ## Resolution
 
-(pending verification — first pass improved early weeks to ~2s but later weeks still climbed; second pass targets filter+bathy)
+- Stride-downsample chart frames with ceil (`REPORT_CHART_MAX_POINTS=5000`) before z-score/plot.
+- EOM preprocesses CTD/weather/waves/AIS once, then cheap time-slices per ISO week.
+- Skip ETOPO bathymetry on EOM per-week track maps (full-mission overview keeps it).
+- Run `write_mission_pdf` via `asyncio.to_thread` so gunicorn heartbeats continue.
+- Confirmed 2026-11-26: all EOM reports generating on glider-dev after deploy.

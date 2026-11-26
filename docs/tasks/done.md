@@ -3,6 +3,7 @@
 Archive of completed items, most recent first. Useful for "wait, did we already
 fix this" checks and for the AI assistant to see what's already been tried.
 
+- [x] 2026-11-26 — EOM PDF timeouts on dense/long WG missions: chart downsample, preprocess-once week slices, skip per-week bathymetry, `asyncio.to_thread` PDF build — [BUG-016](../bugs/BUG-016-eom-report-worker-timeout.md)
 - [x] 2026-11-18 — Offload consistency dry-run CLI (`audit_offload_consistency`) wrapping VRL + mission audits + operator handoff runbook (commit file list, prod backup/dry-run/apply/retest) — [station_offload_season_rollover.md](../wiki/how-tos/station_offload_season_rollover.md#operator-handoff-offload--vm4-fixes)
 - [x] 2026-11-18 — Offload mission-ID audit CLI: VM4 sessions per mission folder → time-match logs → flag mismatch/missing/locked/`failed_with_vrl`; optional `--apply` for blank/sheet refs — [BUG-015](../bugs/BUG-015-offload-mission-id-misattribution.md)
 - [x] 2026-11-17 — WG-VM4 parser review hardening: enrichment picks closest-in-window (not newest edited); VRL attach rejects >48h filename-stamp vs log; audit CLI + prod-copy findings for cleanup — [BUG-014](../bugs/BUG-014-vm4-vrl-attach-overwrote-older-logs.md)

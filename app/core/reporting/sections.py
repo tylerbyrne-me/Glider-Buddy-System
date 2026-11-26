@@ -905,13 +905,13 @@ def build_power_section(
         return []
     styles = build_paragraph_styles()
     power_clean, power_suppressed = prepare_report_numeric_frame(
-        charts._limit_chart_rows(power_df, label="power")
+        charts._limit_chart_rows(power_df)
     )
     solar_clean = solar_df
     solar_suppressed = False
     if solar_df is not None and not solar_df.empty:
         solar_clean, solar_suppressed = prepare_report_numeric_frame(
-            charts._limit_chart_rows(solar_df, label="solar")
+            charts._limit_chart_rows(solar_df)
         )
     out: List[Any] = [
         Paragraph("Power", styles["Heading2"]),
@@ -936,7 +936,7 @@ def build_ctd_section(ctd_df: pd.DataFrame, period_label: str) -> List[Any]:
         return []
     styles = build_paragraph_styles()
     cleaned, suppressed = prepare_report_numeric_frame(
-        charts._limit_chart_rows(ctd_df, label="ctd")
+        charts._limit_chart_rows(ctd_df)
     )
     out: List[Any] = [
         Paragraph("CTD", styles["Heading2"]),
@@ -959,7 +959,7 @@ def build_weather_section(weather_df: pd.DataFrame, period_label: str) -> List[A
         return []
     styles = build_paragraph_styles()
     cleaned, suppressed = prepare_report_numeric_frame(
-        charts._limit_chart_rows(weather_df, label="weather")
+        charts._limit_chart_rows(weather_df)
     )
     out: List[Any] = [
         Paragraph("Weather", styles["Heading2"]),
@@ -982,7 +982,7 @@ def build_waves_section(wave_df: pd.DataFrame, period_label: str) -> List[Any]:
         return []
     styles = build_paragraph_styles()
     cleaned, suppressed = prepare_report_numeric_frame(
-        charts._limit_chart_rows(wave_df, label="waves")
+        charts._limit_chart_rows(wave_df)
     )
     out: List[Any] = [
         Paragraph("Waves", styles["Heading2"]),
@@ -1010,7 +1010,7 @@ def build_c3_section(
         return []
     styles = build_paragraph_styles()
     cleaned, suppressed = prepare_report_numeric_frame(
-        charts._limit_chart_rows(fluorometer_df, label="c3")
+        charts._limit_chart_rows(fluorometer_df)
     )
     out: List[Any] = [
         Paragraph("C3 fluorometer", styles["Heading2"]),

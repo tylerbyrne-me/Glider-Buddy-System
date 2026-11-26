@@ -11,7 +11,6 @@ use full frames in the builder).
 from __future__ import annotations
 
 import io
-import logging
 import math
 from typing import Any, Dict, List, Optional
 
@@ -31,8 +30,6 @@ from ..plotting import (
     report_pdf_rc_context,
 )
 
-logger = logging.getLogger(__name__)
-
 DEFAULT_DPI = 200
 # Cap chart vertices so EOM multi-week matplotlib stays interactive-request friendly.
 # ~5k points is visually dense at report DPI; stride keeps temporal coverage.
@@ -43,7 +40,6 @@ def _limit_chart_rows(
     df: pd.DataFrame,
     *,
     max_points: int = REPORT_CHART_MAX_POINTS,
-    label: str = "chart",
 ) -> pd.DataFrame:
     """Evenly stride-downsample ``df`` when it exceeds ``max_points`` (plot path only)."""
     if df is None or df.empty:
@@ -56,13 +52,6 @@ def _limit_chart_rows(
     out = df.iloc[::step].copy()
     if len(out) > max_points:
         out = out.iloc[:max_points].copy()
-    # #region agent log
-    logger.info(
-        "DEBUG_EOM C | %s chart downsampled | %s",
-        label,
-        {"rows_in": n, "rows_out": len(out), "step": step, "max_points": max_points},
-    )
-    # #endregion
     return out
 
 
@@ -104,7 +93,7 @@ def chart_telemetry_image(
     color_by: str = "sog",
     include_bathymetry: bool = True,
 ) -> Image:
-    plot_df = _limit_chart_rows(telemetry_df, label="telemetry")
+    plot_df = _limit_chart_rows(telemetry_df)
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(8.27, 11.69))
         plot_telemetry_page_with_notes(
@@ -126,8 +115,8 @@ def chart_power_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
-    plot_power = _limit_chart_rows(power_df, label="power")
-    plot_solar = _limit_chart_rows(solar_df, label="solar") if solar_df is not None else None
+    plot_power = _limit_chart_rows(power_df)
+    plot_solar = _limit_chart_rows(solar_df) if solar_df is not None else None
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
         plot_power_for_report(
@@ -147,7 +136,7 @@ def chart_ctd_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
-    plot_df = _limit_chart_rows(ctd_df, label="ctd")
+    plot_df = _limit_chart_rows(ctd_df)
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
         plot_ctd_for_report(fig, plot_df)
@@ -162,7 +151,7 @@ def chart_weather_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
-    plot_df = _limit_chart_rows(weather_df, label="weather")
+    plot_df = _limit_chart_rows(weather_df)
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
         plot_weather_for_report(fig, plot_df)
@@ -177,7 +166,7 @@ def chart_wave_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
-    plot_df = _limit_chart_rows(wave_df, label="waves")
+    plot_df = _limit_chart_rows(wave_df)
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
         plot_wave_for_report(fig, plot_df)
@@ -193,7 +182,7 @@ def chart_c3_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
-    plot_df = _limit_chart_rows(fluorometer_df, label="c3")
+    plot_df = _limit_chart_rows(fluorometer_df)
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
         plot_c3_for_report(fig, plot_df, channel_map=channel_map)
