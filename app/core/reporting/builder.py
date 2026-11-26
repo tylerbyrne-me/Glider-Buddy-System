@@ -551,6 +551,44 @@ def _utc_upper_exclusive(
     return None
 
 
+def _frame_has_parsed_timestamps(df: pd.DataFrame, time_col: str) -> bool:
+    if df is None or df.empty or time_col not in df.columns:
+        return False
+    return bool(pd.api.types.is_datetime64_any_dtype(df[time_col]))
+
+
+def _slice_by_time(
+    df: pd.DataFrame,
+    time_col: str,
+    lower: Optional[pd.Timestamp],
+    upper: Optional[pd.Timestamp],
+    *,
+    parse: bool = False,
+) -> pd.DataFrame:
+    """Return rows in ``[lower, upper)`` without copying the full frame first."""
+    if df is None or df.empty or time_col not in df.columns:
+        return df.copy() if df is not None else pd.DataFrame()
+    work = df
+    if parse or not _frame_has_parsed_timestamps(df, time_col):
+        work = df.copy()
+        work[time_col] = utils.parse_timestamp_column(work[time_col], errors="coerce", utc=True)
+    mask = work[time_col].notna()
+    if lower is not None:
+        mask &= work[time_col] >= lower
+    if upper is not None:
+        mask &= work[time_col] < upper
+    return work.loc[mask].copy()
+
+
+def _prepare_sensor_frame_for_filter(df: pd.DataFrame, preprocess_fn) -> pd.DataFrame:
+    """Preprocess once; skip if Timestamp is already datetime64 (EOM week loop)."""
+    if df is None or df.empty:
+        return df.copy() if df is not None else pd.DataFrame()
+    if _frame_has_parsed_timestamps(df, "Timestamp"):
+        return df
+    return preprocess_fn(df)
+
+
 def _filter_report_dataframes(
     *,
     telemetry_df: pd.DataFrame,
@@ -567,105 +605,79 @@ def _filter_report_dataframes(
     start_utc: Optional[datetime] = None,
     end_utc_exclusive: Optional[datetime] = None,
 ) -> tuple:
-    """Return filtered copies (UTC inclusive lower bound, exclusive upper bound)."""
+    """Return filtered copies (UTC inclusive lower bound, exclusive upper bound).
+
+    Dense sensor frames (CTD/weather/waves/…) that already have parsed ``Timestamp``
+    are sliced in place without re-preprocessing — critical for EOM multi-week loops
+    over large missions.
+    """
     lower = _utc_lower_bound(start_date, start_utc)
     upper = _utc_upper_exclusive(end_date, end_utc_exclusive)
-    telemetry_df_filtered = telemetry_df.copy()
-    power_df_filtered = power_df.copy()
-    solar_df_filtered = solar_df.copy()
-    ctd_df_filtered = ctd_df.copy()
-    weather_df_filtered = weather_df.copy()
-    wave_df_filtered = wave_df.copy()
-    fluorometer_df_filtered = fluorometer_df.copy()
-    ais_df_filtered = ais_df.copy()
-    error_df_filtered = error_df.copy()
 
-    if not telemetry_df_filtered.empty and "lastLocationFix" in telemetry_df_filtered.columns:
-        telemetry_df_filtered["lastLocationFix"] = utils.parse_timestamp_column(
-            telemetry_df_filtered["lastLocationFix"], errors="coerce", utc=True
-        )
-        if lower is not None:
-            telemetry_df_filtered = telemetry_df_filtered[telemetry_df_filtered["lastLocationFix"] >= lower]
-        if upper is not None:
-            telemetry_df_filtered = telemetry_df_filtered[telemetry_df_filtered["lastLocationFix"] < upper]
+    telemetry_df_filtered = _slice_by_time(
+        telemetry_df,
+        "lastLocationFix",
+        lower,
+        upper,
+        parse=not _frame_has_parsed_timestamps(telemetry_df, "lastLocationFix"),
+    ) if not telemetry_df.empty and "lastLocationFix" in telemetry_df.columns else (
+        telemetry_df.copy() if not telemetry_df.empty else telemetry_df
+    )
 
-    if not power_df_filtered.empty and "gliderTimeStamp" in power_df_filtered.columns:
-        power_df_filtered["gliderTimeStamp"] = utils.parse_timestamp_column(
-            power_df_filtered["gliderTimeStamp"], errors="coerce", utc=True
-        )
-        if lower is not None:
-            power_df_filtered = power_df_filtered[power_df_filtered["gliderTimeStamp"] >= lower]
-        if upper is not None:
-            power_df_filtered = power_df_filtered[power_df_filtered["gliderTimeStamp"] < upper]
+    power_df_filtered = _slice_by_time(
+        power_df,
+        "gliderTimeStamp",
+        lower,
+        upper,
+        parse=not _frame_has_parsed_timestamps(power_df, "gliderTimeStamp"),
+    ) if not power_df.empty and "gliderTimeStamp" in power_df.columns else (
+        power_df.copy() if not power_df.empty else power_df
+    )
 
-    if not solar_df_filtered.empty and "gliderTimeStamp" in solar_df_filtered.columns:
-        solar_df_filtered["gliderTimeStamp"] = utils.parse_timestamp_column(
-            solar_df_filtered["gliderTimeStamp"], errors="coerce", utc=True
-        )
-        if lower is not None:
-            solar_df_filtered = solar_df_filtered[solar_df_filtered["gliderTimeStamp"] >= lower]
-        if upper is not None:
-            solar_df_filtered = solar_df_filtered[solar_df_filtered["gliderTimeStamp"] < upper]
+    solar_df_filtered = _slice_by_time(
+        solar_df,
+        "gliderTimeStamp",
+        lower,
+        upper,
+        parse=not _frame_has_parsed_timestamps(solar_df, "gliderTimeStamp"),
+    ) if not solar_df.empty and "gliderTimeStamp" in solar_df.columns else (
+        solar_df.copy() if not solar_df.empty else solar_df
+    )
 
-    if not ctd_df_filtered.empty:
-        ctd_df_processed = preprocess_ctd_df(ctd_df_filtered)
-        if not ctd_df_processed.empty and "Timestamp" in ctd_df_processed.columns:
-            if lower is not None:
-                ctd_df_processed = ctd_df_processed[ctd_df_processed["Timestamp"] >= lower]
-            if upper is not None:
-                ctd_df_processed = ctd_df_processed[ctd_df_processed["Timestamp"] < upper]
-            ctd_df_filtered = ctd_df_processed
+    ctd_ready = _prepare_sensor_frame_for_filter(ctd_df, preprocess_ctd_df)
+    ctd_df_filtered = _slice_by_time(ctd_ready, "Timestamp", lower, upper)
 
-    if not weather_df_filtered.empty:
-        weather_df_processed = preprocess_weather_df(weather_df_filtered)
-        if not weather_df_processed.empty and "Timestamp" in weather_df_processed.columns:
-            if lower is not None:
-                weather_df_processed = weather_df_processed[weather_df_processed["Timestamp"] >= lower]
-            if upper is not None:
-                weather_df_processed = weather_df_processed[weather_df_processed["Timestamp"] < upper]
-            weather_df_filtered = weather_df_processed
+    weather_ready = _prepare_sensor_frame_for_filter(weather_df, preprocess_weather_df)
+    weather_df_filtered = _slice_by_time(weather_ready, "Timestamp", lower, upper)
 
-    if not wave_df_filtered.empty:
-        wave_df_processed = preprocess_wave_df(wave_df_filtered)
-        if not wave_df_processed.empty and "Timestamp" in wave_df_processed.columns:
-            if lower is not None:
-                wave_df_processed = wave_df_processed[wave_df_processed["Timestamp"] >= lower]
-            if upper is not None:
-                wave_df_processed = wave_df_processed[wave_df_processed["Timestamp"] < upper]
-            wave_df_filtered = wave_df_processed
+    wave_ready = _prepare_sensor_frame_for_filter(wave_df, preprocess_wave_df)
+    wave_df_filtered = _slice_by_time(wave_ready, "Timestamp", lower, upper)
 
-    if not fluorometer_df_filtered.empty:
-        fluorometer_df_processed = preprocess_fluorometer_df(fluorometer_df_filtered)
-        if not fluorometer_df_processed.empty and "Timestamp" in fluorometer_df_processed.columns:
-            if lower is not None:
-                fluorometer_df_processed = fluorometer_df_processed[
-                    fluorometer_df_processed["Timestamp"] >= lower
-                ]
-            if upper is not None:
-                fluorometer_df_processed = fluorometer_df_processed[
-                    fluorometer_df_processed["Timestamp"] < upper
-                ]
-            fluorometer_df_filtered = fluorometer_df_processed
+    fluorometer_ready = _prepare_sensor_frame_for_filter(
+        fluorometer_df, preprocess_fluorometer_df
+    )
+    fluorometer_df_filtered = _slice_by_time(fluorometer_ready, "Timestamp", lower, upper)
 
-    if not ais_df_filtered.empty:
-        ais_df_processed = preprocess_ais_df(ais_df_filtered)
-        if not ais_df_processed.empty and "LastSeenTimestamp" in ais_df_processed.columns:
-            if lower is not None:
-                ais_df_processed = ais_df_processed[ais_df_processed["LastSeenTimestamp"] >= lower]
-            if upper is not None:
-                ais_df_processed = ais_df_processed[ais_df_processed["LastSeenTimestamp"] < upper]
-            ais_df_filtered = ais_df_processed
+    if ais_df.empty:
+        ais_df_filtered = ais_df
+    elif _frame_has_parsed_timestamps(ais_df, "LastSeenTimestamp"):
+        ais_df_filtered = _slice_by_time(ais_df, "LastSeenTimestamp", lower, upper)
+    else:
+        ais_df_processed = preprocess_ais_df(ais_df)
+        ais_df_filtered = _slice_by_time(ais_df_processed, "LastSeenTimestamp", lower, upper)
 
-    if not error_df_filtered.empty and "timeStamp" in error_df_filtered.columns:
-        error_df_filtered["timeStamp"] = utils.parse_timestamp_column(
-            error_df_filtered["timeStamp"], errors="coerce", utc=True
-        )
-        if lower is not None:
-            error_df_filtered = error_df_filtered[error_df_filtered["timeStamp"] >= lower]
-        if upper is not None:
-            error_df_filtered = error_df_filtered[error_df_filtered["timeStamp"] < upper]
-    if not error_df_filtered.empty:
-        error_df_filtered = preprocess_error_df(error_df_filtered)
+    if error_df.empty:
+        error_df_filtered = error_df
+    else:
+        error_df_filtered = _slice_by_time(
+            error_df,
+            "timeStamp",
+            lower,
+            upper,
+            parse=not _frame_has_parsed_timestamps(error_df, "timeStamp"),
+        ) if "timeStamp" in error_df.columns else error_df.copy()
+        if not error_df_filtered.empty:
+            error_df_filtered = preprocess_error_df(error_df_filtered)
 
     return (
         telemetry_df_filtered,
@@ -1039,6 +1051,7 @@ def _build_period_block(
     fluorometer_channel_map: Optional[dict],
     offload_rows: List[models.OffloadLog],
     battery_max_wh: float,
+    include_bathymetry: bool = True,
 ) -> None:
     from reportlab.platypus import PageBreak, Paragraph
 
@@ -1065,6 +1078,7 @@ def _build_period_block(
                 section_title="Telemetry",
                 compact=telemetry_compact,
                 keep_together=True,
+                include_bathymetry=include_bathymetry,
             )
         )
         notes_flow = sections.build_mission_notes_section(telemetry_note_annotations)
@@ -1398,6 +1412,42 @@ def write_mission_pdf(
             # #endregion
 
         windows = compute_iso_week_windows(mission_start_dt, mission_end_dt)
+        # Preprocess dense sensor frames once so each week only time-slices.
+        # #region agent log
+        _prep_t0 = time.perf_counter()
+        # #endregion
+        ctd_df_eom = preprocess_ctd_df(ctd_df) if not ctd_df.empty else ctd_df
+        weather_df_eom = (
+            preprocess_weather_df(weather_df) if not weather_df.empty else weather_df
+        )
+        wave_df_eom = preprocess_wave_df(wave_df) if not wave_df.empty else wave_df
+        fluorometer_df_eom = (
+            preprocess_fluorometer_df(fluorometer_df)
+            if not fluorometer_df.empty
+            else fluorometer_df
+        )
+        ais_df_eom = preprocess_ais_df(ais_df) if not ais_df.empty else ais_df
+        if not power_df.empty and "gliderTimeStamp" in power_df.columns:
+            power_df_eom = power_df.copy()
+            power_df_eom["gliderTimeStamp"] = utils.parse_timestamp_column(
+                power_df_eom["gliderTimeStamp"], errors="coerce", utc=True
+            )
+        else:
+            power_df_eom = power_df
+        if not solar_df.empty and "gliderTimeStamp" in solar_df.columns:
+            solar_df_eom = solar_df.copy()
+            solar_df_eom["gliderTimeStamp"] = utils.parse_timestamp_column(
+                solar_df_eom["gliderTimeStamp"], errors="coerce", utc=True
+            )
+        else:
+            solar_df_eom = solar_df
+        if not error_df.empty and "timeStamp" in error_df.columns:
+            error_df_eom = error_df.copy()
+            error_df_eom["timeStamp"] = utils.parse_timestamp_column(
+                error_df_eom["timeStamp"], errors="coerce", utc=True
+            )
+        else:
+            error_df_eom = error_df
         # #region agent log
         _agent_dbg(
             "C",
@@ -1407,6 +1457,8 @@ def write_mission_pdf(
                 "mission_id": mission_id,
                 "week_count": len(windows),
                 "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+                "preprocess_elapsed_s": round(time.perf_counter() - _prep_t0, 2),
+                "ctd_rows_preprocessed": int(len(ctd_df_eom)),
             },
         )
         # #endregion
@@ -1427,17 +1479,20 @@ def write_mission_pdf(
                 e_f,
             ) = _filter_report_dataframes(
                 telemetry_df=telemetry_df,
-                power_df=power_df,
-                solar_df=solar_df,
-                ctd_df=ctd_df,
-                weather_df=weather_df,
-                wave_df=wave_df,
-                fluorometer_df=fluorometer_df,
-                ais_df=ais_df,
-                error_df=error_df,
+                power_df=power_df_eom,
+                solar_df=solar_df_eom,
+                ctd_df=ctd_df_eom,
+                weather_df=weather_df_eom,
+                wave_df=wave_df_eom,
+                fluorometer_df=fluorometer_df_eom,
+                ais_df=ais_df_eom,
+                error_df=error_df_eom,
                 start_utc=window.start_utc,
                 end_utc_exclusive=window.end_utc_exclusive,
             )
+            # #region agent log
+            _filter_elapsed_s = round(time.perf_counter() - _week_t0, 2)
+            # #endregion
             if t_f.empty:
                 story.extend(sections.build_week_skipped_stub(week_label=window.label))
                 story.append(PageBreak())
@@ -1506,6 +1561,8 @@ def write_mission_pdf(
                 fluorometer_channel_map=fluorometer_channel_map,
                 offload_rows=week_offload_rows,
                 battery_max_wh=battery_max_wh,
+                # Full-mission overview keeps bathymetry; per-week maps skip N× ETOPO cost.
+                include_bathymetry=False,
             )
             prev_week_power_summary = _calculate_power_summary(
                 p_f, s_f, battery_max_wh=battery_max_wh
@@ -1521,6 +1578,7 @@ def write_mission_pdf(
                     "week_idx": _week_idx,
                     "week_label": window.label,
                     "week_elapsed_s": round(time.perf_counter() - _week_t0, 2),
+                    "filter_elapsed_s": _filter_elapsed_s,
                     "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
                     "telemetry_rows": int(len(t_f)),
                     "ctd_rows": int(len(c_f)),
@@ -1532,8 +1590,8 @@ def write_mission_pdf(
             story,
             plots_to_include=plots_to_include,
             mission_date_range_str=mission_date_range_str,
-            ais_df=ais_df,
-            error_df=error_df,
+            ais_df=ais_df_eom,
+            error_df=error_df_eom,
             start_date=None,
             end_date=None,
         )

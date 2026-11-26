@@ -701,6 +701,7 @@ def build_telemetry_section(
     compact: bool = False,
     keep_together: bool = True,
     color_by: str = "sog",
+    include_bathymetry: bool = True,
 ) -> List[Any]:
     if telemetry_df.empty or "lastLocationFix" not in telemetry_df.columns:
         return []
@@ -751,6 +752,7 @@ def build_telemetry_section(
         max_width_pt=_pw(),
         max_height_pt=_telemetry_chart_max_height_pt(compact=compact),
         color_by=resolved_color_by,
+        include_bathymetry=include_bathymetry,
     )
     out.append(img)
     if keep_together and len(out) > 1:

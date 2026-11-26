@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import io
 import logging
+import math
 from typing import Any, Dict, List, Optional
 
 import matplotlib.pyplot as plt
@@ -50,8 +51,11 @@ def _limit_chart_rows(
     n = len(df)
     if n <= max_points:
         return df
-    step = max(1, n // max_points)
+    # ceil so e.g. 13626 → step 3 (~4.5k), not step 2 (~6.8k still over the cap).
+    step = max(1, int(math.ceil(n / float(max_points))))
     out = df.iloc[::step].copy()
+    if len(out) > max_points:
+        out = out.iloc[:max_points].copy()
     # #region agent log
     logger.info(
         "DEBUG_EOM C | %s chart downsampled | %s",
@@ -98,6 +102,7 @@ def chart_telemetry_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
     color_by: str = "sog",
+    include_bathymetry: bool = True,
 ) -> Image:
     plot_df = _limit_chart_rows(telemetry_df, label="telemetry")
     with report_pdf_rc_context():
@@ -107,6 +112,7 @@ def chart_telemetry_image(
             plot_df,
             note_annotations=note_annotations or [],
             color_by=color_by,
+            include_bathymetry=include_bathymetry,
         )
     return _fig_to_image(fig, dpi=dpi, max_width_pt=max_width_pt, max_height_pt=max_height_pt)
 

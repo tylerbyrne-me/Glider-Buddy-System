@@ -1390,6 +1390,7 @@ def plot_telemetry_page_with_notes(
     note_annotations: Optional[List[Dict[str, Any]]] = None,
     *,
     color_by: str = "sog",
+    include_bathymetry: bool = True,
 ) -> None:
     """Render the full-page telemetry-track report on `fig`.
 
@@ -1401,8 +1402,9 @@ def plot_telemetry_page_with_notes(
     A dynamic southern overlay strip reserves room for context overlays:
     compass (left), scale bar (center), regional inset (right).
 
-    ETOPO 2022 bathymetry depth contours (when enabled) are streamed for the
-    map bbox via ERDDAP griddap and drawn under the track.
+    ETOPO 2022 bathymetry depth contours (when enabled and ``include_bathymetry``)
+    are streamed for the map bbox via ERDDAP griddap and drawn under the track.
+    End-of-mission per-week maps skip bathymetry to avoid N× ERDDAP/cache cost.
 
     ``color_by`` selects the track color scale: ``"sog"`` (Wave Glider default,
     0–4 kt cmocean speed from instrument SOG), ``"derived_sog"`` (GPS haversine/Δt
@@ -1464,7 +1466,8 @@ def plot_telemetry_page_with_notes(
     padded_extent = _pad_extent_to_aspect(strip_extent, target_aspect)
     strip_fraction = _resolve_overlay_strip_fraction(strip_deg, padded_extent)
     _setup_report_map(map_ax, padded_extent)
-    _add_report_bathymetry_contours(map_ax, padded_extent)
+    if include_bathymetry:
+        _add_report_bathymetry_contours(map_ax, padded_extent)
 
     resolved_color_by = (color_by or "sog").strip().lower()
     colorbar_mappable = None
