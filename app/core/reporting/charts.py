@@ -2,6 +2,10 @@
 
 Sizing uses ``LANDSCAPE_CONTENT_*`` / portrait helpers from ``styling``; ``pad_inches`` and
 ``tight_layout`` rects control whitespace inside the PNG, not the PDF margins.
+
+Dense time-series frames are stride-downsampled before matplotlib draw so long
+end-of-mission week loops stay within gunicorn/proxy budgets (summaries still
+use full frames in the builder).
 """
 
 from __future__ import annotations
@@ -29,6 +33,33 @@ from ..plotting import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_DPI = 200
+# Cap chart vertices so EOM multi-week matplotlib stays interactive-request friendly.
+# ~5k points is visually dense at report DPI; stride keeps temporal coverage.
+REPORT_CHART_MAX_POINTS = 5000
+
+
+def _limit_chart_rows(
+    df: pd.DataFrame,
+    *,
+    max_points: int = REPORT_CHART_MAX_POINTS,
+    label: str = "chart",
+) -> pd.DataFrame:
+    """Evenly stride-downsample ``df`` when it exceeds ``max_points`` (plot path only)."""
+    if df is None or df.empty:
+        return df
+    n = len(df)
+    if n <= max_points:
+        return df
+    step = max(1, n // max_points)
+    out = df.iloc[::step].copy()
+    # #region agent log
+    logger.info(
+        "DEBUG_EOM C | %s chart downsampled | %s",
+        label,
+        {"rows_in": n, "rows_out": len(out), "step": step, "max_points": max_points},
+    )
+    # #endregion
+    return out
 
 
 def _fig_to_image(
@@ -68,11 +99,12 @@ def chart_telemetry_image(
     dpi: int = DEFAULT_DPI,
     color_by: str = "sog",
 ) -> Image:
+    plot_df = _limit_chart_rows(telemetry_df, label="telemetry")
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(8.27, 11.69))
         plot_telemetry_page_with_notes(
             fig,
-            telemetry_df,
+            plot_df,
             note_annotations=note_annotations or [],
             color_by=color_by,
         )
@@ -88,12 +120,14 @@ def chart_power_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
+    plot_power = _limit_chart_rows(power_df, label="power")
+    plot_solar = _limit_chart_rows(solar_df, label="solar") if solar_df is not None else None
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
         plot_power_for_report(
             fig,
-            power_df,
-            solar_df,
+            plot_power,
+            plot_solar,
             battery_max_wh=battery_max_wh,
         )
         fig.tight_layout(rect=[0, 0.02, 1, 0.96])
@@ -107,9 +141,10 @@ def chart_ctd_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
+    plot_df = _limit_chart_rows(ctd_df, label="ctd")
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
-        plot_ctd_for_report(fig, ctd_df)
+        plot_ctd_for_report(fig, plot_df)
         fig.tight_layout(rect=[0, 0.02, 1, 0.97])
     return _fig_to_image(fig, dpi=dpi, max_width_pt=max_width_pt, max_height_pt=max_height_pt)
 
@@ -121,9 +156,10 @@ def chart_weather_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
+    plot_df = _limit_chart_rows(weather_df, label="weather")
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
-        plot_weather_for_report(fig, weather_df)
+        plot_weather_for_report(fig, plot_df)
         fig.tight_layout(rect=[0, 0.02, 1, 0.97])
     return _fig_to_image(fig, dpi=dpi, max_width_pt=max_width_pt, max_height_pt=max_height_pt)
 
@@ -135,9 +171,10 @@ def chart_wave_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
+    plot_df = _limit_chart_rows(wave_df, label="waves")
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
-        plot_wave_for_report(fig, wave_df)
+        plot_wave_for_report(fig, plot_df)
         fig.tight_layout(rect=[0, 0.02, 1, 0.97])
     return _fig_to_image(fig, dpi=dpi, max_width_pt=max_width_pt, max_height_pt=max_height_pt)
 
@@ -150,9 +187,10 @@ def chart_c3_image(
     max_height_pt: float | None = None,
     dpi: int = DEFAULT_DPI,
 ) -> Image:
+    plot_df = _limit_chart_rows(fluorometer_df, label="c3")
     with report_pdf_rc_context():
         fig = plt.figure(figsize=(11.69, 8.27))
-        plot_c3_for_report(fig, fluorometer_df, channel_map=channel_map)
+        plot_c3_for_report(fig, plot_df, channel_map=channel_map)
         fig.tight_layout(rect=[0, 0.02, 1, 0.97])
     return _fig_to_image(fig, dpi=dpi, max_width_pt=max_width_pt, max_height_pt=max_height_pt)
 

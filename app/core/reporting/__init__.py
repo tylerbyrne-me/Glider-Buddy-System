@@ -9,6 +9,7 @@ End-of-mission layout is implemented in ``builder.write_mission_pdf``; week boun
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, List, Optional
@@ -376,7 +377,10 @@ async def generate_weekly_report(
     if resolved_mode != "end_of_mission" and start_date is None and end_date is None:
         resolved_mode = "end_of_mission"
 
-    write_mission_pdf(
+    # Offload CPU-heavy matplotlib/ReportLab work so the uvicorn event loop can
+    # answer gunicorn heartbeats (avoids WORKER TIMEOUT on long EOM builds).
+    await asyncio.to_thread(
+        write_mission_pdf,
         file_path=file_path,
         mission_id=mission_id,
         title_for_pdf=title_for_pdf,

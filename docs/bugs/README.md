@@ -44,3 +44,4 @@ When fixed: set `status: fixed`, complete Resolution, and move the related line 
 | [BUG-013](./BUG-013-offload-log-mission-id-overwrites-all.md) | fixed | Editing Mission ID on one offload log overwrote every attempt for the station |
 | [BUG-014](./BUG-014-vm4-vrl-attach-overwrote-older-logs.md) | fixed | VM4 VRL attach filled older blank logs with a newer session’s filename |
 | [BUG-015](./BUG-015-offload-mission-id-misattribution.md) | investigating | Offload logs misattributed to wrong/missing mission ID (VM4 audit CLI) |
+| [BUG-016](./BUG-016-eom-report-worker-timeout.md) | investigating | EOM PDF worker/gateway timeout on dense long WG missions |

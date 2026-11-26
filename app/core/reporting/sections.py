@@ -902,11 +902,15 @@ def build_power_section(
     if power_df.empty:
         return []
     styles = build_paragraph_styles()
-    power_clean, power_suppressed = prepare_report_numeric_frame(power_df)
+    power_clean, power_suppressed = prepare_report_numeric_frame(
+        charts._limit_chart_rows(power_df, label="power")
+    )
     solar_clean = solar_df
     solar_suppressed = False
     if solar_df is not None and not solar_df.empty:
-        solar_clean, solar_suppressed = prepare_report_numeric_frame(solar_df)
+        solar_clean, solar_suppressed = prepare_report_numeric_frame(
+            charts._limit_chart_rows(solar_df, label="solar")
+        )
     out: List[Any] = [
         Paragraph("Power", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
@@ -929,7 +933,9 @@ def build_ctd_section(ctd_df: pd.DataFrame, period_label: str) -> List[Any]:
     if ctd_df.empty:
         return []
     styles = build_paragraph_styles()
-    cleaned, suppressed = prepare_report_numeric_frame(ctd_df)
+    cleaned, suppressed = prepare_report_numeric_frame(
+        charts._limit_chart_rows(ctd_df, label="ctd")
+    )
     out: List[Any] = [
         Paragraph("CTD", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
@@ -950,7 +956,9 @@ def build_weather_section(weather_df: pd.DataFrame, period_label: str) -> List[A
     if weather_df.empty:
         return []
     styles = build_paragraph_styles()
-    cleaned, suppressed = prepare_report_numeric_frame(weather_df)
+    cleaned, suppressed = prepare_report_numeric_frame(
+        charts._limit_chart_rows(weather_df, label="weather")
+    )
     out: List[Any] = [
         Paragraph("Weather", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
@@ -971,7 +979,9 @@ def build_waves_section(wave_df: pd.DataFrame, period_label: str) -> List[Any]:
     if wave_df.empty:
         return []
     styles = build_paragraph_styles()
-    cleaned, suppressed = prepare_report_numeric_frame(wave_df)
+    cleaned, suppressed = prepare_report_numeric_frame(
+        charts._limit_chart_rows(wave_df, label="waves")
+    )
     out: List[Any] = [
         Paragraph("Waves", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),
@@ -997,7 +1007,9 @@ def build_c3_section(
     if fluorometer_df.empty:
         return []
     styles = build_paragraph_styles()
-    cleaned, suppressed = prepare_report_numeric_frame(fluorometer_df)
+    cleaned, suppressed = prepare_report_numeric_frame(
+        charts._limit_chart_rows(fluorometer_df, label="c3")
+    )
     out: List[Any] = [
         Paragraph("C3 fluorometer", styles["Heading2"]),
         DataPeriodBanner(period_label, styles),

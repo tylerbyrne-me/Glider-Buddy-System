@@ -34,7 +34,7 @@ _AGENT_DEBUG_LOG = Path(__file__).resolve().parents[2] / ".cursor" / "debug-35cc
 def _agent_dbg(hypothesis_id: str, location: str, message: str, data: Optional[Dict[str, Any]] = None) -> None:
     payload = {
         "sessionId": "35ccf4",
-        "runId": "pre-fix",
+        "runId": "post-fix",
         "hypothesisId": hypothesis_id,
         "location": location,
         "message": message,
