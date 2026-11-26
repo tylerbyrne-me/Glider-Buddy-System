@@ -1,11 +1,13 @@
+import json
 import logging
+import time
+from pathlib import Path
+import re
+from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
 
 import pandas as pd
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
-from typing import List, Optional
-from datetime import datetime, timezone
-from pathlib import Path
-import re
 from sqlmodel import Session as SQLModelSession
 from sqlmodel import select
 
@@ -24,6 +26,31 @@ from ..core.reporting import (
 )
 
 logger = logging.getLogger(__name__)
+
+# #region agent log
+_AGENT_DEBUG_LOG = Path(__file__).resolve().parents[2] / ".cursor" / "debug-35ccf4.log"
+
+
+def _agent_dbg(hypothesis_id: str, location: str, message: str, data: Optional[Dict[str, Any]] = None) -> None:
+    payload = {
+        "sessionId": "35ccf4",
+        "runId": "pre-fix",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+    }
+    logger.info("DEBUG_EOM %s | %s | %s", hypothesis_id, message, data or {})
+    try:
+        _AGENT_DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _AGENT_DEBUG_LOG.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, default=str) + "\n")
+    except Exception:
+        pass
+
+
+# #endregion
 
 router = APIRouter(
     prefix="/api/reporting",
@@ -218,6 +245,19 @@ async def generate_report_with_sensor_tracker(
     force_refresh_sensor_tracker = request.force_refresh_sensor_tracker
     save_to_overview = request.save_to_overview
     expanded_notes = request.expanded_notes
+    # #region agent log
+    _req_t0 = time.perf_counter()
+    _agent_dbg(
+        "A",
+        "reporting.py:generate_report_with_sensor_tracker:entry",
+        "Report request accepted",
+        {
+            "mission_id": mission_id,
+            "report_type": report_type,
+            "force_refresh": force_refresh_sensor_tracker,
+        },
+    )
+    # #endregion
 
     logger.info(
         f"Generating {report_type} report for mission '{mission_id}' "
@@ -352,6 +392,18 @@ async def generate_report_with_sensor_tracker(
     # Generate report with all plot types included
     plots_to_include = ["telemetry", "power", "solar", "ctd", "weather", "waves", "c3", "errors", "ais", "wg_vm4"]
     offload_logs = load_offload_logs_for_report(session, mission_id, selected_start_date, selected_end_date)
+    # #region agent log
+    _agent_dbg(
+        "A",
+        "reporting.py:generate_report_with_sensor_tracker:pdf_start",
+        "Entering generate_weekly_report (PDF build)",
+        {
+            "mission_id": mission_id,
+            "report_type": report_type,
+            "elapsed_s": round(time.perf_counter() - _req_t0, 2),
+        },
+    )
+    # #endregion
     report_url = await generate_weekly_report(
         mission_id=mission_id,
         telemetry_df=telemetry_df,
@@ -376,6 +428,19 @@ async def generate_report_with_sensor_tracker(
         report_mode="end_of_mission" if report_type == "end_of_mission" else "weekly",
         expanded_notes=expanded_notes,
     )
+    # #region agent log
+    _agent_dbg(
+        "A",
+        "reporting.py:generate_report_with_sensor_tracker:pdf_done",
+        "generate_weekly_report returned (PDF done)",
+        {
+            "mission_id": mission_id,
+            "report_type": report_type,
+            "report_url": report_url,
+            "elapsed_s": round(time.perf_counter() - _req_t0, 2),
+        },
+    )
+    # #endregion
     
     if save_to_overview:
         if report_type == "end_of_mission":

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
@@ -43,6 +44,32 @@ from ..data.summaries import get_ais_summary_stats, theoretical_max_wh
 from ..geo.coordinates import drop_null_island_rows
 
 logger = logging.getLogger(__name__)
+
+# #region agent log
+_AGENT_DEBUG_LOG = Path(__file__).resolve().parents[3] / ".cursor" / "debug-35ccf4.log"
+
+
+def _agent_dbg(hypothesis_id: str, location: str, message: str, data: Optional[Dict[str, Any]] = None) -> None:
+    """Temporary debug NDJSON + journal milestone for EOM timeout investigation."""
+    payload = {
+        "sessionId": "35ccf4",
+        "runId": "pre-fix",
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data or {},
+        "timestamp": int(time.time() * 1000),
+    }
+    logger.info("DEBUG_EOM %s | %s | %s", hypothesis_id, message, data or {})
+    try:
+        _AGENT_DEBUG_LOG.parent.mkdir(parents=True, exist_ok=True)
+        with _AGENT_DEBUG_LOG.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, default=str) + "\n")
+    except Exception:
+        pass
+
+
+# #endregion
 
 
 def _previous_report_date_window(start: date, end: date) -> tuple[date, date]:
@@ -1135,6 +1162,28 @@ def write_mission_pdf(
 
     offload_rows = list(offload_logs or [])
     is_eom = report_mode == "end_of_mission"
+    # #region agent log
+    _pdf_t0 = time.perf_counter()
+    _agent_dbg(
+        "A",
+        "builder.py:write_mission_pdf:entry",
+        "write_mission_pdf started",
+        {
+            "mission_id": mission_id,
+            "report_mode": report_mode,
+            "is_eom": is_eom,
+            "rows": {
+                "telemetry": int(len(telemetry_df)),
+                "power": int(len(power_df)),
+                "ctd": int(len(ctd_df)),
+                "weather": int(len(weather_df)),
+                "waves": int(len(wave_df)),
+                "ais": int(len(ais_df)),
+                "errors": int(len(error_df)),
+            },
+        },
+    )
+    # #endregion
 
     if not telemetry_df.empty and "lastLocationFix" in telemetry_df.columns:
         telemetry_df = telemetry_df.copy()
@@ -1275,6 +1324,19 @@ def write_mission_pdf(
             session.close()
 
     if is_eom:
+        # #region agent log
+        _agent_dbg(
+            "B",
+            "builder.py:write_mission_pdf:eom_front",
+            "EOM front matter starting (exec summary + full-track map)",
+            {
+                "mission_id": mission_id,
+                "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+                "mission_start": str(mission_start_dt),
+                "mission_end": str(mission_end_dt),
+            },
+        )
+        # #endregion
         story.append(Paragraph("Executive summary", styles["Heading1"]))
         story.extend(
             sections.build_executive_summary(
@@ -1292,6 +1354,19 @@ def write_mission_pdf(
         story.append(PageBreak())
 
         if "telemetry" in plots_to_include and not telemetry_df.empty:
+            # #region agent log
+            _t_map = time.perf_counter()
+            _agent_dbg(
+                "B",
+                "builder.py:write_mission_pdf:full_track_start",
+                "Full-mission telemetry map starting",
+                {
+                    "mission_id": mission_id,
+                    "telemetry_rows": int(len(telemetry_df)),
+                    "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+                },
+            )
+            # #endregion
             story.append(Paragraph("Mission telemetry overview", styles["Heading1"]))
             full_notes = _build_mission_note_annotations(
                 mission_notes=mission_notes or [],
@@ -1308,10 +1383,38 @@ def write_mission_pdf(
                 )
             )
             story.append(PageBreak())
+            # #region agent log
+            _agent_dbg(
+                "B",
+                "builder.py:write_mission_pdf:full_track_done",
+                "Full-mission telemetry map finished",
+                {
+                    "mission_id": mission_id,
+                    "map_elapsed_s": round(time.perf_counter() - _t_map, 2),
+                    "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+                    "note_annotations": len(full_notes),
+                },
+            )
+            # #endregion
 
         windows = compute_iso_week_windows(mission_start_dt, mission_end_dt)
+        # #region agent log
+        _agent_dbg(
+            "C",
+            "builder.py:write_mission_pdf:week_loop_start",
+            "ISO week loop starting",
+            {
+                "mission_id": mission_id,
+                "week_count": len(windows),
+                "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+            },
+        )
+        # #endregion
         prev_week_power_summary: Optional[dict] = None
-        for window in windows:
+        for _week_idx, window in enumerate(windows):
+            # #region agent log
+            _week_t0 = time.perf_counter()
+            # #endregion
             (
                 t_f,
                 p_f,
@@ -1338,6 +1441,19 @@ def write_mission_pdf(
             if t_f.empty:
                 story.extend(sections.build_week_skipped_stub(week_label=window.label))
                 story.append(PageBreak())
+                # #region agent log
+                _agent_dbg(
+                    "C",
+                    "builder.py:write_mission_pdf:week_skipped",
+                    "ISO week skipped (empty telemetry)",
+                    {
+                        "mission_id": mission_id,
+                        "week_idx": _week_idx,
+                        "week_label": window.label,
+                        "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+                    },
+                )
+                # #endregion
                 continue
 
             week_offload_rows = _filter_offload_logs_for_window(
@@ -1395,6 +1511,22 @@ def write_mission_pdf(
                 p_f, s_f, battery_max_wh=battery_max_wh
             )
             story.append(PageBreak())
+            # #region agent log
+            _agent_dbg(
+                "C",
+                "builder.py:write_mission_pdf:week_done",
+                "ISO week period block finished",
+                {
+                    "mission_id": mission_id,
+                    "week_idx": _week_idx,
+                    "week_label": window.label,
+                    "week_elapsed_s": round(time.perf_counter() - _week_t0, 2),
+                    "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+                    "telemetry_rows": int(len(t_f)),
+                    "ctd_rows": int(len(c_f)),
+                },
+            )
+            # #endregion
 
         _build_back_matter(
             story,
@@ -1499,7 +1631,35 @@ def write_mission_pdf(
             battery_max_wh=battery_max_wh,
         )
 
+    # #region agent log
+    _agent_dbg(
+        "D",
+        "builder.py:write_mission_pdf:multibuild_start",
+        "doc.multiBuild starting",
+        {
+            "mission_id": mission_id,
+            "story_len": len(story),
+            "elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+            "is_eom": is_eom,
+        },
+    )
+    _mb_t0 = time.perf_counter()
+    # #endregion
     doc.multiBuild(story)
+    # #region agent log
+    _agent_dbg(
+        "D",
+        "builder.py:write_mission_pdf:done",
+        "write_mission_pdf finished",
+        {
+            "mission_id": mission_id,
+            "multibuild_elapsed_s": round(time.perf_counter() - _mb_t0, 2),
+            "total_elapsed_s": round(time.perf_counter() - _pdf_t0, 2),
+            "is_eom": is_eom,
+            "file_path": str(file_path),
+        },
+    )
+    # #endregion
 
 
 def write_weekly_mission_pdf(
