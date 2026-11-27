@@ -889,10 +889,10 @@ document.addEventListener('DOMContentLoaded', async function () {
             const ta = historyModalEl.querySelector(`.hist-offload-comments[data-log-id="${logId}"]`);
             const cb = historyModalEl.querySelector(`.hist-was-offloaded[data-log-id="${logId}"]`);
             const payload = {
+                // Explicit null clears comments on partial PUT (exclude_unset).
                 offload_comments: ta ? ta.value.trim() || null : null,
                 was_offloaded: cb ? cb.checked : null,
             };
-            Object.keys(payload).forEach((k) => { if (payload[k] === null || payload[k] === undefined) delete payload[k]; });
             try {
                 await apiRequest(`/api/station_metadata/${encodeURIComponent(stationId)}/offload_logs/${logId}`, 'PUT', payload);
                 showToast('Offload log updated', 'success');
@@ -1308,9 +1308,7 @@ document.addEventListener('DOMContentLoaded', async function () {
                 // Always send so empty clears a prior per-log sheet attribution.
                 mission_id: missionInput ? missionInput.value.trim() : '',
             };
-            Object.keys(payload).forEach((k) => {
-                if (k !== 'mission_id' && payload[k] === null) delete payload[k];
-            });
+            // Keep explicit nulls so partial PUT can clear fields (same contract as mission_id).
             try {
                 const updatedLog = await apiRequest(
                     `/api/station_metadata/${encodeURIComponent(currentEditingStationId)}/offload_logs/${logId}`,
